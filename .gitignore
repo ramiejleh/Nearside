@@ -1,0 +1,10 @@
+.DS_Store
+# Android
+.gradle/
+build/
+local.properties
+*.iml
+.idea/
+# Swift
+.build/
+.swiftpm/
