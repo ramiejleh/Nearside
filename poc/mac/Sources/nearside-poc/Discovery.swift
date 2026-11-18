@@ -38,8 +38,22 @@ final class PhoneLink {
         })
     }
 
+    /// Drops the current connection. With `penalize`, that endpoint is skipped for 5 minutes so
+    /// an impostor advertising the same service can't keep us from reaching the real phone.
+    func drop(penalize: Bool) {
+        if penalize, let endpoint = currentEndpoint { penalized[endpoint] = Date().addingTimeInterval(300) }
+        connection?.cancel()
+    }
+
+    private var currentEndpoint: NWEndpoint?
+    private var penalized: [NWEndpoint: Date] = [:]
+
     private func connectIfNeeded() {
-        guard connection == nil, let endpoint = endpoints.first else { return }
+        guard connection == nil else { return }
+        let now = Date()
+        penalized = penalized.filter { $0.value > now }
+        guard let endpoint = endpoints.first(where: { penalized[$0] == nil }) else { return }
+        currentEndpoint = endpoint
         let params = NWParameters.tcp
         if let tcp = params.defaultProtocolStack.transportProtocol as? NWProtocolTCP.Options {
             tcp.noDelay = true

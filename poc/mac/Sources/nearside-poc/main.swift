@@ -133,24 +133,37 @@ func run() -> Never {
                   HMAC<SHA256>.isValidAuthenticationCode(
                       proof, authenticating: Data("nearside-phone:\(ourNonce)".utf8),
                       using: SymmetricKey(data: Data(Token.value.utf8))) else {
-                log("✗ phone failed to authenticate; ignoring it")
+                log("✗ peer failed to authenticate; dropping it")
+                link.drop(penalize: true)
                 return
             }
             authed = true
             log("✓ phone authenticated")
         case "clip":
-            guard authed else { return }
+            guard authed else { link.drop(penalize: true); return }
             guard let text = message["text"] as? String else { return }
             let sent = (message["ts"] as? NSNumber)?.int64Value ?? nowMs()
             log("phone → Mac (\(text.count) chars, ~\(nowMs() - sent) ms)")
             board.write(text)
         case "status":
-            guard authed else { return }
+            guard authed else { link.drop(penalize: true); return }
             helperUp = (message["helper"] as? Bool) ?? false
             log("phone status: helper \(helperUp ? "connected" : "not running")")
             if !helperUp { ensureHelperInBackground() }
         default:
             break
+        }
+    }
+    var connectionCount = 0
+    link.onConnect = {
+        // Handshake deadline: a peer that hasn't authenticated within 5 s is dropped and skipped.
+        connectionCount += 1
+        let thisConnection = connectionCount
+        DispatchQueue.main.asyncAfter(deadline: .now() + 5) {
+            if thisConnection == connectionCount && link.isConnected && !authed {
+                log("✗ handshake timed out; dropping peer")
+                link.drop(penalize: true)
+            }
         }
     }
     link.onDisconnect = {
