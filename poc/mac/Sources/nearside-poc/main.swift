@@ -10,6 +10,29 @@ func log(_ message: String) {
 
 func nowMs() -> Int64 { Int64(Date().timeIntervalSince1970 * 1000) }
 
+func hmacHex(_ message: String) -> String {
+    let key = SymmetricKey(data: Data(Token.value.utf8))
+    return HMAC<SHA256>.authenticationCode(for: Data(message.utf8), using: key)
+        .map { String(format: "%02x", $0) }.joined()
+}
+
+func hexBytes(_ hex: String) -> Data? {
+    guard hex.count % 2 == 0 else { return nil }
+    var data = Data()
+    var index = hex.startIndex
+    while index < hex.endIndex {
+        let next = hex.index(index, offsetBy: 2)
+        guard let byte = UInt8(hex[index..<next], radix: 16) else { return nil }
+        data.append(byte)
+        index = next
+    }
+    return data
+}
+
+func randomHex() -> String {
+    SymmetricKey(size: .bits256).withUnsafeBytes { Data($0) }.map { String(format: "%02x", $0) }.joined()
+}
+
 let usage = """
 nearside-poc: Nearside proof of concept (clipboard sync over LAN + wireless ADB helper)
 
@@ -77,6 +100,8 @@ func run() -> Never {
     _ = NSApplication.shared // Pasteboard access from a CLI needs an app instance.
     let link = PhoneLink()
     var authed = false
+    var answeredChallenge = false
+    var ourNonce = ""
     let board = PasteboardWatcher { text in
         guard link.isConnected, authed else { return }
         log("Mac → phone (\(text.count) chars)")
@@ -97,11 +122,22 @@ func run() -> Never {
     link.onMessage = { message in
         switch message["t"] as? String {
         case "challenge":
-            // Prove we know the token without sending it (see Auth.kt).
-            guard let nonce = message["nonce"] as? String else { return }
-            let key = SymmetricKey(data: Data(Token.value.utf8))
-            let mac = HMAC<SHA256>.authenticationCode(for: Data("nearside-auth:\(nonce)".utf8), using: key)
-            link.send(["t": "auth", "mac": mac.map { String(format: "%02x", $0) }.joined()])
+            // Prove we know the token without sending it, and challenge the phone back
+            // (see Auth.kt). Answer only once per connection, as the very first exchange.
+            guard !answeredChallenge, let nonce = message["nonce"] as? String else { return }
+            answeredChallenge = true
+            ourNonce = randomHex()
+            link.send(["t": "auth", "mac": hmacHex("nearside-mac:\(nonce)"), "nonce": ourNonce])
+        case "auth-ok":
+            guard !authed, !ourNonce.isEmpty, let proof = (message["mac"] as? String).flatMap(hexBytes),
+                  HMAC<SHA256>.isValidAuthenticationCode(
+                      proof, authenticating: Data("nearside-phone:\(ourNonce)".utf8),
+                      using: SymmetricKey(data: Data(Token.value.utf8))) else {
+                log("✗ phone failed to authenticate; ignoring it")
+                return
+            }
+            authed = true
+            log("✓ phone authenticated")
         case "clip":
             guard authed else { return }
             guard let text = message["text"] as? String else { return }
@@ -109,8 +145,7 @@ func run() -> Never {
             log("phone → Mac (\(text.count) chars, ~\(nowMs() - sent) ms)")
             board.write(text)
         case "status":
-            // The phone only talks to us after accepting our auth reply.
-            authed = true
+            guard authed else { return }
             helperUp = (message["helper"] as? Bool) ?? false
             log("phone status: helper \(helperUp ? "connected" : "not running")")
             if !helperUp { ensureHelperInBackground() }
@@ -120,6 +155,8 @@ func run() -> Never {
     }
     link.onDisconnect = {
         authed = false
+        answeredChallenge = false
+        ourNonce = ""
         helperUp = false
     }
     // The phone sends a status message on connect; this timer covers missed updates.

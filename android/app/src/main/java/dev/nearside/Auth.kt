@@ -28,12 +28,19 @@ object Auth {
         return bytes.joinToString("") { "%02x".format(it) }
     }
 
-    /** HMAC-SHA256(token, "nearside-auth:" + nonce), hex. The token itself never goes on the wire. */
-    fun verify(context: Context, nonce: String, response: String): Boolean {
-        val token = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(KEY, null) ?: return false
-        if (token.length < 32) return false
-        val mac = Mac.getInstance("HmacSHA256").apply { init(SecretKeySpec(token.toByteArray(), "HmacSHA256")) }
-        val expected = mac.doFinal("nearside-auth:$nonce".toByteArray()).joinToString("") { "%02x".format(it) }
+    /** Checks the Mac's proof: HMAC-SHA256(token, "nearside-mac:" + nonce), hex. */
+    fun verifyMac(context: Context, nonce: String, response: String): Boolean {
+        val expected = hmac(context, "nearside-mac:$nonce") ?: return false
         return MessageDigest.isEqual(expected.toByteArray(), response.toByteArray())
+    }
+
+    /** Our proof for the Mac's nonce. A distinct label stops a reflected Mac proof being reused. */
+    fun phoneProof(context: Context, macNonce: String): String? = hmac(context, "nearside-phone:$macNonce")
+
+    private fun hmac(context: Context, message: String): String? {
+        val token = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(KEY, null) ?: return null
+        if (token.length < 32) return null
+        val mac = Mac.getInstance("HmacSHA256").apply { init(SecretKeySpec(token.toByteArray(), "HmacSHA256")) }
+        return mac.doFinal(message.toByteArray()).joinToString("") { "%02x".format(it) }
     }
 }

@@ -123,7 +123,16 @@ class SyncService : Service() {
             out.write("${JSONObject().put("t", "challenge").put("nonce", nonce)}\n".toByteArray())
             out.flush()
             val reply = JSONObject(readBoundedLine(socket.getInputStream(), 512))
-            reply.optString("t") == "auth" && Auth.verify(this, nonce, reply.optString("mac"))
+            val macNonce = reply.optString("nonce")
+            val ok = reply.optString("t") == "auth" && macNonce.length == 64 &&
+                Auth.verifyMac(this, nonce, reply.optString("mac"))
+            // Mutual: prove ourselves to the Mac too, so a fake phone can't receive its clipboard.
+            if (ok) {
+                val proof = Auth.phoneProof(this, macNonce)
+                out.write("${JSONObject().put("t", "auth-ok").put("mac", proof)}\n".toByteArray())
+                out.flush()
+            }
+            ok
         } catch (_: Exception) {
             false
         } finally {
