@@ -1,4 +1,5 @@
 import AppKit
+import CryptoKit
 import Foundation
 
 func log(_ message: String) {
@@ -75,8 +76,9 @@ func setup(pair: String, code: String, apk: String) -> Int32 {
 func run() -> Never {
     _ = NSApplication.shared // Pasteboard access from a CLI needs an app instance.
     let link = PhoneLink()
+    var authed = false
     let board = PasteboardWatcher { text in
-        guard link.isConnected else { return }
+        guard link.isConnected, authed else { return }
         log("Mac → phone (\(text.count) chars)")
         link.send(["t": "clip", "text": text, "ts": nowMs()])
     }
@@ -94,12 +96,21 @@ func run() -> Never {
 
     link.onMessage = { message in
         switch message["t"] as? String {
+        case "challenge":
+            // Prove we know the token without sending it (see Auth.kt).
+            guard let nonce = message["nonce"] as? String else { return }
+            let key = SymmetricKey(data: Data(Token.value.utf8))
+            let mac = HMAC<SHA256>.authenticationCode(for: Data("nearside-auth:\(nonce)".utf8), using: key)
+            link.send(["t": "auth", "mac": mac.map { String(format: "%02x", $0) }.joined()])
         case "clip":
+            guard authed else { return }
             guard let text = message["text"] as? String else { return }
             let sent = (message["ts"] as? NSNumber)?.int64Value ?? nowMs()
             log("phone → Mac (\(text.count) chars, ~\(nowMs() - sent) ms)")
             board.write(text)
         case "status":
+            // The phone only talks to us after accepting our auth reply.
+            authed = true
             helperUp = (message["helper"] as? Bool) ?? false
             log("phone status: helper \(helperUp ? "connected" : "not running")")
             if !helperUp { ensureHelperInBackground() }
@@ -107,8 +118,9 @@ func run() -> Never {
             break
         }
     }
-    link.onConnect = {
-        link.send(["t": "auth", "token": Token.value])
+    link.onDisconnect = {
+        authed = false
+        helperUp = false
     }
     // The phone sends a status message on connect; this timer covers missed updates.
     Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { _ in

@@ -21,8 +21,11 @@ import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
 import org.json.JSONObject
+import java.io.ByteArrayOutputStream
 import java.io.IOException
+import java.io.InputStream
 import java.io.Writer
+import java.util.concurrent.atomic.AtomicInteger
 import java.net.ServerSocket
 import java.net.Socket
 import java.util.concurrent.Executors
@@ -44,6 +47,7 @@ class SyncService : Service() {
     companion object {
         const val PORT = 47800
         private const val CHANNEL = "sync"
+        private const val SHELL_UID = 2000 // android.os.Process.SHELL_UID (hidden)
 
         fun start(context: Context) {
             context.startForegroundService(Intent(context, SyncService::class.java))
@@ -56,6 +60,7 @@ class SyncService : Service() {
     @Volatile private var macSocket: Socket? = null
     @Volatile private var helper: Writer? = null
     @Volatile private var running = false
+    private val pendingHandshakes = AtomicInteger(0)
     private var serverSocket: ServerSocket? = null
     private var nsdListener: NsdManager.RegistrationListener? = null
     private var networkCallback: ConnectivityManager.NetworkCallback? = null
@@ -103,16 +108,29 @@ class SyncService : Service() {
     }
 
     private fun serveMac(socket: Socket) {
-        val reader = socket.getInputStream().bufferedReader()
-        // The first line must authenticate; nothing is relayed to or from an unknown peer.
+        // Challenge-response first; nothing is relayed to or from an unauthenticated peer.
+        // Bounded: ≤ 4 pending handshakes, ≤ 512-byte reply, hard 5 s deadline.
+        if (pendingHandshakes.incrementAndGet() > 4) {
+            pendingHandshakes.decrementAndGet()
+            runCatching { socket.close() }
+            return
+        }
+        val deadline = Runnable { runCatching { socket.close() } }
+        main.postDelayed(deadline, 5000)
         val authed = try {
-            socket.soTimeout = 5000
-            val first = JSONObject(reader.readLine() ?: "")
-            socket.soTimeout = 0
-            first.optString("t") == "auth" && Auth.isValid(this, first.optString("token"))
+            val nonce = Auth.newNonce()
+            val out = socket.getOutputStream()
+            out.write("${JSONObject().put("t", "challenge").put("nonce", nonce)}\n".toByteArray())
+            out.flush()
+            val reply = JSONObject(readBoundedLine(socket.getInputStream(), 512))
+            reply.optString("t") == "auth" && Auth.verify(this, nonce, reply.optString("mac"))
         } catch (_: Exception) {
             false
+        } finally {
+            main.removeCallbacks(deadline)
+            pendingHandshakes.decrementAndGet()
         }
+        val reader = socket.getInputStream().bufferedReader()
         if (!authed) {
             event("rejected unauthenticated client ${socket.inetAddress.hostAddress}")
             runCatching { socket.close() }
@@ -188,6 +206,15 @@ class SyncService : Service() {
                 Thread.sleep(2000)
                 continue
             }
+            // Abstract socket names aren't owned: any app could bind this one first. Only trust
+            // the helper we started as the shell user.
+            val peerUid = runCatching { socket.peerCredentials.uid }.getOrDefault(-1)
+            if (peerUid != SHELL_UID) {
+                event("ignoring impostor on helper socket (uid $peerUid)")
+                runCatching { socket.close() }
+                Thread.sleep(2000)
+                continue
+            }
             val writer = socket.outputStream.bufferedWriter()
             helper = writer
             Status.helperConnected = true
@@ -234,6 +261,19 @@ class SyncService : Service() {
     }
 
     // --- Utilities ------------------------------------------------------------------------
+
+    /** Reads one '\n'-terminated line, failing if it exceeds [max] bytes. Unbuffered on purpose
+     *  so no bytes past the line are consumed before the buffered reader takes over. */
+    private fun readBoundedLine(input: InputStream, max: Int): String {
+        val bytes = ByteArrayOutputStream()
+        while (true) {
+            val b = input.read()
+            if (b == -1) throw IOException("eof")
+            if (b == '\n'.code) return bytes.toString(Charsets.UTF_8.name())
+            if (bytes.size() >= max) throw IOException("line too long")
+            bytes.write(b)
+        }
+    }
 
     private fun write(target: Writer?, msg: JSONObject) {
         val w = target ?: return

@@ -5,6 +5,7 @@ import Network
 /// Messages are newline-delimited JSON objects. All callbacks arrive on the main queue.
 final class PhoneLink {
     var onConnect: (() -> Void)?
+    var onDisconnect: (() -> Void)?
     var onMessage: (([String: Any]) -> Void)?
 
     private var browser: NWBrowser?
@@ -91,8 +92,10 @@ final class PhoneLink {
     }
 
     private func reset() {
+        let wasConnected = isConnected
         isConnected = false
         connection = nil
         buffer.removeAll()
+        if wasConnected { onDisconnect?() }
     }
 }
