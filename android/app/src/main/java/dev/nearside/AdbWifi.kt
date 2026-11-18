@@ -16,13 +16,11 @@ object AdbWifi {
     fun isEnabled(context: Context) =
         Settings.Global.getInt(context.contentResolver, "adb_wifi_enabled", 0) == 1
 
+    // The default 7-day authorization expiry is kept on purpose; the Mac renews it by
+    // reconnecting over ADB periodically (see `run` in the Mac CLI).
     fun ensureEnabled(context: Context) {
-        if (!canWrite(context)) return
-        val cr = context.contentResolver
-        runCatching {
-            // 0 = never revoke the Mac's authorization (default revokes after 7 days unused).
-            Settings.Global.putLong(cr, "adb_allowed_connection_time", 0)
-            if (!isEnabled(context)) Settings.Global.putInt(cr, "adb_wifi_enabled", 1)
-        }.onFailure { android.util.Log.w("Nearside", "cannot enable wireless debugging", it) }
+        if (!canWrite(context) || isEnabled(context)) return
+        runCatching { Settings.Global.putInt(context.contentResolver, "adb_wifi_enabled", 1) }
+            .onFailure { android.util.Log.w("Nearside", "cannot enable wireless debugging", it) }
     }
 }

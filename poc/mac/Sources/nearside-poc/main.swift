@@ -67,7 +67,6 @@ func setup(pair: String, code: String, apk: String) -> Int32 {
     step("grant setup permission", Adb.shell(serial, "pm grant \(pkg) android.permission.WRITE_SECURE_SETTINGS"))
     step("grant notifications", Adb.shell(serial, "pm grant \(pkg) android.permission.POST_NOTIFICATIONS"))
     step("battery optimisation off", Adb.shell(serial, "cmd deviceidle whitelist +\(pkg)"))
-    step("never expire this Mac's authorization", Adb.shell(serial, "settings put global adb_allowed_connection_time 0"))
     // Launching once takes the app out of the "stopped" state so it receives BOOT_COMPLETED.
     step("open app", Adb.shell(serial, "am start -n \(pkg)/.MainActivity"))
     return ensureHelper() ? 0 : 1
@@ -108,9 +107,22 @@ func run() -> Never {
             break
         }
     }
+    link.onConnect = {
+        link.send(["t": "auth", "token": Token.value])
+    }
     // The phone sends a status message on connect; this timer covers missed updates.
     Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { _ in
         if link.isConnected && !helperUp { ensureHelperInBackground() }
+    }
+    // Android revokes an ADB host after 7 days without a connection. Reconnecting every 6 h
+    // keeps this Mac authorised without disabling that expiry.
+    Timer.scheduledTimer(withTimeInterval: 6 * 3600, repeats: true) { _ in
+        guard link.isConnected else { return }
+        DispatchQueue.global().async {
+            // A fresh connection is what refreshes the phone's "last connected" time.
+            if let serial = Adb.connectedWirelessSerial() { Adb.run(["disconnect", serial]) }
+            _ = Adb.ensureConnected()
+        }
     }
 
     link.start()

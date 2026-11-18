@@ -96,9 +96,6 @@ class SyncService : Service() {
         advertise()
         while (running) {
             val socket = try { server.accept() } catch (e: IOException) { continue }
-            // One Mac at a time; a new connection replaces the old one.
-            runCatching { macSocket?.close() }
-            macSocket = socket
             socket.tcpNoDelay = true
             socket.keepAlive = true
             Thread({ serveMac(socket) }, "mac-client").start()
@@ -106,13 +103,31 @@ class SyncService : Service() {
     }
 
     private fun serveMac(socket: Socket) {
+        val reader = socket.getInputStream().bufferedReader()
+        // The first line must authenticate; nothing is relayed to or from an unknown peer.
+        val authed = try {
+            socket.soTimeout = 5000
+            val first = JSONObject(reader.readLine() ?: "")
+            socket.soTimeout = 0
+            first.optString("t") == "auth" && Auth.isValid(this, first.optString("token"))
+        } catch (_: Exception) {
+            false
+        }
+        if (!authed) {
+            event("rejected unauthenticated client ${socket.inetAddress.hostAddress}")
+            runCatching { socket.close() }
+            return
+        }
+        // One Mac at a time; an authenticated connection replaces the old one.
+        runCatching { macSocket?.close() }
+        macSocket = socket
         val writer = socket.getOutputStream().bufferedWriter()
         mac = writer
         Status.macConnected = true
         event("Mac connected from ${socket.inetAddress.hostAddress}")
         sendStatus()
         try {
-            socket.getInputStream().bufferedReader().forEachLine { line ->
+            reader.forEachLine { line ->
                 val msg = runCatching { JSONObject(line) }.getOrNull() ?: return@forEachLine
                 if (msg.optString("t") == "clip") onClipFromMac(msg)
             }
@@ -181,9 +196,13 @@ class SyncService : Service() {
             try {
                 socket.inputStream.bufferedReader().forEachLine { line ->
                     val msg = runCatching { JSONObject(line) }.getOrNull() ?: return@forEachLine
-                    if (msg.optString("t") == "clip") {
-                        event("phone → Mac (${msg.optString("text").length} chars)")
-                        write(mac, msg)
+                    when (msg.optString("t")) {
+                        "hello" -> msg.optString("token").takeIf { it.isNotEmpty() }
+                            ?.let { Auth.store(this, it) }
+                        "clip" -> {
+                            event("phone → Mac (${msg.optString("text").length} chars)")
+                            write(mac, msg)
+                        }
                     }
                 }
             } catch (_: IOException) {

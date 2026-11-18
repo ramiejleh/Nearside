@@ -92,10 +92,11 @@ enum Adb {
     }
 
     /// Launches the privileged helper in its own session so it outlives this adb connection.
+    /// The token travels as an env var: only the shell user can read the helper's environment.
     static func startHelper(_ serial: String) -> Result {
         let command = """
         P=$(pm path \(appPackage) | head -1 | cut -d: -f2); \
-        CLASSPATH=$P setsid app_process / dev.nearside.helper.Main \
+        NEARSIDE_TOKEN=\(Token.value) CLASSPATH=$P setsid app_process / dev.nearside.helper.Main \
         </dev/null >/data/local/tmp/nearside-helper.log 2>&1 &
         """
         return shell(serial, command, timeout: 15)

@@ -90,7 +90,10 @@ object Main {
     private fun serve(socket: LocalSocket, clipboard: ClipboardManager, main: Handler) {
         val writer = socket.outputStream.bufferedWriter()
         client = writer
-        send(JSONObject().put("t", "hello").put("sdk", android.os.Build.VERSION.SDK_INT))
+        // The Mac's shared secret, passed in by the Mac when it launched us (see Auth.kt).
+        val hello = JSONObject().put("t", "hello").put("sdk", android.os.Build.VERSION.SDK_INT)
+        System.getenv("NEARSIDE_TOKEN")?.let { hello.put("token", it) }
+        send(hello)
         try {
             socket.inputStream.bufferedReader().forEachLine { line ->
                 val msg = runCatching { JSONObject(line) }.getOrNull() ?: return@forEachLine
