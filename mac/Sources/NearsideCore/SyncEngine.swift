@@ -117,6 +117,7 @@ public final class SyncEngine {
     }
 
     private func tick() {
+        if state == .connected, mirrorNotifications { notifications.reconcile() }
         // Only ever talk to the phone pinned during the user-run pairing flow; no discovery
         // of "whatever phone is around" (that would let a look-alike device be adopted).
         guard link.isIdle, !preparing, !isPairing, state == .searching || state == .connected,

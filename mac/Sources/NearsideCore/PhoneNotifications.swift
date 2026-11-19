@@ -21,6 +21,8 @@ final class PhoneNotifications: NSObject, UNUserNotificationCenterDelegate {
     var onAction: ((String, Int, String?) -> Void)?
 
     private static let plainCategory = "phone-notification"
+    /// Phone notifications we put in Notification Center, with when; see `reconcile()`.
+    private var shown: [String: Date] = [:]
     /// One category per distinct set of buttons; macOS needs them registered up front.
     private var categories: [String: UNNotificationCategory] = [:]
 
@@ -73,10 +75,40 @@ final class PhoneNotifications: NSObject, UNUserNotificationCenterDelegate {
             content.attachments = [attachment]
         }
         center.add(UNNotificationRequest(identifier: key, content: content, trigger: nil))
+        shown[key] = Date()
     }
 
     func remove(key: String) {
+        shown[key] = nil
         center.removeDeliveredNotifications(withIdentifiers: [key])
+    }
+
+    /// macOS only reports a dismissal for Alert-style notifications (with a Close button); with
+    /// the default Banner style, clearing one in Notification Center (✕ or Clear All) is silent.
+    /// So: anything we showed that's no longer delivered was cleared by the user. Only done when
+    /// Notification Center keeps our notifications at all, else everything would look cleared.
+    func reconcile() {
+        guard !shown.isEmpty else { return }
+        center.getNotificationSettings { [weak self] settings in
+            guard settings.notificationCenterSetting == .enabled else { return }
+            Task { @MainActor in self?.collectCleared() }
+        }
+    }
+
+    private func collectCleared() {
+        center.getDeliveredNotifications { [weak self] delivered in
+            let present = Set(delivered.map(\.request.identifier))
+            Task { @MainActor in
+                guard let self else { return }
+                let settled = Date().addingTimeInterval(-3) // just-added ones may not be listed yet
+                let cleared = self.shown.filter { !present.contains($0.key) && $0.value < settled }.map(\.key)
+                for key in cleared {
+                    self.shown[key] = nil
+                    Self.log.notice("cleared in Notification Center; dismissing on the phone")
+                    self.onDismiss?(key)
+                }
+            }
+        }
     }
 
     /// After catch-up: clear anything the phone no longer shows (dismissed while we were away).
@@ -84,11 +116,15 @@ final class PhoneNotifications: NSObject, UNUserNotificationCenterDelegate {
         center.getDeliveredNotifications { [weak self] delivered in
             let stale = delivered.map(\.request.identifier).filter { !keys.contains($0) }
             guard !stale.isEmpty else { return }
-            Task { @MainActor in self?.center.removeDeliveredNotifications(withIdentifiers: stale) }
+            Task { @MainActor in
+                stale.forEach { self?.shown[$0] = nil }
+                self?.center.removeDeliveredNotifications(withIdentifiers: stale)
+            }
         }
     }
 
     func removeAll() {
+        shown.removeAll()
         center.removeAllDeliveredNotifications()
     }
 
@@ -122,7 +158,7 @@ final class PhoneNotifications: NSObject, UNUserNotificationCenterDelegate {
                                             didReceive response: UNNotificationResponse) async {
         let key = response.notification.request.identifier
         let action = response.actionIdentifier
-        Self.log.info("notification response: \(action, privacy: .public)")
+        Self.log.notice("notification response: \(action, privacy: .public)")
         if action == UNNotificationDismissActionIdentifier {
             await dismissed(key)
         } else if action == UNNotificationDefaultActionIdentifier {
@@ -134,16 +170,20 @@ final class PhoneNotifications: NSObject, UNUserNotificationCenterDelegate {
     }
 
     private func dismissed(_ key: String) {
+        guard shown.removeValue(forKey: key) != nil else { return } // reconcile got it first
         onDismiss?(key)
     }
 
+    // Clicking removes it from Notification Center: that isn't a dismissal.
     private func opened(_ key: String) {
+        shown[key] = nil
         onOpen?(key)
     }
 
     nonisolated private static let log = Logger(subsystem: "dev.nearside.mac", category: "notifications")
 
     private func acted(_ key: String, _ index: Int, _ text: String?) {
+        shown[key] = nil
         onAction?(key, index, text)
     }
 }
