@@ -72,9 +72,18 @@ public final class SyncEngine {
         Timer.scheduledTimer(withTimeInterval: 3, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated { self?.tick() }
         }.fire()
-        Timer.scheduledTimer(withTimeInterval: 6 * 3600, repeats: true) { _ in
-            Task.detached { Adb.renewAuthorization() }
+        Timer.scheduledTimer(withTimeInterval: 6 * 3600, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated {
+                let pinned = self?.pinnedSerial
+                Task.detached { Adb.renewAuthorization(pinned: pinned) }
+            }
         }
+    }
+
+    /// Hardware serial of the one phone we work with; nothing else is ever connected to.
+    private var pinnedSerial: String? {
+        get { defaults.string(forKey: "phoneSerial") }
+        set { defaults.set(newValue, forKey: "phoneSerial") }
     }
 
     private func tick() {
@@ -82,8 +91,9 @@ public final class SyncEngine {
         // setup is skipped silently.
         guard link.isIdle, !preparing, !isPairing, state != .adbMissing else { return }
         preparing = true
+        let pinned = pinnedSerial
         Task {
-            let phone = await Task.detached { Adb.prepareHelper() }.value
+            let phone = await Task.detached { Adb.prepareHelper(pinned: pinned) }.value
             preparing = false
             guard let phone else { return }
             adopt(phone)
@@ -92,6 +102,8 @@ public final class SyncEngine {
     }
 
     private func adopt(_ phone: Adb.Phone) {
+        // An existing pairing found without our setup flow is trusted on first use.
+        if pinnedSerial == nil, let serial = phone.hardwareSerial { pinnedSerial = serial }
         if let model = phone.model {
             phoneName = model
             defaults.set(model, forKey: "phoneName")
@@ -160,6 +172,7 @@ public final class SyncEngine {
     /// Forget the phone and show the setup flow again.
     public func resetSetup() {
         defaults.set(false, forKey: "setupComplete")
+        pinnedSerial = nil
         link.disconnect()
         setupSteps = []
         state = .needsSetup
@@ -191,24 +204,32 @@ public final class SyncEngine {
             defer { isPairing = false }
             let run = runStep
 
-            guard await run(0, {
-                let r = Adb.run(["pair", hostPort.trimmingCharacters(in: .whitespaces), code.trimmingCharacters(in: .whitespaces)])
-                return r.ok && r.out.contains("Successfully paired") ? nil : Self.friendly(r.out)
-            }) else { return }
+            // Pairing tells us the phone's hardware serial; from here on only that phone is used.
+            setupSteps[0].status = .running
+            let host = hostPort.trimmingCharacters(in: .whitespaces)
+            let pin = code.trimmingCharacters(in: .whitespaces)
+            let paired = await Task.detached { Adb.run(["pair", host, pin]) }.value
+            guard paired.ok, paired.out.contains("Successfully paired"),
+                  let phoneSerial = Adb.serialFromPairOutput(paired.out) else {
+                setupSteps[0].status = .failed(Self.friendly(paired.out))
+                return
+            }
+            setupSteps[0].status = .done
+            pinnedSerial = phoneSerial
 
             guard await run(1, {
-                Adb.ensureConnected(wait: 20) == nil ? "Paired, but the phone isn't visible on the network. Keep Wireless debugging open and try again." : nil
+                Adb.ensureConnected(pinned: phoneSerial, wait: 20) == nil ? "Paired, but the phone isn't visible on the network. Keep Wireless debugging open and try again." : nil
             }) else { return }
 
             guard await run(2, {
                 guard let apkPath else { return "The app bundle is missing nearside.apk." }
-                guard let serial = Adb.connectedWirelessSerial() else { return "Lost the connection to the phone." }
+                guard let serial = Adb.ensureConnected(pinned: phoneSerial) else { return "Lost the connection to the phone." }
                 let r = Adb.run(["-s", serial, "install", "-r", apkPath], timeout: 180)
                 return r.ok ? nil : Self.friendly(r.out)
             }) else { return }
 
             guard await run(3, {
-                guard let serial = Adb.connectedWirelessSerial() else { return "Lost the connection to the phone." }
+                guard let serial = Adb.ensureConnected(pinned: phoneSerial) else { return "Lost the connection to the phone." }
                 let pkg = Adb.appPackage
                 _ = Adb.shell(serial, "pm grant \(pkg) android.permission.WRITE_SECURE_SETTINGS")
                 _ = Adb.shell(serial, "cmd deviceidle whitelist +\(pkg)")
@@ -217,8 +238,8 @@ public final class SyncEngine {
                 return nil
             }) else { return }
 
-            let phone = await Task.detached { Adb.prepareHelper() }.value
             setupSteps[4].status = .running
+            let phone = await Task.detached { Adb.prepareHelper(pinned: phoneSerial) }.value
             guard let phone else {
                 setupSteps[4].status = .failed("The clipboard helper didn't start. Make sure Wireless debugging is still on.")
                 return

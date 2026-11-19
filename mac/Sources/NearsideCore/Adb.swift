@@ -53,17 +53,25 @@ public enum Adb {
         run(["-s", serial, "shell", command], timeout: timeout)
     }
 
-    /// `ip:port` endpoints of phones advertising wireless debugging (`_adb-tls-connect._tcp`).
-    static func wirelessEndpoints() -> [String] {
+    struct Endpoint {
+        let instance: String // e.g. "adb-ABC123XYZ0001-AbCdEf" — carries the hardware serial
+        let address: String  // "ip:port"
+    }
+
+    /// Phones advertising wireless debugging (`_adb-tls-connect._tcp`).
+    static func wirelessEndpoints() -> [Endpoint] {
         run(["mdns", "services"]).out
             .split(separator: "\n")
             .filter { $0.contains("_adb-tls-connect._tcp") }
-            .compactMap { line in line.split(whereSeparator: { $0 == "\t" || $0 == " " }).last.map(String.init) }
-            .filter { $0.contains(":") }
+            .compactMap { line in
+                let parts = line.split(whereSeparator: { $0 == "\t" || $0 == " " }).map(String.init)
+                guard parts.count >= 3, parts.last!.contains(":") else { return nil }
+                return Endpoint(instance: parts[0], address: parts.last!)
+            }
     }
 
-    /// A serial already attached over the network, if any.
-    static func connectedWirelessSerial() -> String? {
+    /// Serials of devices currently attached over the network.
+    static func connectedWirelessSerials() -> [String] {
         run(["devices"]).out
             .split(separator: "\n")
             .compactMap { line -> String? in
@@ -72,17 +80,35 @@ public enum Adb {
                 let serial = String(parts[0])
                 return serial.contains(":") || serial.contains("_adb-tls-connect") ? serial : nil
             }
-            .first
     }
 
-    /// Finds the phone over mDNS and connects. Polls for up to `wait` seconds.
-    static func ensureConnected(wait: TimeInterval = 0) -> String? {
+    static func connectedWirelessSerial() -> String? { connectedWirelessSerials().first }
+
+    /// The phone's hardware serial, used to pin the one phone we paired with.
+    static func hardwareSerial(_ serial: String) -> String? {
+        let out = shell(serial, "getprop ro.serialno").out
+        return out.isEmpty ? nil : out
+    }
+
+    /// Extracts the hardware serial from `adb pair` output ("… [guid=adb-SERIAL-xxxxxx]").
+    public static func serialFromPairOutput(_ out: String) -> String? {
+        guard let range = out.range(of: #"guid=adb-([A-Za-z0-9]+)-"#, options: .regularExpression) else { return nil }
+        return String(out[range].dropFirst("guid=adb-".count).dropLast())
+    }
+
+    /// Finds the phone and connects. With `pinned`, only that phone (by hardware serial) is
+    /// accepted, so a device on the LAN advertising wireless debugging can't stand in for it.
+    /// Polls for up to `wait` seconds. Returns the adb serial to address it with.
+    static func ensureConnected(pinned: String?, wait: TimeInterval = 0) -> String? {
+        func matches(_ serial: String) -> Bool { pinned == nil || hardwareSerial(serial) == pinned }
         let deadline = Date().addingTimeInterval(wait)
         repeat {
-            if let serial = connectedWirelessSerial() { return serial }
-            for endpoint in wirelessEndpoints() {
-                let r = run(["connect", endpoint], timeout: 10)
-                if r.out.contains("connected to") { return connectedWirelessSerial() ?? endpoint }
+            if let serial = connectedWirelessSerials().first(where: matches) { return serial }
+            let endpoints = wirelessEndpoints().filter { pinned == nil || $0.instance.hasPrefix("adb-\(pinned!)-") }
+            for endpoint in endpoints {
+                let r = run(["connect", endpoint.address], timeout: 10)
+                guard r.out.contains("connected to") else { continue }
+                if let serial = connectedWirelessSerials().first(where: matches) { return serial }
             }
             if wait > 0 { Thread.sleep(forTimeInterval: 1) }
         } while Date() < deadline
@@ -94,8 +120,12 @@ public enum Adb {
         return out.isEmpty ? nil : out
     }
 
+    /// True only for a process named exactly `nearside-helper` owned by the shell user:
+    /// an app can pick a similar process name, but can never run as shell.
     static func helperRunning(_ serial: String) -> Bool {
-        shell(serial, "ps -A -o NAME").out.contains("nearside-helper")
+        shell(serial, "ps -A -o USER,NAME").out
+            .split(separator: "\n")
+            .contains { $0.split(whereSeparator: \.isWhitespace) == ["shell", "nearside-helper"] }
     }
 
     /// Launches the privileged helper in its own session so it outlives this adb connection.
@@ -116,24 +146,27 @@ public enum Adb {
 
     public struct Phone: Sendable, Equatable {
         public let serial: String
+        public let hardwareSerial: String?
         public let model: String?
     }
 
     /// Connects, starts the helper if needed, and (re)creates the tunnel. nil when unreachable.
-    static func prepareHelper() -> Phone? {
-        guard let serial = ensureConnected() else { return nil }
+    static func prepareHelper(pinned: String?) -> Phone? {
+        guard let serial = ensureConnected(pinned: pinned) else { return nil }
         if !helperRunning(serial) {
             _ = startHelper(serial)
             Thread.sleep(forTimeInterval: 1.5)
             guard helperRunning(serial) else { return nil }
         }
         guard forward(serial).ok else { return nil }
-        return Phone(serial: serial, model: model(serial))
+        return Phone(serial: serial, hardwareSerial: hardwareSerial(serial), model: model(serial))
     }
 
     /// Android revokes an ADB host after 7 days without a fresh connection; reconnecting renews it.
-    static func renewAuthorization() {
-        if let serial = connectedWirelessSerial() { run(["disconnect", serial]) }
-        _ = ensureConnected()
+    static func renewAuthorization(pinned: String?) {
+        if let serial = connectedWirelessSerials().first(where: { pinned == nil || hardwareSerial($0) == pinned }) {
+            run(["disconnect", serial])
+        }
+        _ = ensureConnected(pinned: pinned)
     }
 }

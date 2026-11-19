@@ -14,7 +14,10 @@ import java.io.IOException
 import java.io.InputStream
 import java.io.Writer
 import java.security.MessageDigest
+import java.security.SecureRandom
 import java.util.concurrent.Executors
+import javax.crypto.Mac
+import javax.crypto.spec.SecretKeySpec
 import kotlin.system.exitProcess
 
 /**
@@ -25,8 +28,8 @@ import kotlin.system.exitProcess
  * It runs as the shell user and watches the clipboard. The Mac reaches it through
  * `adb forward tcp:<port> localabstract:nearside-helper`: the link rides adb's TLS and is
  * never exposed on the LAN. Apps can't connect at all (SELinux denies untrusted_app →
- * shell sockets), and we additionally require the peer to be adbd (shell uid) plus the token.
- * Protocol: newline-delimited JSON. Mac first sends `{"t":"auth","token":…}`; afterwards
+ * shell sockets), and we additionally require the peer to be adbd (shell uid) plus a mutual
+ * token proof (see [serve]). Protocol: newline-delimited JSON; after the handshake
  * `{"t":"clip","text":"…","ts":<epoch ms>}` flows both ways.
  */
 object Main {
@@ -96,14 +99,31 @@ object Main {
         }
     }
 
+    /**
+     * Mutual challenge-response; the token itself never crosses the link.
+     *   Mac → {"t":"hello-mac","nonce":Nm}
+     *   us  → {"t":"challenge","proof":HMAC(token,"nearside-helper:"+Nm),"nonce":Nh}
+     *   Mac → {"t":"auth","proof":HMAC(token,"nearside-mac:"+Nh)}
+     * The Mac sends nothing sensitive until it has verified our proof, so an app squatting
+     * our socket name learns nothing.
+     */
     private fun serve(socket: LocalSocket, token: String, clipboard: ClipboardManager, main: Handler) {
         try {
             socket.soTimeout = 5000
+            val out = socket.outputStream
+            val hello = JSONObject(readBoundedLine(socket.inputStream, 512))
+            val macNonce = hello.optString("nonce")
+            if (hello.optString("t") != "hello-mac" || macNonce.length != 64) throw IOException("bad hello")
+            val ourNonce = randomHex()
+            val challenge = JSONObject().put("t", "challenge")
+                .put("proof", hmacHex(token, "nearside-helper:$macNonce")).put("nonce", ourNonce)
+            out.write("$challenge\n".toByteArray())
+            out.flush()
             val auth = JSONObject(readBoundedLine(socket.inputStream, 512))
-            val ok = auth.optString("t") == "auth" &&
-                MessageDigest.isEqual(token.toByteArray(), auth.optString("token").toByteArray())
-            if (!ok) {
-                Log.d("rejecting client with bad token")
+            val expected = hmacHex(token, "nearside-mac:$ourNonce")
+            if (auth.optString("t") != "auth" ||
+                !MessageDigest.isEqual(expected.toByteArray(), auth.optString("proof").toByteArray())) {
+                Log.d("rejecting client that failed authentication")
                 socket.close()
                 return
             }
@@ -149,6 +169,14 @@ object Main {
             }
         }
     }
+
+    private fun hmacHex(key: String, message: String): String {
+        val mac = Mac.getInstance("HmacSHA256").apply { init(SecretKeySpec(key.toByteArray(), "HmacSHA256")) }
+        return mac.doFinal(message.toByteArray()).joinToString("") { "%02x".format(it) }
+    }
+
+    private fun randomHex(): String =
+        ByteArray(32).also { SecureRandom().nextBytes(it) }.joinToString("") { "%02x".format(it) }
 
     /** One '\n'-terminated line of at most [max] bytes; unbuffered so nothing past it is consumed. */
     private fun readBoundedLine(input: InputStream, max: Int): String {

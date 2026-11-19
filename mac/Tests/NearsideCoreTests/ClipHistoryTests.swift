@@ -2,6 +2,14 @@ import Foundation
 import Testing
 @testable import NearsideCore
 
+@Suite struct AdbParsingTests {
+    @Test func extractsHardwareSerialFromPairOutput() {
+        let out = "Successfully paired to 192.168.0.76:37197 [guid=adb-ABC123XYZ0001-AbCdEf]"
+        #expect(Adb.serialFromPairOutput(out) == "ABC123XYZ0001")
+        #expect(Adb.serialFromPairOutput("Failed: Wrong password or connection was dropped.") == nil)
+    }
+}
+
 @Suite struct ClipHistoryTests {
     @Test func addsNewestFirst() {
         var history = ClipHistory()
