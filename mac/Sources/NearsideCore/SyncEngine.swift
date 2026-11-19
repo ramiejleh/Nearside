@@ -451,11 +451,11 @@ public final class SyncEngine {
             let host = hostPort.trimmingCharacters(in: .whitespaces)
             let pin = code.trimmingCharacters(in: .whitespaces)
             let phoneSerial: String
+            let pairedHost: String
             switch await Task.detached(operation: { Adb.pair(hostPort: host, code: pin) }).value {
             case .success(let paired):
                 phoneSerial = paired.serial
-                // The key the code authenticated: from now on only this phone is accepted.
-                Native.pinnedKey = paired.key
+                pairedHost = paired.host
             case .failure(let error):
                 setupSteps[0].status = .failed(error.message)
                 return
@@ -464,7 +464,12 @@ public final class SyncEngine {
             pinnedSerial = phoneSerial
 
             guard await run(1, {
-                Adb.ensureConnected(pinned: phoneSerial, wait: 20) == nil ? "Paired, but couldn't connect. Keep Wireless debugging open and try again." : nil
+                // Pin the phone's connection key now, seconds after the code-checked pairing.
+                Native.lastPinningConflict = false
+                if Adb.ensureConnected(pinned: phoneSerial, wait: 20, pinningAt: pairedHost) != nil { return nil }
+                return Native.lastPinningConflict
+                    ? "More than one device on this network claims to be your phone. For your safety, nothing was trusted. Try again on a network you trust."
+                    : "Paired, but couldn't connect. Keep Wireless debugging open and try again."
             }) else { return }
 
             guard await run(2, {

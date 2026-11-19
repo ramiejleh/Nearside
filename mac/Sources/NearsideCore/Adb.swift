@@ -35,9 +35,9 @@ public enum Adb {
         return out.isEmpty ? nil : out
     }
 
-    /// Pairs with the phone's "Pair device" screen. On success: its serial and its TLS key
-    /// (authenticated by the code), to pin.
-    static func pair(hostPort: String, code: String) -> Swift.Result<(serial: String, key: Data), PairError> {
+    /// Pairs with the phone's "Pair device" screen. On success: its serial (from the GUID in
+    /// the code-authenticated reply) and the IPv4 address the pairing reached.
+    static func pair(hostPort: String, code: String) -> Swift.Result<(serial: String, host: String), PairError> {
         let parts = hostPort.split(separator: ":")
         guard parts.count == 2, let port = UInt16(parts[1]) else {
             return .failure(PairError(message: "Couldn't reach the phone. Check the IP address and port."))
@@ -46,9 +46,12 @@ public enum Adb {
             return .failure(PairError(message: "Couldn't create this Mac's key."))
         }
         do {
-            let result = try Pairing.pair(host: String(parts[0]), port: port, code: code, key: key, publicKey: publicKey)
+            guard let host = Native.ipv4(String(parts[0])) else {
+                return .failure(PairError(message: "Couldn't reach the phone. Check the IP address and port."))
+            }
+            let result = try Pairing.pair(host: host, port: port, code: code, key: key, publicKey: publicKey)
             guard let serial = result.serial else { return .failure(PairError(message: "The phone sent an unexpected reply.")) }
-            return .success((serial, result.peerKeySHA256))
+            return .success((serial, host))
         } catch Pairing.Failure.wrongCode {
             return .failure(PairError(message: "The pairing code didn't work. Codes expire quickly; tap \"Pair device with pairing code\" again for a new one."))
         } catch AdbError.connect {
@@ -62,10 +65,11 @@ public enum Adb {
 
     /// Connects (or reuses the connection) to the pinned phone. Returns its hardware serial,
     /// which callers pass back in as `serial`. Polls for up to `wait` seconds.
-    static func ensureConnected(pinned: String, wait: TimeInterval = 0) -> String? {
+    static func ensureConnected(pinned: String, wait: TimeInterval = 0, pinningAt pairedHost: String? = nil) -> String? {
         let deadline = Date().addingTimeInterval(wait)
         repeat {
-            if Native.connect(pinned: pinned) != nil { return pinned }
+            if Native.connect(pinned: pinned, pinningAt: pairedHost) != nil { return pinned }
+            if Native.lastPinningConflict { return nil }
             if wait > 0 { Thread.sleep(forTimeInterval: 1) }
         } while Date() < deadline
         return nil

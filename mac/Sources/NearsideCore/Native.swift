@@ -5,14 +5,16 @@ import NativeAdb
 /// The one connection to the pinned phone, made with our own adb client.
 ///
 /// Identity: the phone is found by its hardware serial (in its mDNS name), but it's only
-/// trusted by its TLS key, pinned in UserDefaults "phoneKey". That key comes from the pairing
-/// exchange, where SPAKE2 binds it to the code shown on the phone, so a look-alike device on
-/// the network can't get pinned and is refused before any adb data flows. Nothing is ever
-/// trusted on first connect.
+/// trusted by its TLS key, pinned in UserDefaults. adb's protocol never links the pairing to
+/// the phone's connection key (the pairing session uses a different key: verified on a Pixel 9
+/// Pro, Android 17), so the key is pinned in the setup flow, seconds after the code-checked
+/// pairing, only from a device at the IP address the pairing reached, and only if exactly one
+/// device there answers as that phone. From then on any other key
+/// is refused before adb data flows. Nothing is ever pinned outside the setup flow.
 enum Native {
     private static let lock = NSLock()
     nonisolated(unsafe) private static var connection: AdbConnection?
-    /// Only keys from the pairing exchange live here. ("phoneKey" held keys learned on first
+    /// Only keys pinned in the setup flow live here. ("phoneKey" held keys learned on any first
     /// connect by an earlier version; those are ignored, so such setups pair once more.)
     private static let pinKey = "pairedPhoneKey"
 
@@ -52,10 +54,14 @@ enum Native {
         return try? key.androidPublicKey(comment: "\(NSUserName())@\(name)")
     }
 
-    /// Reuses the live connection or makes a new one to the pinned phone. Never without a pin.
-    static func connect(pinned serial: String) -> AdbConnection? {
+    /// Reuses the live connection or makes a new one to the pinned phone. Never without a pin,
+    /// except `pinning` (only the setup flow, right after pairing): then it pins the key of the
+    /// one device that answers as the phone, and refuses if several do with different keys.
+    static func connect(pinned serial: String, pinningAt pairedHost: String? = nil) -> AdbConnection? {
         if let live = current() { return live }
-        guard let key = key(), let expected = pinnedKey else { return nil }
+        guard let key = key() else { return nil }
+        if let pairedHost { return pinFirstKey(serial: serial, at: pairedHost, key: key) }
+        guard let expected = pinnedKey else { return nil }
 
         for service in Discovery.browse(Discovery.connectType) where service.name.hasPrefix("adb-\(serial)-") {
             guard let host = ipv4(service.host) else { continue }
@@ -81,6 +87,36 @@ enum Native {
         }
         return nil
     }
+
+    /// Setup only: connect to every device claiming to be this phone *at the address the
+    /// code-checked pairing reached*; pin only if exactly one key answers there.
+    private static func pinFirstKey(serial: String, at pairedHost: String, key: AdbKey) -> AdbConnection? {
+        var answers: [AdbConnection] = []
+        for service in Discovery.browse(Discovery.connectType) where service.name.hasPrefix("adb-\(serial)-") {
+            guard let host = ipv4(service.host), host == pairedHost,
+                  let adb = try? AdbConnection.connect(host: host, port: service.port, key: key, expectedPeerKey: nil) else { continue }
+            if (try? adb.shell("getprop ro.serialno").output) == serial { answers.append(adb) } else { adb.close() }
+        }
+        let keys = Set(answers.map(\.peerKeySHA256))
+        guard keys.count == 1, let chosen = answers.first else {
+            if keys.count > 1 {
+                NSLog("Nearside: \(keys.count) devices claim to be the phone with different keys; not pinning any")
+                lastPinningConflict = true
+            }
+            answers.forEach { $0.close() }
+            return nil
+        }
+        answers.dropFirst().forEach { $0.close() }
+        pinnedKey = chosen.peerKeySHA256
+        lock.withLock {
+            connection?.close()
+            connection = chosen
+        }
+        return chosen
+    }
+
+    /// Set when setup saw more than one device claiming the phone's identity.
+    nonisolated(unsafe) static var lastPinningConflict = false
 
     /// "ip:port" for a discovered service (what `adb pair` wants).
     static func address(_ service: Discovery.Service) -> String? {
