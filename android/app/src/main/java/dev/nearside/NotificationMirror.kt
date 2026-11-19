@@ -1,6 +1,7 @@
 package dev.nearside
 
 import android.app.Notification
+import android.app.PendingIntent
 import android.app.RemoteInput
 import android.content.Intent
 import android.graphics.Bitmap
@@ -25,6 +26,7 @@ import java.io.ByteArrayOutputStream
  *   → {"t":"notif-active","keys":[…]}      after catch-up: what's still showing
  *   ← {"t":"notif-dismiss","key"}          dismissed on the Mac
  *   ← {"t":"notif-action","key","i","text"?}  button (or reply with text) clicked on the Mac
+ *   ← {"t":"notif-open","key"}             notification clicked on the Mac: open it here
  * Access is granted by the Mac over adb (`cmd notification allow_listener`), so there's no
  * settings screen to visit, and turning mirroring off on the Mac revokes it again.
  * All state is touched on the main thread only.
@@ -154,12 +156,31 @@ class NotificationMirror : NotificationListenerService() {
                     inputs.forEach { putCharSequence(it.resultKey, text) }
                 })
                 quietUntil[key] = SystemClock.uptimeMillis() + QUIET_AFTER_ACTION_MS
-                action.actionIntent.send(this, 0, fill)
+                fire(action.actionIntent, fill)
             } else {
-                action.actionIntent.send()
+                fire(action.actionIntent, null)
             }
             Status.lastEvent = "ran \"${action.title}\" from the Mac"
         }.onFailure { Status.lastEvent = "action failed: ${it.message}" }
+    }
+
+    /** Opens the notification's target on the phone, as tapping it would. */
+    fun open(key: String) = main.post {
+        val n = active[key] ?: return@post
+        val target = n.contentIntent ?: return@post
+        runCatching { fire(target, null) }
+            .onFailure { Status.lastEvent = "open failed: ${it.message}" }
+        // Tapping an auto-cancel notification removes it; do the same.
+        if (n.flags and Notification.FLAG_AUTO_CANCEL != 0) {
+            delivered.remove(key) // the Mac already removed its copy
+            runCatching { cancelNotification(key) }
+        }
+    }
+
+    /** Through the helper when linked (it may open activities from the background); else directly. */
+    private fun fire(intent: PendingIntent, fillIn: Intent?) {
+        val viaHelper = runCatching { HelperConnection.helper?.sendIntent(intent, fillIn) == true }.getOrDefault(false)
+        if (!viaHelper) intent.send(this, 0, fillIn)
     }
 
     private fun usableActions(n: Notification): List<Notification.Action> =

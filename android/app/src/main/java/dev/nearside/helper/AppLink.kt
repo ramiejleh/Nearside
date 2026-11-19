@@ -1,7 +1,10 @@
 package dev.nearside.helper
 
 import android.annotation.SuppressLint
+import android.app.ActivityOptions
+import android.app.PendingIntent
 import android.content.AttributionSource
+import android.content.Intent
 import android.content.pm.ProviderInfo
 import android.os.Binder
 import android.os.Build
@@ -53,6 +56,22 @@ object AppLink {
         override fun isMacConnected(): Boolean {
             if (Binder.getCallingUid() != appUid) throw SecurityException("not the Nearside app")
             return macConnected()
+        }
+
+        override fun sendIntent(intent: PendingIntent, fillIn: Intent?): Boolean {
+            if (Binder.getCallingUid() != appUid) throw SecurityException("not the Nearside app")
+            val options = when {
+                Build.VERSION.SDK_INT >= 36 -> ActivityOptions.makeBasic()
+                    .setPendingIntentBackgroundActivityStartMode(ActivityOptions.MODE_BACKGROUND_ACTIVITY_START_ALLOW_ALWAYS)
+                    .toBundle()
+                Build.VERSION.SDK_INT >= 34 -> ActivityOptions.makeBasic()
+                    .setPendingIntentBackgroundActivityStartMode(@Suppress("DEPRECATION") ActivityOptions.MODE_BACKGROUND_ACTIVITY_START_ALLOWED)
+                    .toBundle()
+                else -> null
+            }
+            return runCatching {
+                intent.send(FakeContext.instance, 0, fillIn, null, null, null, options)
+            }.onFailure { Log.d("sendIntent failed: $it") }.isSuccess
         }
     }
 

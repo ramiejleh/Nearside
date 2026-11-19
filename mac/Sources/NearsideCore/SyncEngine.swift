@@ -84,6 +84,9 @@ public final class SyncEngine {
         notifications.onDismiss = { [weak self] key in
             self?.link.send(["t": "notif-dismiss", "key": key])
         }
+        notifications.onOpen = { [weak self] key in
+            self?.link.send(["t": "notif-open", "key": key])
+        }
         notifications.onAction = { [weak self] key, index, text in
             var message: [String: Any] = ["t": "notif-action", "key": key, "i": index]
             if let text { message["text"] = text }

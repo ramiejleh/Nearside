@@ -1,5 +1,6 @@
 import CryptoKit
 import Foundation
+import OSLog
 import UserNotifications
 
 /// Shows the phone's notifications as macOS notifications, one per phone notification key
@@ -14,6 +15,8 @@ final class PhoneNotifications: NSObject, UNUserNotificationCenterDelegate {
     }
 
     var onDismiss: ((String) -> Void)?
+    /// Clicked: open it on the phone.
+    var onOpen: ((String) -> Void)?
     /// (phone notification key, action index, typed reply text if it was a reply)
     var onAction: ((String, Int, String?) -> Void)?
 
@@ -119,8 +122,11 @@ final class PhoneNotifications: NSObject, UNUserNotificationCenterDelegate {
                                             didReceive response: UNNotificationResponse) async {
         let key = response.notification.request.identifier
         let action = response.actionIdentifier
+        Self.log.info("notification response: \(action, privacy: .public)")
         if action == UNNotificationDismissActionIdentifier {
             await dismissed(key)
+        } else if action == UNNotificationDefaultActionIdentifier {
+            await opened(key)
         } else if action.hasPrefix("a"), let index = Int(action.dropFirst()) {
             let text = (response as? UNTextInputNotificationResponse)?.userText
             await acted(key, index, text)
@@ -130,6 +136,12 @@ final class PhoneNotifications: NSObject, UNUserNotificationCenterDelegate {
     private func dismissed(_ key: String) {
         onDismiss?(key)
     }
+
+    private func opened(_ key: String) {
+        onOpen?(key)
+    }
+
+    nonisolated private static let log = Logger(subsystem: "dev.nearside.mac", category: "notifications")
 
     private func acted(_ key: String, _ index: Int, _ text: String?) {
         onAction?(key, index, text)

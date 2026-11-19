@@ -60,6 +60,7 @@ object HelperConnection {
             // Health check for the whole Mac → helper → app → helper → Mac path.
             "ping" -> send(JSONObject().put("t", "pong").put("id", msg.opt("id")))
             "notif-dismiss" -> NotificationMirror.instance?.dismiss(msg.optString("key"))
+            "notif-open" -> NotificationMirror.instance?.open(msg.optString("key"))
             "notif-action" -> NotificationMirror.instance?.runAction(
                 msg.optString("key"),
                 msg.optInt("i", -1),
