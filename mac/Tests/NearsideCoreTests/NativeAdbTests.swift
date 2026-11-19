@@ -17,10 +17,10 @@ struct NativeAdbLiveTests {
     @Test func connectsAndRunsShellCommands() throws {
         let key = try AdbKey(pemFile: AdbKey.defaultPath)
         let started = Date()
-        let adb = try AdbConnection.connect(host: host, port: port, key: key)
+        let adb = try AdbConnection.connect(host: host, port: port, key: key, expectedPeerKey: nil)
         defer { adb.close() }
         print("connected in \(Int(Date().timeIntervalSince(started) * 1000)) ms; model=\(adb.property("ro.product.model") ?? "?")")
-        #expect(adb.peerKeySHA256?.count == 32)
+        #expect(adb.peerKeySHA256.count == 32)
 
         let serial = try adb.shell("getprop ro.serialno")
         #expect(serial.ok)
@@ -34,16 +34,52 @@ struct NativeAdbLiveTests {
 
     @Test func phoneKeyIsStableAcrossConnections() throws {
         let key = try AdbKey(pemFile: AdbKey.defaultPath)
-        let a = try AdbConnection.connect(host: host, port: port, key: key)
+        let a = try AdbConnection.connect(host: host, port: port, key: key, expectedPeerKey: nil)
         let first = a.peerKeySHA256
         a.close()
-        let b = try AdbConnection.connect(host: host, port: port, key: key)
-        defer { b.close() }
-        #expect(first != nil && first == b.peerKeySHA256)
+        // Pinned to the right key: connects. Pinned to any other key: refused before adb data.
+        let b = try AdbConnection.connect(host: host, port: port, key: key, expectedPeerKey: first)
+        b.close()
+        var other = first
+        other[other.startIndex] ^= 0xFF
+        #expect(throws: AdbError.self) {
+            try AdbConnection.connect(host: host, port: port, key: key, expectedPeerKey: other)
+        }
+    }
+
+    @Test func discoversThePhoneOverMDNS() {
+        let services = Discovery.browse(Discovery.connectType)
+        print("mDNS: \(services.map { "\($0.host):\($0.port)" })")
+        #expect(services.contains { $0.port == port })
+    }
+
+    @Test func pushPullAndBack() throws {
+        let adb = try AdbConnection.connect(host: host, port: port, key: try AdbKey(pemFile: AdbKey.defaultPath), expectedPeerKey: nil)
+        defer { adb.close() }
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let original = dir.appendingPathComponent("in.bin")
+        var bytes = [UInt8](repeating: 0, count: 5_000_123)
+        for i in bytes.indices { bytes[i] = UInt8(truncatingIfNeeded: i &* 31 &+ 7) }
+        try Data(bytes).write(to: original)
+        let remote = "/data/local/tmp/nearside-native-test.bin"
+        let t0 = Date()
+        try adb.push(original, to: remote)
+        let t1 = Date()
+        let back = dir.appendingPathComponent("out.bin")
+        try adb.pull(remote, to: back)
+        let t2 = Date()
+        print("push 5 MB: \(Int(t1.timeIntervalSince(t0) * 1000)) ms, pull: \(Int(t2.timeIntervalSince(t1) * 1000)) ms")
+        #expect(try Data(contentsOf: back) == Data(bytes))
+        let mtime = try adb.shell("stat -c %Y \(remote)").output
+        #expect(abs((Double(mtime) ?? 0) - Date().timeIntervalSince1970) < 120) // "now", not the Mac's date
+        _ = try adb.shell("rm \(remote)")
+        #expect(throws: AdbError.self) { try adb.pull("/nonexistent/file", to: dir.appendingPathComponent("x")) }
     }
 
     @Test func manyStreamsAtOnce() throws {
-        let adb = try AdbConnection.connect(host: host, port: port, key: try AdbKey(pemFile: AdbKey.defaultPath))
+        let adb = try AdbConnection.connect(host: host, port: port, key: try AdbKey(pemFile: AdbKey.defaultPath), expectedPeerKey: nil)
         defer { adb.close() }
         let results = UnsafeMutableBufferPointer<Int32>.allocate(capacity: 8)
         defer { results.deallocate() }
@@ -51,5 +87,18 @@ struct NativeAdbLiveTests {
             results[i] = (try? adb.shell("exit \(i)").exitCode) ?? -1
         }
         #expect(Array(results) == Array(0..<8))
+    }
+}
+
+extension NativeAdbLiveTests {
+    /// Reinstalls the Nearside phone app (opt in separately: NEARSIDE_INSTALL_APK=path).
+    @Test(.enabled(if: ProcessInfo.processInfo.environment["NEARSIDE_INSTALL_APK"] != nil))
+    func installsAnApk() throws {
+        let adb = try AdbConnection.connect(host: host, port: port, key: try AdbKey(pemFile: AdbKey.defaultPath), expectedPeerKey: nil)
+        defer { adb.close() }
+        let t0 = Date()
+        let result = try adb.install(URL(fileURLWithPath: ProcessInfo.processInfo.environment["NEARSIDE_INSTALL_APK"]!))
+        print("install: \(result) in \(Int(Date().timeIntervalSince(t0) * 1000)) ms")
+        #expect(result.hasPrefix("Success"))
     }
 }

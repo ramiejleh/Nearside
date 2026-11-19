@@ -9,6 +9,7 @@ public enum AdbError: Error, CustomStringConvertible, Sendable {
     case protocolError(String)
     case tls(String)
     case refused(String) // OPEN rejected: unknown service, etc.
+    case wrongPhone      // its TLS key isn't the one we pinned
 
     public var description: String {
         switch self {
@@ -18,6 +19,7 @@ public enum AdbError: Error, CustomStringConvertible, Sendable {
         case .protocolError(let m): "protocol error: \(m)"
         case .tls(let m): "TLS: \(m)"
         case .refused(let m): "refused: \(m)"
+        case .wrongPhone: "this isn't the paired phone (its key doesn't match)"
         }
     }
 }
@@ -112,9 +114,12 @@ final class TLSChannel: Channel, @unchecked Sendable {
     private let ssl: OpaquePointer // SSL*
     private let lock = NSLock()
     /// SHA-256 of the phone's TLS public key, for pinning (stock adb accepts any).
-    let peerKeySHA256: Data?
+    let peerKeySHA256: Data
 
-    init(socket: TCPSocket, key: AdbKey) throws {
+    /// `expectedPeerKey`: the pinned SHA-256 of the phone's public key. A mismatch, or no
+    /// certificate at all, fails before any adb data is exchanged. nil only when pinning for
+    /// the first time (the caller then stores `peerKeySHA256`).
+    init(socket: TCPSocket, key: AdbKey, expectedPeerKey: Data?) throws {
         self.socket = socket
         guard let ctx = SSL_CTX_new(TLS_method()) else { throw AdbError.tls("SSL_CTX_new") }
         SSL_CTX_set_min_proto_version(ctx, UInt16(TLS1_3_VERSION))
@@ -123,7 +128,7 @@ final class TLSChannel: Channel, @unchecked Sendable {
             SSL_CTX_free(ctx)
             throw AdbError.tls("can't use the adb key")
         }
-        // Accept the phone's self-signed certificate here; the caller pins its key instead.
+        // The phone's certificate is self-signed, so no CA check: it's pinned by key below.
         SSL_CTX_set_custom_verify(ctx, SSL_VERIFY_PEER) { _, _ in ssl_verify_ok }
         guard let ssl = SSL_new(ctx) else {
             SSL_CTX_free(ctx)
@@ -147,12 +152,16 @@ final class TLSChannel: Channel, @unchecked Sendable {
             SSL_CTX_free(ctx)
             throw AdbError.tls("the phone rejected this Mac's key (\(reason)). Pair again.")
         }
-        if let peer = SSL_get_peer_certificate(ssl) {
-            peerKeySHA256 = publicKeySHA256(peer)
-            X509_free(peer)
-        } else {
-            peerKeySHA256 = nil
+        let peerKey: Data? = SSL_get_peer_certificate(ssl).flatMap { peer in
+            defer { X509_free(peer) }
+            return publicKeySHA256(peer)
         }
+        guard let peerKey, expectedPeerKey == nil || peerKey == expectedPeerKey else {
+            SSL_free(ssl)
+            SSL_CTX_free(ctx)
+            throw AdbError.wrongPhone
+        }
+        peerKeySHA256 = peerKey
         let flags = fcntl(socket.fd, F_GETFL)
         _ = fcntl(socket.fd, F_SETFL, flags | O_NONBLOCK)
     }

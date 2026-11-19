@@ -49,7 +49,7 @@ public final class AdbConnection: @unchecked Sendable {
     /// e.g. "device::ro.product.name=caiman;ro.product.model=Pixel 9 Pro;…;features=…"
     public let banner: String
     /// SHA-256 of the phone's TLS public key: pin it to know it's really this phone.
-    public let peerKeySHA256: Data?
+    public let peerKeySHA256: Data
     let channel: Channel
     let peerMaxPayload: Int
 
@@ -58,8 +58,10 @@ public final class AdbConnection: @unchecked Sendable {
     private var nextID: UInt32 = 1
     private var dead = false
 
-    /// Connects, upgrades to TLS with `key` and waits for the phone's CNXN.
-    public static func connect(host: String, port: UInt16, key: AdbKey, timeout: TimeInterval = 10) throws -> AdbConnection {
+    /// Connects, upgrades to TLS with `key` and waits for the phone's CNXN. `expectedPeerKey`
+    /// pins the phone (see TLSChannel); pass nil only to learn the key the first time.
+    public static func connect(host: String, port: UInt16, key: AdbKey, expectedPeerKey: Data?,
+                               timeout: TimeInterval = 10) throws -> AdbConnection {
         let socket = try TCPSocket(host: host, port: port, timeout: timeout)
         var tv = timeval(tv_sec: Int(timeout), tv_usec: 0) // handshake reads only; cleared below
         setsockopt(socket.fd, SOL_SOCKET, SO_RCVTIMEO, &tv, socklen_t(MemoryLayout<timeval>.size))
@@ -72,7 +74,7 @@ public final class AdbConnection: @unchecked Sendable {
                 ? "the phone wants legacy RSA auth (not wireless debugging)" : "expected STLS")
         }
         try socket.write(Packet(command: Packet.stls, arg0: 0x0100_0000, arg1: 0, payload: Data()).encoded())
-        let tls = try TLSChannel(socket: socket, key: key)
+        let tls = try TLSChannel(socket: socket, key: key, expectedPeerKey: expectedPeerKey)
 
         let hello = try Packet.read(from: tls, maxPayload: maxPayload)
         guard hello.command == Packet.cnxn else { throw AdbError.protocolError("expected CNXN after TLS") }
@@ -85,7 +87,7 @@ public final class AdbConnection: @unchecked Sendable {
         return connection
     }
 
-    init(channel: Channel, banner: String, peerMaxPayload: Int, peerKeySHA256: Data?) {
+    init(channel: Channel, banner: String, peerMaxPayload: Int, peerKeySHA256: Data) {
         self.channel = channel
         self.banner = banner
         self.peerMaxPayload = min(max(peerMaxPayload, 4096), Self.maxPayload)
