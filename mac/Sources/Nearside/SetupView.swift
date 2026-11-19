@@ -25,7 +25,7 @@ struct SetupView: View {
                     Instruction(number: 2, text: "Open **Settings → System → Developer options → Wireless debugging**, turn it on and allow this Wi-Fi network.")
                     Instruction(number: 3, text: useCode
                         ? "Tap **Pair device with pairing code** and type what it shows below."
-                        : "Tap **Pair device with QR code** and scan this code.")
+                        : "In Wireless debugging, tap **Pair device with QR code** and scan this code with the scanner that opens. (The Camera app can't read it.)")
                 }
 
                 if useCode {
