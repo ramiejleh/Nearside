@@ -16,6 +16,7 @@ final class DropShelfController {
     private var dragHasFiles = false
     private var watch: Timer?
     private var hiding = false
+    private var generation = 0 // a fade-out must not hide a shelf that was shown again meanwhile
 
     /// How close to the top of the screen a file drag must get before the shelf appears.
     private let reveal: CGFloat = 220
@@ -75,6 +76,7 @@ final class DropShelfController {
         model.phoneName = engine.phoneName
         guard !panel.isVisible else { return }
         hiding = false
+        generation += 1
         watch?.invalidate()
         watch = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated { self?.check() }
@@ -97,8 +99,11 @@ final class DropShelfController {
         watch = nil
         guard let panel, panel.isVisible else { return }
         model.hovering = false
+        let shown = generation
         NSAnimationContext.runAnimationGroup({ $0.duration = 0.15; panel.animator().alphaValue = 0 }) {
-            MainActor.assumeIsolated { panel.orderOut(nil) }
+            MainActor.assumeIsolated { [weak self] in
+                if self?.generation == shown { panel.orderOut(nil) }
+            }
         }
     }
 
