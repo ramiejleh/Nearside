@@ -12,7 +12,7 @@ import dev.nearside.link.HelperConnection
 class ShareActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        val uris = sharedUris(intent)
+        val uris = sharedUris(intent).filter(::isForeign)
         val helper = HelperConnection.helper
         val message = when {
             uris.isEmpty() -> "Nothing to send"
@@ -33,6 +33,17 @@ class ShareActivity : Activity() {
         android.util.Log.i("Nearside", "share: $message")
         Toast.makeText(this, message, Toast.LENGTH_SHORT).show()
         finish()
+    }
+
+    /**
+     * Only content shared *by another app*. A file:// path or one of our own providers would
+     * let any app make us read and send Nearside's private files (a confused deputy).
+     */
+    private fun isForeign(uri: Uri): Boolean {
+        if (uri.scheme != "content") return false
+        val authority = uri.authority ?: return false
+        val owner = runCatching { packageManager.resolveContentProvider(authority, 0)?.packageName }.getOrNull()
+        return owner != null && owner != packageName
     }
 
     @Suppress("DEPRECATION")

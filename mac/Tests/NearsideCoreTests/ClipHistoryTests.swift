@@ -143,3 +143,16 @@ import Testing
         #expect(Adb.shellQuote("it's.txt") == "'it'\\''s.txt'")
     }
 }
+
+@Suite struct QuarantineTests {
+    @Test func receivedFilesGetTheQuarantineFlag() throws {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("q-\(UUID().uuidString).command")
+        try Data("echo hi".utf8).write(to: url)
+        defer { try? FileManager.default.removeItem(at: url) }
+        SyncEngine.quarantine(url)
+        var buffer = [CChar](repeating: 0, count: 256)
+        let length = getxattr(url.path, "com.apple.quarantine", &buffer, buffer.count, 0, 0)
+        #expect(length > 0)
+        #expect(String(cString: buffer).hasPrefix("0083;"))
+    }
+}

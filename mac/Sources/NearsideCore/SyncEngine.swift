@@ -248,11 +248,20 @@ public final class SyncEngine {
                 setStatus(transfer.id, .failed("Couldn't copy it from the phone."))
                 return
             }
+            Self.quarantine(destination)
             setStatus(transfer.id, .done(destination))
             notifications.showLocal(id: Self.fileNotificationPrefix + destination.path,
                                     title: "Received \(destination.lastPathComponent)",
                                     body: "From your \(phone) · in Downloads. Click to show it.")
         }
+    }
+
+    /// Marks a received file like a browser or AirDrop download, so Gatekeeper checks it
+    /// before anything in it can run (any app on the phone could have sent it).
+    nonisolated static func quarantine(_ url: URL) {
+        let flags = "0083" // downloaded, Gatekeeper must check
+        let value = "\(flags);\(String(Int(Date().timeIntervalSince1970), radix: 16));Nearside;\(UUID().uuidString)"
+        _ = value.withCString { setxattr(url.path, "com.apple.quarantine", $0, strlen($0), 0, 0) }
     }
 
     public func dismissTransfer(_ id: UUID) {
