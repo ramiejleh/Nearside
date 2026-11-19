@@ -16,7 +16,23 @@ access (the technique scrcpy and Shizuku use). That helper may read the clipboar
 reboot, the phone app turns wireless debugging back on and the Mac restarts the helper, so you
 do nothing.
 
-## Trying the PoC
+## The Mac app
+
+A menu-bar app with:
+- **Arrival toasts:** a card slides in when a clip arrives from the phone.
+- **Unseen count:** the menu-bar icon shows how many phone clips you haven't looked at.
+- **Searchable history:** click an item to put it back on both clipboards.
+
+```sh
+(cd android && ./gradlew assembleDebug)   # the phone app, embedded in the Mac app
+mac/scripts/bundle.sh                          # → mac/build/Nearside.app
+open mac/build/Nearside.app
+```
+
+The first launch walks you through pairing (Wireless debugging → "Pair device with pairing
+code"). It needs Android's adb: `brew install --cask android-platform-tools`.
+
+## Trying the PoC CLI
 
 Requirements: a Mac with Xcode and the Android SDK, and an Android 11+ phone on the same Wi-Fi.
 
