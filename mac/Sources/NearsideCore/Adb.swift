@@ -65,11 +65,10 @@ public enum Adb {
 
     /// Connects (or reuses the connection) to the pinned phone. Returns its hardware serial,
     /// which callers pass back in as `serial`. Polls for up to `wait` seconds.
-    static func ensureConnected(pinned: String, wait: TimeInterval = 0, pinningAt pairedHost: String? = nil) -> String? {
+    static func ensureConnected(pinned: String, wait: TimeInterval = 0) -> String? {
         let deadline = Date().addingTimeInterval(wait)
         repeat {
-            if Native.connect(pinned: pinned, pinningAt: pairedHost) != nil { return pinned }
-            if Native.lastPinningConflict { return nil }
+            if Native.connect(pinned: pinned) != nil { return pinned }
             if wait > 0 { Thread.sleep(forTimeInterval: 1) }
         } while Date() < deadline
         return nil

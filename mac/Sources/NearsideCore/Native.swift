@@ -54,14 +54,11 @@ enum Native {
         return try? key.androidPublicKey(comment: "\(NSUserName())@\(name)")
     }
 
-    /// Reuses the live connection or makes a new one to the pinned phone. Never without a pin,
-    /// except `pinning` (only the setup flow, right after pairing): then it pins the key of the
-    /// one device that answers as the phone, and refuses if several do with different keys.
-    static func connect(pinned serial: String, pinningAt pairedHost: String? = nil) -> AdbConnection? {
+    /// Reuses the live connection or makes a new one to the pinned phone. Never without a pin:
+    /// keys are only pinned by `pinAfterPairing`.
+    static func connect(pinned serial: String) -> AdbConnection? {
         if let live = current() { return live }
-        guard let key = key() else { return nil }
-        if let pairedHost { return pinFirstKey(serial: serial, at: pairedHost, key: key) }
-        guard let expected = pinnedKey else { return nil }
+        guard let key = key(), let expected = pinnedKey else { return nil }
 
         for service in Discovery.browse(Discovery.connectType) where service.name.hasPrefix("adb-\(serial)-") {
             guard let host = ipv4(service.host) else { continue }
@@ -88,35 +85,51 @@ enum Native {
         return nil
     }
 
-    /// Setup only: connect to every device claiming to be this phone *at the address the
-    /// code-checked pairing reached*; pin only if exactly one key answers there.
-    private static func pinFirstKey(serial: String, at pairedHost: String, key: AdbKey) -> AdbConnection? {
-        var answers: [AdbConnection] = []
-        for service in Discovery.browse(Discovery.connectType) where service.name.hasPrefix("adb-\(serial)-") {
-            guard let host = ipv4(service.host), host == pairedHost,
-                  let adb = try? AdbConnection.connect(host: host, port: service.port, key: key, expectedPeerKey: nil) else { continue }
-            if (try? adb.shell("getprop ro.serialno").output) == serial { answers.append(adb) } else { adb.close() }
-        }
-        let keys = Set(answers.map(\.peerKeySHA256))
-        guard keys.count == 1, let chosen = answers.first else {
-            if keys.count > 1 {
-                NSLog("Nearside: \(keys.count) devices claim to be the phone with different keys; not pinning any")
-                lastPinningConflict = true
+    enum PinResult { case pinned, conflict, notFound }
+
+    /// Setup only, right after the code-checked pairing: watches the network for up to `wait`
+    /// seconds for devices claiming to be this phone *at the address the pairing reached*. Once
+    /// one answers it keeps watching for `confirmPasses` more browse rounds, and pins only if
+    /// every answer over the whole window had the same key.
+    static func pinAfterPairing(serial: String, at pairedHost: String, wait: TimeInterval,
+                                confirmPasses: Int = 2) -> PinResult {
+        guard let key = key() else { return .notFound }
+        disconnect() // never let an earlier live connection stand in for this check
+        let deadline = Date().addingTimeInterval(wait)
+        var answers: [Data: AdbConnection] = [:] // one connection kept per distinct key
+        var passesSinceFirst = 0
+        defer { answers.values.forEach { $0.close() } } // whatever isn't handed over below
+
+        while Date() < deadline || (!answers.isEmpty && passesSinceFirst <= confirmPasses) {
+            for service in Discovery.browse(Discovery.connectType) where service.name.hasPrefix("adb-\(serial)-") {
+                guard let host = ipv4(service.host), host == pairedHost,
+                      let adb = try? AdbConnection.connect(host: host, port: service.port, key: key, expectedPeerKey: nil) else { continue }
+                guard (try? adb.shell("getprop ro.serialno").output) == serial, answers[adb.peerKeySHA256] == nil else {
+                    adb.close()
+                    continue
+                }
+                answers[adb.peerKeySHA256] = adb
             }
-            answers.forEach { $0.close() }
-            return nil
+            if answers.count > 1 {
+                NSLog("Nearside: \(answers.count) devices claim to be the phone with different keys; not pinning any")
+                return .conflict
+            }
+            if !answers.isEmpty {
+                passesSinceFirst += 1
+                if passesSinceFirst > confirmPasses { break }
+            } else {
+                Thread.sleep(forTimeInterval: 1)
+            }
         }
-        answers.dropFirst().forEach { $0.close() }
-        pinnedKey = chosen.peerKeySHA256
+        guard let (peerKey, chosen) = answers.first, chosen.isAlive else { return .notFound }
+        answers = [:] // handed over, not closed
+        pinnedKey = peerKey
         lock.withLock {
             connection?.close()
             connection = chosen
         }
-        return chosen
+        return .pinned
     }
-
-    /// Set when setup saw more than one device claiming the phone's identity.
-    nonisolated(unsafe) static var lastPinningConflict = false
 
     /// "ip:port" for a discovered service (what `adb pair` wants).
     static func address(_ service: Discovery.Service) -> String? {

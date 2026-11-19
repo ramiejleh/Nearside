@@ -465,11 +465,11 @@ public final class SyncEngine {
 
             guard await run(1, {
                 // Pin the phone's connection key now, seconds after the code-checked pairing.
-                Native.lastPinningConflict = false
-                if Adb.ensureConnected(pinned: phoneSerial, wait: 20, pinningAt: pairedHost) != nil { return nil }
-                return Native.lastPinningConflict
-                    ? "More than one device on this network claims to be your phone. For your safety, nothing was trusted. Try again on a network you trust."
-                    : "Paired, but couldn't connect. Keep Wireless debugging open and try again."
+                switch Native.pinAfterPairing(serial: phoneSerial, at: pairedHost, wait: 20) {
+                case .pinned: return nil
+                case .conflict: return "More than one device on this network claims to be your phone. For your safety, nothing was trusted. Try again on a network you trust."
+                case .notFound: return "Paired, but couldn't connect. Keep Wireless debugging open and try again."
+                }
             }) else { return }
 
             guard await run(2, {
