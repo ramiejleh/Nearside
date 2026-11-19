@@ -159,26 +159,33 @@ struct HistoryRow: View {
                         .foregroundStyle(.secondary)
                 }
             }
+            // Always laid out (just invisible when not hovered) so the text never reflows.
             HStack(spacing: 2) {
-                if hovering && !justCopied {
-                    Button(action: onDelete) {
-                        Image(systemName: "trash")
-                            .frame(width: 22, height: 22)
-                            .contentShape(Rectangle())
-                    }
-                    .buttonStyle(RowIconButtonStyle(hoverColor: .red))
-                    .help("Delete")
-                    .transition(.opacity)
+                Button(action: onDelete) {
+                    Image(systemName: "trash")
+                        .frame(width: 22, height: 22)
+                        .contentShape(Rectangle())
                 }
+                .buttonStyle(RowIconButtonStyle(hoverColor: .red))
+                .help("Delete")
+                .opacity(hovering && !justCopied ? 1 : 0)
+                .allowsHitTesting(hovering && !justCopied)
+
                 ZStack {
                     if justCopied {
                         Image(systemName: "checkmark.circle.fill")
                             .foregroundStyle(.green)
                             .transition(.scale.combined(with: .opacity))
-                    } else if hovering {
-                        Image(systemName: "doc.on.doc")
-                            .foregroundStyle(.secondary)
-                            .transition(.opacity)
+                    } else {
+                        Button(action: use) {
+                            Image(systemName: "doc.on.doc")
+                                .frame(width: 22, height: 22)
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(RowIconButtonStyle(hoverColor: .accentColor))
+                        .help("Copy to Mac and phone")
+                        .opacity(hovering ? 1 : 0)
+                        .allowsHitTesting(hovering)
                     }
                 }
                 .frame(width: 22, height: 22)
