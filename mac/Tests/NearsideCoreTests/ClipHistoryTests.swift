@@ -1,12 +1,12 @@
 import Foundation
+import NativeAdb
 import Testing
 @testable import NearsideCore
 
 @Suite struct AdbParsingTests {
-    @Test func extractsHardwareSerialFromPairOutput() {
-        let out = "Successfully paired to 192.168.0.76:37197 [guid=adb-ABC123XYZ0001-AbCdEf]"
-        #expect(Adb.serialFromPairOutput(out) == "ABC123XYZ0001")
-        #expect(Adb.serialFromPairOutput("Failed: Wrong password or connection was dropped.") == nil)
+    @Test func serialFromPairingGUID() {
+        #expect(Pairing.Result(guid: "adb-ABC123XYZ0001-AbCdEf", peerKeySHA256: Data()).serial == "ABC123XYZ0001")
+        #expect(Pairing.Result(guid: "garbage", peerKeySHA256: Data()).serial == nil)
     }
 
     @Test func pinnedKeyHexRoundTrips() {
@@ -169,37 +169,6 @@ import Testing
         let message = MessagesStore.message(["id": NSNumber(value: 3), "body": "yo", "date": NSNumber(value: 0), "out": false])
         #expect(message?.outgoing == false && message?.failed == false)
         #expect(MessagesStore.message(["body": "no id"]) == nil)
-    }
-}
-
-@Suite struct AdbInstallerTests {
-    @Test func acceptsOnlyGoogleSignedAdb() throws {
-        let sdkAdb = URL(fileURLWithPath: NSHomeDirectory() + "/Library/Android/sdk/platform-tools/adb")
-        if FileManager.default.fileExists(atPath: sdkAdb.path) {
-            #expect(AdbInstaller.isGoogleSigned(sdkAdb))
-            // A modified copy must fail, even though it started out as Google's.
-            let copy = FileManager.default.temporaryDirectory.appendingPathComponent("adb-\(UUID().uuidString)")
-            try FileManager.default.copyItem(at: sdkAdb, to: copy)
-            defer { try? FileManager.default.removeItem(at: copy) }
-            let handle = try FileHandle(forWritingTo: copy)
-            try handle.seek(toOffset: 4096)
-            try handle.write(contentsOf: Data([0xFF, 0x00, 0xFF]))
-            try handle.close()
-            #expect(!AdbInstaller.isGoogleSigned(copy))
-        }
-        #expect(!AdbInstaller.isGoogleSigned(URL(fileURLWithPath: "/bin/ls"))) // Apple-signed, not Google
-        #expect(!AdbInstaller.isGoogleSigned(URL(fileURLWithPath: "/nonexistent/adb")))
-    }
-
-    /// Real download from Google; opt in with NEARSIDE_NET_TESTS=1.
-    @Test(.enabled(if: ProcessInfo.processInfo.environment["NEARSIDE_NET_TESTS"] == "1"))
-    func downloadsAndInstallsGooglesAdb() async throws {
-        let started = Date()
-        let result = await AdbInstaller.install { _ in }
-        let adb = try result.get()
-        print("installed in \(Int(Date().timeIntervalSince(started))) s at \(adb.path)")
-        #expect(FileManager.default.isExecutableFile(atPath: adb.path))
-        #expect(AdbInstaller.isGoogleSigned(adb))
     }
 }
 

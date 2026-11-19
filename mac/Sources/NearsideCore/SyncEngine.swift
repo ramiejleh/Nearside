@@ -7,7 +7,6 @@ import Observation
 @Observable
 public final class SyncEngine {
     public enum State: Equatable, Sendable {
-        case adbMissing      // can't work at all until adb is installed
         case needsSetup      // never paired: show the setup flow
         case searching       // paired, phone not reachable right now
         case connected
@@ -95,10 +94,11 @@ public final class SyncEngine {
         phoneName = defaults.string(forKey: "phoneName") ?? "Phone"
         mirrorNotifications = defaults.object(forKey: "mirrorNotifications") as? Bool ?? true
         textMessages = defaults.object(forKey: "textMessages") as? Bool ?? true
-        // Set up = completed the pairing flow, which is the only place a phone gets pinned.
-        // Once paired, everything runs on our own adb client; the adb tool is only needed to pair.
+        // Set up = completed the pairing flow, which is the only place a phone (its serial and
+        // its key) gets pinned. A setup from before key pinning has no key: it pairs once more.
         let paired = defaults.bool(forKey: "setupComplete") && defaults.string(forKey: "phoneSerial") != nil
-        state = paired ? .searching : (Adb.path == nil ? .adbMissing : .needsSetup)
+            && Native.pinnedKey != nil
+        state = paired ? .searching : .needsSetup
     }
 
     // MARK: Lifecycle
@@ -163,9 +163,7 @@ public final class SyncEngine {
               let pinned = pinnedSerial else { return }
         preparing = true
         Task {
-            // A setup made before key pinning learns the phone's key once, on this first connect.
-            let learn = Native.pinnedKey == nil
-            let phone = await Task.detached { Adb.prepareHelper(pinned: pinned, learnKey: learn) }.value
+            let phone = await Task.detached { Adb.prepareHelper(pinned: pinned) }.value
             preparing = false
             guard let phone else { return }
             adopt(phone)
@@ -361,16 +359,6 @@ public final class SyncEngine {
         unseenIDs.removeAll()
     }
 
-    /// The user installed adb: look again, and leave the "install adb" state if it's there now.
-    @discardableResult
-    public func recheckAdb() -> Bool {
-        guard Adb.locate() != nil else { return false }
-        if state == .adbMissing {
-            state = defaults.bool(forKey: "setupComplete") && pinnedSerial != nil ? .searching : .needsSetup
-        }
-        return true
-    }
-
     /// Only ever changed by an explicit choice in the wizard or Settings.
     public func setClipboardToastHidden(_ hidden: Bool) {
         guard state == .connected, let serial = adbSerial else { return }
@@ -439,6 +427,11 @@ public final class SyncEngine {
         guard !isPairing else { return }
         isPairing = true
         link.disconnect()
+        // Forget the old pairing first, so a failed attempt can't leave a half-paired state.
+        defaults.set(false, forKey: "setupComplete")
+        pinnedSerial = nil
+        Native.pinnedKey = nil
+        await Task.detached { Native.disconnect() }.value
         let titles = [
             "Pair with your phone",
             "Connect over Wi-Fi",
@@ -457,19 +450,21 @@ public final class SyncEngine {
             setupSteps[0].status = .running
             let host = hostPort.trimmingCharacters(in: .whitespaces)
             let pin = code.trimmingCharacters(in: .whitespaces)
-            let paired = await Task.detached { Adb.run(["pair", host, pin]) }.value
-            guard paired.ok, paired.out.contains("Successfully paired"),
-                  let phoneSerial = Adb.serialFromPairOutput(paired.out) else {
-                setupSteps[0].status = .failed(Self.friendly(paired.out))
+            let phoneSerial: String
+            switch await Task.detached(operation: { Adb.pair(hostPort: host, code: pin) }).value {
+            case .success(let paired):
+                phoneSerial = paired.serial
+                // The key the code authenticated: from now on only this phone is accepted.
+                Native.pinnedKey = paired.key
+            case .failure(let error):
+                setupSteps[0].status = .failed(error.message)
                 return
             }
             setupSteps[0].status = .done
             pinnedSerial = phoneSerial
-            Native.pinnedKey = nil // a new pairing: learn this phone's key on the first connect
-            await Task.detached { Native.disconnect() }.value
 
             guard await run(1, {
-                Adb.ensureConnected(pinned: phoneSerial, wait: 20, learnKey: true) == nil ? "Paired, but the phone isn't visible on the network. Keep Wireless debugging open and try again." : nil
+                Adb.ensureConnected(pinned: phoneSerial, wait: 20) == nil ? "Paired, but couldn't connect. Keep Wireless debugging open and try again." : nil
             }) else { return }
 
             guard await run(2, {

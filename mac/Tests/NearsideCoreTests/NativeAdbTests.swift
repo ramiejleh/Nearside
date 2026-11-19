@@ -102,3 +102,22 @@ extension NativeAdbLiveTests {
         #expect(result.hasPrefix("Success"))
     }
 }
+
+@Suite struct AdbKeyTests {
+    @Test func androidPublicKeyMatchesStockAdb() throws {
+        let pubPath = AdbKey.defaultPath + ".pub"
+        guard let stock = try? String(contentsOfFile: pubPath, encoding: .utf8) else { return } // no adb on this Mac
+        let key = try AdbKey(pemFile: AdbKey.defaultPath)
+        let ours = try key.androidPublicKey(comment: "x@y")
+        #expect(ours.split(separator: " ")[0] == stock.split(separator: " ")[0])
+    }
+
+    @Test func generatedKeysRoundTripThroughPEM() throws {
+        let key = try AdbKey.generate()
+        let pem = try key.pemData()
+        #expect(String(decoding: pem, as: UTF8.self).hasPrefix("-----BEGIN PRIVATE KEY-----"))
+        let again = try AdbKey(pem: pem)
+        #expect(try again.androidPublicKey(comment: "a@b") == key.androidPublicKey(comment: "a@b"))
+        #expect(Data(base64Encoded: String(try key.androidPublicKey(comment: "").split(separator: " ")[0]))?.count == 524)
+    }
+}

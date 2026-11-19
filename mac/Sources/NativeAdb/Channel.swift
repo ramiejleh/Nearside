@@ -125,7 +125,7 @@ final class TLSChannel: Channel, @unchecked Sendable {
     /// `expectedPeerKey`: the pinned SHA-256 of the phone's public key. A mismatch, or no
     /// certificate at all, fails before any adb data is exchanged. nil only when pinning for
     /// the first time (the caller then stores `peerKeySHA256`).
-    init(socket: TCPSocket, key: AdbKey, expectedPeerKey: Data?) throws {
+    init(socket: TCPSocket, key: AdbKey, expectedPeerKey: Data?, peekAfterHandshake: Bool = true) throws {
         self.socket = socket
         guard let ctx = SSL_CTX_new(TLS_method()) else { throw AdbError.tls("SSL_CTX_new") }
         SSL_CTX_set_min_proto_version(ctx, UInt16(TLS1_3_VERSION))
@@ -152,7 +152,7 @@ final class TLSChannel: Channel, @unchecked Sendable {
         // TLS 1.3 doesn't tell the client its certificate was rejected; adbd speaks first on
         // success, so peek one byte, as adb does.
         var byte: UInt8 = 0
-        guard SSL_peek(ssl, &byte, 1) > 0 else {
+        guard !peekAfterHandshake || SSL_peek(ssl, &byte, 1) > 0 else {
             let reason = Self.errorString()
             SSL_free(ssl)
             SSL_CTX_free(ctx)
@@ -215,6 +215,19 @@ final class TLSChannel: Channel, @unchecked Sendable {
         let r = poll(&pfd, 1, -1)
         if r < 0 && errno != EINTR { throw AdbError.closed }
         if pfd.revents & Int16(POLLHUP | POLLERR | POLLNVAL) != 0 && pfd.revents & Int16(POLLIN) == 0 { throw AdbError.closed }
+    }
+
+    /// RFC 5705 exporter (pairing mixes this into the SPAKE2 password).
+    func exportKeyingMaterial(label: [UInt8], length: Int) -> Data? {
+        var out = [UInt8](repeating: 0, count: length)
+        let ok = lock.withLock {
+            label.withUnsafeBufferPointer { l in
+                l.withMemoryRebound(to: CChar.self) {
+                    SSL_export_keying_material(ssl, &out, length, $0.baseAddress, l.count, nil, 0, 0)
+                }
+            }
+        }
+        return ok == 1 ? Data(out) : nil
     }
 
     func close() {

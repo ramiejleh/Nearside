@@ -38,6 +38,59 @@ public final class AdbKey: @unchecked Sendable {
         EVP_PKEY_free(pkey)
     }
 
+    /// A new 2048-bit RSA key (e = 65537), as adb makes on first run.
+    public static func generate() throws -> AdbKey {
+        guard let rsa = RSA_new(), let e = BN_new() else { throw Failure.certificate }
+        defer { BN_free(e) }
+        guard BN_set_word(e, 65537) == 1, RSA_generate_key_ex(rsa, 2048, e, nil) == 1,
+              let key = EVP_PKEY_new(), EVP_PKEY_assign_RSA(key, rsa) == 1 else {
+            RSA_free(rsa)
+            throw Failure.certificate
+        }
+        defer { EVP_PKEY_free(key) }
+        return try AdbKey(pem: try pem(of: key))
+    }
+
+    /// The private key as PKCS#8 PEM ("BEGIN PRIVATE KEY"), the format of ~/.android/adbkey.
+    public func pemData() throws -> Data { try Self.pem(of: pkey) }
+
+    private static func pem(of key: OpaquePointer) throws -> Data {
+        guard let bio = BIO_new(BIO_s_mem()) else { throw Failure.certificate }
+        defer { BIO_free(bio) }
+        guard PEM_write_bio_PrivateKey(bio, key, nil, nil, 0, nil, nil) == 1 else { throw Failure.certificate }
+        var pointer: UnsafePointer<UInt8>?
+        var length = 0
+        guard BIO_mem_contents(bio, &pointer, &length) == 1, let pointer else { throw Failure.certificate }
+        return Data(bytes: pointer, count: length)
+    }
+
+    /// The public key in Android's format, as in adbkey.pub and as sent when pairing:
+    /// base64 of { u32 words, u32 n0inv, modulus LE, R² mod n LE, u32 exponent } + " user@host".
+    /// Mirrors AOSP libcrypto_utils android_pubkey_encode.
+    public func androidPublicKey(comment: String) throws -> String {
+        guard let rsa = EVP_PKEY_get0_RSA(pkey), RSA_size(rsa) == 256,
+              let ctx = BN_CTX_new(), let r32 = BN_new(), let n0inv = BN_new(), let rr = BN_new() else {
+            throw Failure.certificate
+        }
+        defer { BN_free(rr); BN_free(n0inv); BN_free(r32); BN_CTX_free(ctx) }
+        let n = RSA_get0_n(rsa)
+        var modulus = [UInt8](repeating: 0, count: 256)
+        var rrBytes = [UInt8](repeating: 0, count: 256)
+        guard BN_set_bit(r32, 32) == 1, BN_div(nil, n0inv, n, r32, ctx) == 1,
+              BN_mod_inverse(n0inv, n0inv, r32, ctx) != nil, BN_sub(n0inv, r32, n0inv) == 1,
+              BN_bn2le_padded(&modulus, 256, n) == 1,
+              BN_set_bit(rr, 256 * 8) == 1, BN_mod_sqr(rr, rr, n, ctx) == 1,
+              BN_bn2le_padded(&rrBytes, 256, rr) == 1 else { throw Failure.certificate }
+        var blob = Data()
+        func u32(_ v: UInt32) { withUnsafeBytes(of: v.littleEndian) { blob.append(contentsOf: $0) } }
+        u32(64) // modulus size in 32-bit words
+        u32(UInt32(truncatingIfNeeded: BN_get_word(n0inv)))
+        blob.append(contentsOf: modulus)
+        blob.append(contentsOf: rrBytes)
+        u32(UInt32(truncatingIfNeeded: BN_get_word(RSA_get0_e(rsa))))
+        return blob.base64EncodedString() + " " + comment
+    }
+
     /// C=US, O=Android, CN=Adb, self-signed, 10 years: what adb sends. adbd only checks that
     /// the public key is one it was paired with.
     private static func makeCertificate(_ key: OpaquePointer) -> OpaquePointer? {

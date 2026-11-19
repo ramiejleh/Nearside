@@ -1,67 +1,17 @@
 import Foundation
 import NativeAdb
 
-/// Talking to the phone. Everything goes through our own adb client (NativeAdb) over one
-/// pinned connection; the `adb` binary is only used for `adb pair` (until native pairing).
+/// Talking to the phone, entirely through our own adb client (NativeAdb) over one pinned
+/// connection: pairing, shell, file transfer, install, the helper stream. No adb binary.
 /// Blocking: call it off the main thread. The `serial` parameters are kept for the callers'
 /// sake but there is only ever one phone, the pinned one.
 public enum Adb {
     static let appPackage = "dev.nearside"
 
-    /// nil when adb isn't installed (the app then shows install instructions). Re-checked by
-    /// `locate()` when the user says they've installed it. Only changed on the main thread.
-    nonisolated(unsafe) public private(set) static var path: String? = find()
-
-    @discardableResult
-    public static func locate() -> String? {
-        path = find()
-        return path
-    }
-
-    private static func find() -> String? {
-        var candidates: [String] = []
-        if let home = ProcessInfo.processInfo.environment["ANDROID_HOME"] {
-            candidates.append("\(home)/platform-tools/adb")
-        }
-        // An adb the user already has comes first: two different adb versions on one Mac keep
-        // killing each other's server. Ours (downloaded by the wizard) is the fallback.
-        candidates += [
-            "\(NSHomeDirectory())/Library/Android/sdk/platform-tools/adb",
-            "/opt/homebrew/bin/adb",
-            "/usr/local/bin/adb",
-            AdbInstaller.installedAdb.path,
-        ]
-        return candidates.first { FileManager.default.isExecutableFile(atPath: $0) }
-    }
-
     public struct Result: Sendable {
         public let code: Int32
         public let out: String
         public var ok: Bool { code == 0 }
-    }
-
-    @discardableResult
-    static func run(_ args: [String], timeout: TimeInterval = 30) -> Result {
-        guard let path else { return Result(code: -1, out: "adb not found") }
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: path)
-        process.arguments = args
-        let pipe = Pipe()
-        process.standardOutput = pipe
-        process.standardError = pipe
-        process.standardInput = FileHandle.nullDevice
-        do {
-            try process.run()
-        } catch {
-            return Result(code: -1, out: "cannot run adb: \(error.localizedDescription)")
-        }
-        let killer = DispatchWorkItem { if process.isRunning { process.terminate() } }
-        DispatchQueue.global().asyncAfter(deadline: .now() + timeout, execute: killer)
-        let data = pipe.fileHandleForReading.readDataToEndOfFile()
-        process.waitUntilExit()
-        killer.cancel()
-        let out = String(decoding: data, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
-        return Result(code: process.terminationStatus, out: out)
     }
 
     static func shell(_ serial: String, _ command: String, timeout: TimeInterval = 30) -> Result {
@@ -85,20 +35,37 @@ public enum Adb {
         return out.isEmpty ? nil : out
     }
 
-    /// Extracts the hardware serial from `adb pair` output ("… [guid=adb-SERIAL-xxxxxx]").
-    public static func serialFromPairOutput(_ out: String) -> String? {
-        guard let range = out.range(of: #"guid=adb-([A-Za-z0-9]+)-"#, options: .regularExpression) else { return nil }
-        return String(out[range].dropFirst("guid=adb-".count).dropLast())
+    /// Pairs with the phone's "Pair device" screen. On success: its serial and its TLS key
+    /// (authenticated by the code), to pin.
+    static func pair(hostPort: String, code: String) -> Swift.Result<(serial: String, key: Data), PairError> {
+        let parts = hostPort.split(separator: ":")
+        guard parts.count == 2, let port = UInt16(parts[1]) else {
+            return .failure(PairError(message: "Couldn't reach the phone. Check the IP address and port."))
+        }
+        guard let key = Native.key(), let publicKey = Native.publicKey(key) else {
+            return .failure(PairError(message: "Couldn't create this Mac's key."))
+        }
+        do {
+            let result = try Pairing.pair(host: String(parts[0]), port: port, code: code, key: key, publicKey: publicKey)
+            guard let serial = result.serial else { return .failure(PairError(message: "The phone sent an unexpected reply.")) }
+            return .success((serial, result.peerKeySHA256))
+        } catch Pairing.Failure.wrongCode {
+            return .failure(PairError(message: "The pairing code didn't work. Codes expire quickly; tap \"Pair device with pairing code\" again for a new one."))
+        } catch AdbError.connect {
+            return .failure(PairError(message: "Couldn't reach the phone. Check the IP address and port, and that both devices are on the same Wi-Fi."))
+        } catch {
+            return .failure(PairError(message: "Pairing didn't work (\(error)). Try again."))
+        }
     }
 
+    public struct PairError: Error, Sendable { public let message: String }
+
     /// Connects (or reuses the connection) to the pinned phone. Returns its hardware serial,
-    /// which callers pass back in as `serial`. `learnKey`: during pairing, or once for a setup
-    /// made before pinning existed, record the phone's TLS key; afterwards only that key is
-    /// accepted (see `Native`). Polls for up to `wait` seconds.
-    static func ensureConnected(pinned: String, wait: TimeInterval = 0, learnKey: Bool = false) -> String? {
+    /// which callers pass back in as `serial`. Polls for up to `wait` seconds.
+    static func ensureConnected(pinned: String, wait: TimeInterval = 0) -> String? {
         let deadline = Date().addingTimeInterval(wait)
         repeat {
-            if Native.connect(pinned: pinned, learnKey: learnKey) != nil { return pinned }
+            if Native.connect(pinned: pinned) != nil { return pinned }
             if wait > 0 { Thread.sleep(forTimeInterval: 1) }
         } while Date() < deadline
         return nil
@@ -135,8 +102,8 @@ public enum Adb {
 
     /// Connects and starts the helper if needed. nil when unreachable. (The Mac then opens a
     /// stream straight to the helper's socket over this connection: no port forwarding.)
-    static func prepareHelper(pinned: String, learnKey: Bool = false) -> Phone? {
-        guard let serial = ensureConnected(pinned: pinned, learnKey: learnKey) else { return nil }
+    static func prepareHelper(pinned: String) -> Phone? {
+        guard let serial = ensureConnected(pinned: pinned) else { return nil }
         if !helperRunning(serial) {
             _ = startHelper(serial)
             Thread.sleep(forTimeInterval: 1.5)

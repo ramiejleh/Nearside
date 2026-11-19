@@ -4,15 +4,17 @@ import NativeAdb
 
 /// The one connection to the pinned phone, made with our own adb client.
 ///
-/// Identity: the phone is found by its hardware serial (in its mDNS name, checked with
-/// `getprop`), but it's only trusted by its TLS key, pinned in UserDefaults "phoneKey". The key
-/// is learned only when the caller says so (the user-run pairing flow, or once for a setup made
-/// before pinning existed); after that a different key is refused before any adb data flows.
-/// A look-alike device on the network can copy the serial, but not the phone's key.
+/// Identity: the phone is found by its hardware serial (in its mDNS name), but it's only
+/// trusted by its TLS key, pinned in UserDefaults "phoneKey". That key comes from the pairing
+/// exchange, where SPAKE2 binds it to the code shown on the phone, so a look-alike device on
+/// the network can't get pinned and is refused before any adb data flows. Nothing is ever
+/// trusted on first connect.
 enum Native {
     private static let lock = NSLock()
     nonisolated(unsafe) private static var connection: AdbConnection?
-    private static let pinKey = "phoneKey"
+    /// Only keys from the pairing exchange live here. ("phoneKey" held keys learned on first
+    /// connect by an earlier version; those are ignored, so such setups pair once more.)
+    private static let pinKey = "pairedPhoneKey"
 
     /// The live connection, if any.
     static func current() -> AdbConnection? {
@@ -32,17 +34,28 @@ enum Native {
         set { UserDefaults.standard.set(newValue?.hexString, forKey: pinKey) }
     }
 
-    /// Our adb identity: stock adb's key, so phones paired with `adb pair` accept us.
+    /// Our adb identity: stock adb's key if this Mac has one (phones paired with it accept us),
+    /// else our own, made on first use and kept owner-only in Application Support.
     static func key() -> AdbKey? {
-        try? AdbKey(pemFile: AdbKey.defaultPath)
+        if let stock = try? AdbKey(pemFile: AdbKey.defaultPath) { return stock }
+        let own = Paths.support.appendingPathComponent("adbkey")
+        if let existing = try? AdbKey(pemFile: own.path) { return existing }
+        guard let fresh = try? AdbKey.generate(), let pem = try? fresh.pemData() else { return nil }
+        try? FileManager.default.createDirectory(at: Paths.support, withIntermediateDirectories: true)
+        guard FileManager.default.createFile(atPath: own.path, contents: pem, attributes: [.posixPermissions: 0o600]) else { return nil }
+        return fresh
     }
 
-    /// Reuses the live connection or makes a new one to the pinned phone.
-    static func connect(pinned serial: String, learnKey: Bool) -> AdbConnection? {
+    /// How this Mac shows up in the phone's "Paired devices" list.
+    static func publicKey(_ key: AdbKey) -> String? {
+        let name = Host.current().localizedName ?? ProcessInfo.processInfo.hostName
+        return try? key.androidPublicKey(comment: "\(NSUserName())@\(name)")
+    }
+
+    /// Reuses the live connection or makes a new one to the pinned phone. Never without a pin.
+    static func connect(pinned serial: String) -> AdbConnection? {
         if let live = current() { return live }
-        guard let key = key() else { return nil }
-        let expected = pinnedKey
-        guard expected != nil || learnKey else { return nil } // never trust an unpinned phone silently
+        guard let key = key(), let expected = pinnedKey else { return nil }
 
         for service in Discovery.browse(Discovery.connectType) where service.name.hasPrefix("adb-\(serial)-") {
             guard let host = ipv4(service.host) else { continue }
@@ -55,12 +68,11 @@ enum Native {
             } catch {
                 continue
             }
-            // The serial in the mDNS name is just a claim: check it on the device itself.
+            // The key matched, so this is the paired phone; the serial is a sanity check.
             guard (try? adb.shell("getprop ro.serialno").output) == serial else {
                 adb.close()
                 continue
             }
-            if expected == nil { pinnedKey = adb.peerKeySHA256 }
             lock.withLock {
                 connection?.close()
                 connection = adb

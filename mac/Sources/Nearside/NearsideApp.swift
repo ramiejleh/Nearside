@@ -107,8 +107,8 @@ final class StatusItemController: NSObject {
 
         updateIcon()
 
-        // First run (or adb missing): open the setup wizard straight away.
-        if engine.state == .needsSetup || engine.state == .adbMissing {
+        // First run (or re-pairing needed): open the setup wizard straight away.
+        if engine.state == .needsSetup {
             DispatchQueue.main.async { [weak self] in self?.setupWindow.show() }
         }
     }
@@ -130,7 +130,6 @@ final class StatusItemController: NSObject {
             let symbol = switch engine.state {
             case .connected: "smartphone"
             case .searching, .needsSetup: "antenna.radiowaves.left.and.right.slash"
-            case .adbMissing: "exclamationmark.triangle"
             }
             let image = NSImage(systemSymbolName: symbol, accessibilityDescription: "Nearside")
             image?.isTemplate = true

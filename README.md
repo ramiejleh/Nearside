@@ -37,14 +37,14 @@ mac/scripts/bundle.sh                          # → mac/build/Nearside.app
 open mac/build/Nearside.app
 ```
 
-Requirements: macOS 14+ and an Android 11+ phone on the same Wi-Fi. The first launch opens a
-setup wizard. If you don't have Android's adb, it downloads Google's official platform-tools
-for you (one click; only used if signed by Google). Then you pair by scanning a QR code from
-Developer options → Wireless debugging.
+Requirements: macOS 14+ and an Android 11+ phone on the same Wi-Fi. Nothing else: Nearside
+has its own adb client. The first launch opens a setup wizard, and you pair by scanning a QR
+code from Developer options → Wireless debugging.
 
 ## Security
 
-- The Mac only works with the phone it paired with (pinned by hardware serial).
+- The Mac only works with the phone it paired with: its TLS key is pinned during pairing,
+  where the pairing code authenticates it, so a look-alike device on the network is refused.
 - The Mac only trusts a helper running as the shell user.
 - Mac and helper prove to each other that they share a secret, without ever sending it.
 - Clipboard history is stored on the Mac, readable only by your user. Items that password

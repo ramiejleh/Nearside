@@ -63,7 +63,7 @@ struct SettingsView: View {
                     }
                 }
 
-                if engine.state != .adbMissing {
+                do {
                     Section("Phone") {
                         LabeledContent("Paired with", value: engine.state == .needsSetup ? "Nothing yet" : engine.phoneName)
                         if engine.state == .connected {

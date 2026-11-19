@@ -20,7 +20,7 @@ struct PanelView: View {
             } else {
                 Group {
                     switch engine.state {
-                    case .adbMissing, .needsSetup:
+                    case .needsSetup:
                         SetupPrompt(openSetup: openSetup)
                     case .searching, .connected:
                         if !engine.transfers.isEmpty { TransfersView(engine: engine) }
@@ -169,7 +169,6 @@ struct StatusPill: View {
         case .connected: (.green, phoneName)
         case .searching: (.orange, "Looking for \(phoneName)…")
         case .needsSetup: (.secondary, "Not set up")
-        case .adbMissing: (.red, "adb missing")
         }
         HStack(spacing: 6) {
             Circle()
