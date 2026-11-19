@@ -28,6 +28,9 @@ final class DropShelfController {
         self.anchor = anchor
         self.onDrop = onDrop
         // Mouse events from other apps (Finder) need no special permission to observe.
+        monitors.append(NSEvent.addGlobalMonitorForEvents(matching: .leftMouseDown) { [weak self] _ in
+            MainActor.assumeIsolated { self?.pressed() }
+        } as Any)
         monitors.append(NSEvent.addGlobalMonitorForEvents(matching: .leftMouseDragged) { [weak self] _ in
             MainActor.assumeIsolated { self?.dragged() }
         } as Any)
@@ -36,10 +39,17 @@ final class DropShelfController {
         } as Any)
     }
 
+    /// The drag pasteboard keeps the *last* drag's items, so a plain mouse drag (selecting on
+    /// the desktop) would look like a file drag. Remember its state at each press: only a new
+    /// drag session started after this press changes it.
+    private func pressed() {
+        dragChangeCount = NSPasteboard(name: .drag).changeCount
+        dragHasFiles = false
+    }
+
     private func dragged() {
-        // Each new drag replaces the drag pasteboard; look at its contents once per drag.
         let pasteboard = NSPasteboard(name: .drag)
-        if pasteboard.changeCount != dragChangeCount {
+        if pasteboard.changeCount != dragChangeCount { // a drag session began since the press
             dragChangeCount = pasteboard.changeCount
             dragHasFiles = pasteboard.canReadObject(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true])
         }
