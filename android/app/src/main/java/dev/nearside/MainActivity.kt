@@ -11,6 +11,7 @@ import android.provider.Settings
 import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.TextView
+import dev.nearside.link.HelperConnection
 
 /** PoC status screen: one glance tells whether each moving part is alive. */
 class MainActivity : Activity() {
@@ -59,6 +60,8 @@ class MainActivity : Activity() {
             appendLine("${mark(AdbWifi.canWrite(this@MainActivity))} Setup permission granted by Mac")
             appendLine("${mark(AdbWifi.isEnabled(this@MainActivity))} Wireless debugging on")
             appendLine("${mark(battery)} Battery optimisation off")
+            appendLine("${mark(HelperConnection.helper != null)} Linked to clipboard helper")
+            appendLine("${mark(HelperConnection.macConnected)} Mac connected")
             appendLine()
             appendLine("Last event: ${Status.lastEvent}")
         }

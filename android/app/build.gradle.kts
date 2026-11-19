@@ -20,6 +20,10 @@ android {
         release { isMinifyEnabled = false }
     }
 
+    buildFeatures {
+        aidl = true // the app <-> helper Binder interfaces in src/main/aidl
+    }
+
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17

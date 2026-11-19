@@ -30,7 +30,9 @@ import kotlin.system.exitProcess
  * never exposed on the LAN. Apps can't connect at all (SELinux denies untrusted_app →
  * shell sockets), and we additionally require the peer to be adbd (shell uid) plus a mutual
  * token proof (see [serve]). Protocol: newline-delimited JSON; after the handshake
- * `{"t":"clip","text":"…","ts":<epoch ms>}` flows both ways.
+ * `{"t":"clip","text":"…","ts":<epoch ms>}` flows both ways. Other message types are relayed
+ * to and from the Nearside app over a Binder (see [AppLink]); `{"t":"app","linked":bool}`
+ * tells the Mac whether that link is up.
  */
 object Main {
     const val SOCKET_NAME = "nearside-helper"
@@ -80,6 +82,10 @@ object Main {
             Log.d("clip changed (${text.length} chars)")
             send(JSONObject().put("t", "clip").put("text", text).put("ts", System.currentTimeMillis()))
         }
+
+        AppLink.toMac = { msg -> client != null && send(msg) }
+        AppLink.macConnected = { client != null }
+        AppLink.start()
 
         Thread({ acceptLoop(server, token, clipboard, main) }, "accept").start()
         Log.d("helper ready (uid=${android.os.Process.myUid()}, sdk=${android.os.Build.VERSION.SDK_INT})")
@@ -137,10 +143,14 @@ object Main {
         client = writer // one Mac at a time; the newest wins
         Log.d("Mac connected")
         send(JSONObject().put("t", "hello").put("sdk", android.os.Build.VERSION.SDK_INT))
+        send(JSONObject().put("t", "app").put("linked", AppLink.isLinked))
+        AppLink.macConnectionChanged(true)
         try {
             socket.inputStream.bufferedReader().forEachLine { line ->
                 val msg = runCatching { JSONObject(line) }.getOrNull() ?: return@forEachLine
-                if (msg.optString("t") == "clip") {
+                if (msg.optString("t") != "clip") {
+                    AppLink.deliver(msg) // everything else is for the app's features
+                } else {
                     val text = msg.optString("text")
                     Log.d("set clip from Mac (${text.length} chars, ${System.currentTimeMillis() - msg.optLong("ts")} ms)")
                     main.post {
@@ -151,14 +161,17 @@ object Main {
             }
         } catch (_: IOException) {
         } finally {
-            if (client === writer) client = null
+            if (client === writer) {
+                client = null
+                AppLink.macConnectionChanged(false)
+            }
             runCatching { socket.close() }
             Log.d("Mac disconnected")
         }
     }
 
-    private fun send(msg: JSONObject) {
-        val w = client ?: return
+    private fun send(msg: JSONObject): Boolean {
+        val w = client ?: return false
         io.execute {
             try {
                 w.write(msg.toString())
@@ -168,6 +181,7 @@ object Main {
                 if (client === w) client = null
             }
         }
+        return true
     }
 
     private fun hmacHex(key: String, message: String): String {

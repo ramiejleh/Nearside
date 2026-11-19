@@ -44,6 +44,13 @@ struct SettingsView: View {
                 if engine.state != .adbMissing {
                     Section("Phone") {
                         LabeledContent("Paired with", value: engine.state == .needsSetup ? "Nothing yet" : engine.phoneName)
+                        if engine.state == .connected {
+                            LabeledContent("Phone app") {
+                                Label(engine.appLinked ? "Linked" : "Not linked",
+                                      systemImage: engine.appLinked ? "checkmark.circle.fill" : "exclamationmark.circle")
+                                    .foregroundStyle(engine.appLinked ? .green : .orange)
+                            }
+                        }
                         if engine.state != .needsSetup {
                             if confirmReset {
                                 HStack {

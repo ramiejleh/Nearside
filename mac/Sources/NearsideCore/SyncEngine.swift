@@ -26,6 +26,8 @@ public final class SyncEngine {
     public private(set) var unseenIDs: Set<UUID> = []
     public private(set) var setupSteps: [SetupStep] = []
     public private(set) var isPairing = false
+    /// Whether the Nearside app on the phone is linked to the helper (needed for app features).
+    public private(set) var appLinked = false
 
     /// Called for every clip that arrives from the phone (drives the arrival toast).
     public var onArrival: ((ClipItem) -> Void)?
@@ -68,6 +70,7 @@ public final class SyncEngine {
         link.onDisconnect = { [weak self] in
             guard let self, state == .connected else { return }
             state = .searching
+            appLinked = false
         }
 
         // Keep the helper and tunnel alive: whenever we're idle, try to (re)establish them.
@@ -116,6 +119,8 @@ public final class SyncEngine {
         switch message["t"] as? String {
         case "hello":
             state = .connected
+        case "app":
+            appLinked = message["linked"] as? Bool ?? false
         case "clip":
             guard state == .connected, let text = message["text"] as? String, !text.isEmpty else { return }
             pasteboard.write(text)

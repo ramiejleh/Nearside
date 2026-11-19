@@ -31,5 +31,16 @@
                 <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
             </intent-filter>
         </receiver>
+
+        <!--
+          The helper (shell uid) calls this once to hand the app its Binder (Shizuku-style).
+          Only shell may call: INTERACT_ACROSS_USERS_FULL is signature|installer|... which shell
+          holds and third-party apps can't get, and call() also checks the calling uid.
+        -->
+        <provider
+            android:name=".link.HelperLinkProvider"
+            android:authorities="dev.nearside.link"
+            android:exported="true"
+            android:permission="android.permission.INTERACT_ACROSS_USERS_FULL" />
     </application>
 </manifest>
