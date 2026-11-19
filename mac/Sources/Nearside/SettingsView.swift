@@ -6,6 +6,7 @@ import SwiftUI
 struct SettingsView: View {
     let engine: SyncEngine
     let onDone: () -> Void
+    let openSetup: () -> Void
 
     @AppStorage("showArrivalToast") private var showArrivalToast = true
     @State private var launchAtLogin = SMAppService.mainApp.status == .enabled
@@ -52,6 +53,16 @@ struct SettingsView: View {
                         }
                 }
 
+                if engine.state == .connected, engine.clipboardToastHidden != nil {
+                    Section("Clipboard") {
+                        Toggle(isOn: Binding(get: { engine.clipboardToastHidden ?? false },
+                                             set: { engine.setClipboardToastHidden($0) })) {
+                            Text("Hide \u{201C}pasted from your clipboard\u{201D} on the phone")
+                            Text("Android's own phone-wide switch: with it off, you also won't see when other apps read your clipboard.")
+                        }
+                    }
+                }
+
                 if engine.state != .adbMissing {
                     Section("Phone") {
                         LabeledContent("Paired with", value: engine.state == .needsSetup ? "Nothing yet" : engine.phoneName)
@@ -72,6 +83,7 @@ struct SettingsView: View {
                                         confirmReset = false
                                         engine.resetSetup()
                                         onDone()
+                                        openSetup()
                                     }
                                     .tint(.red)
                                 }

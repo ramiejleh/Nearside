@@ -44,6 +44,9 @@ public final class SyncEngine {
     /// Whether the Nearside app on the phone is linked to the helper (needed for app features).
     public private(set) var appLinked = false
     public private(set) var transfers: [Transfer] = []
+    /// Whether Android's phone-wide "pasted from your clipboard" toast is off; nil until read.
+    public private(set) var clipboardToastHidden: Bool?
+
     /// SMS for the Messages window.
     public let messages = MessagesStore()
 
@@ -186,7 +189,12 @@ public final class SyncEngine {
         case "hello":
             state = .connected
             applyNotificationAccess()
-            if let serial = adbSerial { Task.detached { Adb.grantPostNotifications(serial) } }
+            if let serial = adbSerial {
+                Task {
+                    await Task.detached { Adb.grantPostNotifications(serial) }.value
+                    clipboardToastHidden = await Task.detached { Adb.clipboardToastHidden(serial) }.value
+                }
+            }
             applySmsAccess()
         case "sms-threads", "sms-thread", "sms-sent", "sms-changed", "sms-error":
             messages.handle(message)
@@ -352,6 +360,26 @@ public final class SyncEngine {
 
     public func markAllSeen() {
         unseenIDs.removeAll()
+    }
+
+    /// The user installed adb: look again, and leave the "install adb" state if it's there now.
+    @discardableResult
+    public func recheckAdb() -> Bool {
+        guard Adb.locate() != nil else { return false }
+        if state == .adbMissing {
+            state = defaults.bool(forKey: "setupComplete") && pinnedSerial != nil ? .searching : .needsSetup
+        }
+        return true
+    }
+
+    /// Only ever changed by an explicit choice in the wizard or Settings.
+    public func setClipboardToastHidden(_ hidden: Bool) {
+        guard state == .connected, let serial = adbSerial else { return }
+        Task {
+            if await Task.detached(operation: { Adb.setClipboardToastHidden(serial, hidden) }).value {
+                clipboardToastHidden = hidden
+            }
+        }
     }
 
     /// Forget the phone and show the setup flow again.

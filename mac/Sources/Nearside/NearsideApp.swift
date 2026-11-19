@@ -66,6 +66,7 @@ final class StatusItemController: NSObject {
     private let popover = NSPopover()
     private var shelf: DropShelfController?
     private lazy var messagesWindow = MessagesWindowController(engine: engine)
+    private lazy var setupWindow = SetupWindowController(engine: engine)
 
     init(engine: SyncEngine) {
         self.engine = engine
@@ -75,6 +76,9 @@ final class StatusItemController: NSObject {
         popover.contentViewController = NSHostingController(rootView: PanelView(engine: engine, openMessages: { [weak self] in
             self?.popover.performClose(nil)
             self?.messagesWindow.show()
+        }, openSetup: { [weak self] in
+            self?.popover.performClose(nil)
+            self?.setupWindow.show()
         }))
         popover.contentSize = NSSize(width: 380, height: 540)
 
@@ -102,6 +106,11 @@ final class StatusItemController: NSObject {
                                     })
 
         updateIcon()
+
+        // First run (or adb missing): open the setup wizard straight away.
+        if engine.state == .needsSetup || engine.state == .adbMissing {
+            DispatchQueue.main.async { [weak self] in self?.setupWindow.show() }
+        }
     }
 
     @objc private func toggle() {

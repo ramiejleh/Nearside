@@ -2,8 +2,8 @@ import NearsideCore
 import CoreImage.CIFilterBuiltins
 import SwiftUI
 
-/// One-time pairing. Scanning a QR code is the default; typing a pairing code is the fallback.
-struct SetupView: View {
+/// The wizard's pairing page. Scanning a QR code is the default; typing a code is the fallback.
+struct PairingView: View {
     let engine: SyncEngine
     @State private var useCode = false
     @State private var hostPort = ""
@@ -12,21 +12,9 @@ struct SetupView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Connect your Android phone")
-                        .font(.title3.weight(.semibold))
-                    Text("A one-time setup. Afterwards everything syncs on its own, even after reboots.")
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
-                }
-
-                VStack(alignment: .leading, spacing: 10) {
-                    Instruction(number: 1, text: "On your phone, open **Settings → About phone** and tap **Build number** 7 times.")
-                    Instruction(number: 2, text: "Open **Settings → System → Developer options → Wireless debugging**, turn it on and allow this Wi-Fi network.")
-                    Instruction(number: 3, text: useCode
-                        ? "Tap **Pair device with pairing code** and type what it shows below."
-                        : "In Wireless debugging, tap **Pair device with QR code** and scan this code with the scanner that opens. (The Camera app can't read it.)")
-                }
+                Instruction(number: 1, text: useCode
+                    ? "In **Wireless debugging**, tap **Pair device with pairing code** and type what it shows below."
+                    : "In **Wireless debugging**, tap **Pair device with QR code** and scan this code with the scanner that opens. (The Camera app can't read it.)")
 
                 if useCode {
                     codeForm
@@ -55,7 +43,7 @@ struct SetupView: View {
                 .font(.footnote)
                 .foregroundStyle(.secondary)
             }
-            .padding(18)
+            .padding(.vertical, 4)
         }
         // Listen for a scan only while this screen is up.
         .onAppear { engine.startQRPairing() }
@@ -143,7 +131,7 @@ private struct QRCodeImage: View {
     }
 }
 
-private struct Instruction: View {
+struct Instruction: View {
     let number: Int
     let text: LocalizedStringKey
 

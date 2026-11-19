@@ -5,8 +5,17 @@ public enum Adb {
     static let appPackage = "dev.nearside"
     static let helperPort: UInt16 = 47801
 
-    /// nil when adb isn't installed (the app then shows install instructions).
-    public static let path: String? = {
+    /// nil when adb isn't installed (the app then shows install instructions). Re-checked by
+    /// `locate()` when the user says they've installed it. Only changed on the main thread.
+    nonisolated(unsafe) public private(set) static var path: String? = find()
+
+    @discardableResult
+    public static func locate() -> String? {
+        path = find()
+        return path
+    }
+
+    private static func find() -> String? {
         var candidates: [String] = []
         if let home = ProcessInfo.processInfo.environment["ANDROID_HOME"] {
             candidates.append("\(home)/platform-tools/adb")
@@ -17,7 +26,7 @@ public enum Adb {
             "/usr/local/bin/adb",
         ]
         return candidates.first { FileManager.default.isExecutableFile(atPath: $0) }
-    }()
+    }
 
     public struct Result: Sendable {
         public let code: Int32
@@ -188,6 +197,18 @@ public enum Adb {
         let verb = allowed ? "grant" : "revoke"
         let permissions = ["READ_SMS", "SEND_SMS", "READ_CONTACTS"].map { "pm \(verb) \(appPackage) android.permission.\($0)" }
         _ = shell(serial, permissions.joined(separator: "; "))
+    }
+
+    /// Android's "<app> pasted from your clipboard" toast is a phone-wide setting
+    /// (Settings → Privacy → Show clipboard access). nil when unknown.
+    static func clipboardToastHidden(_ serial: String) -> Bool? {
+        let r = shell(serial, "settings get secure clipboard_show_access_notifications")
+        guard r.ok else { return nil }
+        return r.out == "0" // "null" (never changed) and "1" both mean shown
+    }
+
+    static func setClipboardToastHidden(_ serial: String, _ hidden: Bool) -> Bool {
+        shell(serial, "settings put secure clipboard_show_access_notifications \(hidden ? 0 : 1)").ok
     }
 
     static let phoneInbox = "/sdcard/Download/Nearside"

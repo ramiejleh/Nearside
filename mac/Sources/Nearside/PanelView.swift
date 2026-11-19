@@ -4,6 +4,7 @@ import SwiftUI
 struct PanelView: View {
     let engine: SyncEngine
     let openMessages: () -> Void
+    let openSetup: () -> Void
     /// Phone clips that were unseen when the panel opened; they keep their "New" tag while open.
     @State private var highlighted: Set<UUID> = []
     @State private var showingSettings = false
@@ -14,15 +15,13 @@ struct PanelView: View {
             header
             Divider()
             if showingSettings {
-                SettingsView(engine: engine, onDone: { showingSettings = false })
+                SettingsView(engine: engine, onDone: { showingSettings = false }, openSetup: openSetup)
                     .transition(.move(edge: .trailing).combined(with: .opacity))
             } else {
                 Group {
                     switch engine.state {
-                    case .adbMissing:
-                        AdbMissingView()
-                    case .needsSetup:
-                        SetupView(engine: engine)
+                    case .adbMissing, .needsSetup:
+                        SetupPrompt(openSetup: openSetup)
                     case .searching, .connected:
                         if !engine.transfers.isEmpty { TransfersView(engine: engine) }
                         HistoryView(engine: engine, highlighted: highlighted)
@@ -188,40 +187,30 @@ struct StatusPill: View {
     }
 }
 
-struct AdbMissingView: View {
-    private let command = "brew install --cask android-platform-tools"
+/// Shown in the panel until a phone is set up; the setup itself is a separate window.
+struct SetupPrompt: View {
+    let openSetup: () -> Void
 
     var body: some View {
         VStack(spacing: 14) {
             Spacer()
-            Image(systemName: "shippingbox")
-                .font(.system(size: 36, weight: .light))
-                .foregroundStyle(.secondary)
-            Text("One more tool needed")
+            Image(systemName: "iphone.gen3.radiowaves.left.and.right")
+                .font(.system(size: 38, weight: .light))
+                .foregroundStyle(.green)
+            Text("Connect your Android phone")
                 .font(.title3.weight(.semibold))
-            Text("Nearside talks to your phone through Android's free adb tool. Install it in Terminal, then reopen Nearside.")
+            Text("A one-time setup of about two minutes. Afterwards everything syncs on its own.")
                 .font(.callout)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
-            HStack {
-                Text(command)
-                    .font(.system(size: 11.5, design: .monospaced))
-                    .textSelection(.enabled)
-                Spacer()
-                Button {
-                    NSPasteboard.general.clearContents()
-                    NSPasteboard.general.setString(command, forType: .string)
-                } label: {
-                    Image(systemName: "doc.on.doc")
-                }
-                .buttonStyle(.borderless)
-                .help("Copy command")
-            }
-            .padding(10)
-            .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 8))
-            Button("Quit") { NSApp.terminate(nil) }
+                .frame(maxWidth: 280)
+            Button("Set Up Nearside…", action: openSetup)
+                .buttonStyle(.borderedProminent)
+                .tint(.green)
+                .controlSize(.large)
             Spacer()
         }
         .padding(24)
+        .frame(maxWidth: .infinity)
     }
 }
