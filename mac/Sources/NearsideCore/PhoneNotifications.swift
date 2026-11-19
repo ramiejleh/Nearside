@@ -57,6 +57,7 @@ final class PhoneNotifications: NSObject, UNUserNotificationCenterDelegate {
 
     func activate() {
         _ = category(for: [])
+        adoptDelivered()
         center.requestAuthorization(options: [.alert, .sound]) { _, _ in }
     }
 
@@ -76,6 +77,21 @@ final class PhoneNotifications: NSObject, UNUserNotificationCenterDelegate {
         }
         center.add(UNNotificationRequest(identifier: key, content: content, trigger: nil))
         shown[key] = Date()
+    }
+
+    /// Notifications from an earlier run of the app are still in Notification Center: track
+    /// them too, or clearing them after a restart (or login) would never reach the phone.
+    private var adopted = false
+    private func adoptDelivered() {
+        guard !adopted else { return }
+        adopted = true
+        center.getDeliveredNotifications { [weak self] delivered in
+            let ids = delivered.map(\.request.identifier)
+            Task { @MainActor in
+                guard let self else { return }
+                for id in ids where self.shown[id] == nil { self.shown[id] = .distantPast }
+            }
+        }
     }
 
     func remove(key: String) {
@@ -170,7 +186,8 @@ final class PhoneNotifications: NSObject, UNUserNotificationCenterDelegate {
     }
 
     private func dismissed(_ key: String) {
-        guard shown.removeValue(forKey: key) != nil else { return } // reconcile got it first
+        // Always forward: it may predate this run, and a repeat dismiss is harmless on the phone.
+        shown[key] = nil
         onDismiss?(key)
     }
 
