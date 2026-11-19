@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 import UserNotifications
 
@@ -29,8 +30,11 @@ final class PhoneNotifications: NSObject, UNUserNotificationCenterDelegate {
 
     /// The category for this set of buttons, registering it if it's new.
     private func category(for actions: [Action]) -> String {
+        // Titles come from phone apps, so hash an unambiguous encoding rather than joining
+        // strings: no title can make two different button sets share a category.
+        let encoded = (try? JSONSerialization.data(withJSONObject: actions.map { [$0.isReply ? "R" : "B", $0.title] })) ?? Data()
         let id = actions.isEmpty ? Self.plainCategory
-            : "phone:" + actions.map { ($0.isReply ? "R:" : "B:") + $0.title }.joined(separator: "|")
+            : "phone:" + SHA256.hash(data: encoded).map { String(format: "%02x", $0) }.joined()
         if categories[id] == nil {
             let buttons: [UNNotificationAction] = actions.enumerated().map { index, action in
                 action.isReply
