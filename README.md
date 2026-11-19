@@ -24,6 +24,8 @@ A menu-bar app with:
 - **Arrival toasts:** a card slides in when a clip arrives from the phone.
 - **Unseen count:** the menu-bar icon shows how many phone clips you haven't looked at.
 - **Searchable history:** click an item to put it back on both clipboards.
+- **Files both ways:** drag files onto the menu-bar icon to send them to the phone; "Send to
+  Mac" in Android's share sheet puts files in your Mac's Downloads.
 - **Phone notifications** as native macOS notifications; dismiss on either device and it's
   gone on both.
 
