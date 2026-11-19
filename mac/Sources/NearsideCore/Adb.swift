@@ -198,8 +198,10 @@ public enum Adb {
     /// Grants or revokes reading/sending SMS and reading contacts (for names in Messages).
     static func setSmsAccess(_ serial: String, allowed: Bool) {
         let verb = allowed ? "grant" : "revoke"
-        let permissions = ["READ_SMS", "SEND_SMS", "READ_CONTACTS"].map { "pm \(verb) \(appPackage) android.permission.\($0)" }
-        _ = shell(serial, permissions.joined(separator: "; "))
+        var commands = ["READ_SMS", "SEND_SMS", "READ_CONTACTS"].map { "pm \(verb) \(appPackage) android.permission.\($0)" }
+        // Without this app-op Android silently ignores our writes (marking texts read).
+        commands.append("appops set \(appPackage) WRITE_SMS \(allowed ? "allow" : "default")")
+        _ = shell(serial, commands.joined(separator: "; "))
     }
 
     /// Android's "<app> pasted from your clipboard" toast is a phone-wide setting

@@ -19,9 +19,12 @@ import org.json.JSONObject
  *   ← {"t":"sms-threads","req"}              → {"t":"sms-threads","req","threads":[…]}
  *   ← {"t":"sms-thread","req","thread"}      → {"t":"sms-thread","req","thread","messages":[…]}
  *   ← {"t":"sms-send","req","address","text"} → {"t":"sms-sent","req","ok","error"?}
+ *   ← {"t":"sms-read","req","thread"}        → {"t":"sms-read","req","thread","updated"}  (seen on the Mac)
  *   → {"t":"sms-changed"}                    the SMS store changed (new text, read, sent…)
  *   → {"t":"sms-error","req","reason":"permission"}
- * Permissions (READ_SMS, SEND_SMS, READ_CONTACTS) are granted by the Mac over adb.
+ * Permissions (READ_SMS, SEND_SMS, READ_CONTACTS) are granted by the Mac over adb, plus the
+ * WRITE_SMS app-op: Android silently ignores SMS writes (like marking read) from anything but
+ * the default SMS app unless that op is allowed.
  */
 object SmsBridge {
     private const val MAX_THREADS = 60
@@ -51,6 +54,11 @@ object SmsBridge {
                             .put("messages", messages(context, thread))
                     }
                     "sms-send" -> send(context, msg.optString("address"), msg.optString("text")).put("req", req)
+                    "sms-read" -> {
+                        val thread = msg.optLong("thread")
+                        JSONObject().put("t", "sms-read").put("req", req).put("thread", thread)
+                            .put("updated", markRead(context, thread))
+                    }
                     else -> null
                 }
             }.getOrElse { JSONObject().put("t", "sms-error").put("req", req).put("reason", it.message ?: "failed") }
@@ -109,6 +117,20 @@ object SmsBridge {
             }
         }
         return JSONArray().apply { list.asReversed().forEach { put(it) } }
+    }
+
+    /** Marks a conversation's incoming texts read. Returns how many changed (0 if not allowed). */
+    private fun markRead(context: Context, thread: Long): Int {
+        val values = android.content.ContentValues().apply {
+            put(Telephony.Sms.READ, 1)
+            put(Telephony.Sms.SEEN, 1)
+        }
+        val updated = context.contentResolver.update(
+            Telephony.Sms.CONTENT_URI, values,
+            "${Telephony.Sms.THREAD_ID} = ? AND ${Telephony.Sms.READ} = 0", arrayOf(thread.toString()),
+        )
+        android.util.Log.i("Nearside", "marked $updated texts read")
+        return updated
     }
 
     /** Sends a text. As a non-default SMS app, Android records it in the conversation itself. */

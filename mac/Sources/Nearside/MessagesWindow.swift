@@ -20,8 +20,12 @@ final class MessagesWindowController: NSObject, NSWindowDelegate {
     }
 
     func windowWillClose(_ notification: Notification) {
+        engine.messages.isActive = false
         engine.messages.isOpen = false
     }
+
+    func windowDidBecomeKey(_ notification: Notification) { engine.messages.isActive = true }
+    func windowDidResignKey(_ notification: Notification) { engine.messages.isActive = false }
 
     private func makeWindow() -> NSWindow {
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 820, height: 560),
@@ -188,16 +192,19 @@ private struct ConversationView: View {
         VStack(spacing: 0) {
             ScrollViewReader { proxy in
                 ScrollView {
-                    LazyVStack(spacing: 4) {
+                    let layout = MessagesStore.layout(messages)
+                    LazyVStack(spacing: 0) {
                         ForEach(Array(messages.enumerated()), id: \.element.id) { index, message in
-                            if index == 0 || !Calendar.current.isDate(messages[index - 1].date, inSameDayAs: message.date) {
-                                Text(message.date.formatted(date: .abbreviated, time: .omitted))
+                            if layout[index].header {
+                                Text(Self.heading(message.date))
                                     .font(.system(size: 11, weight: .medium))
                                     .foregroundStyle(.secondary)
-                                    .padding(.top, 12)
-                                    .padding(.bottom, 4)
+                                    .padding(.top, index == 0 ? 4 : 16)
+                                    .padding(.bottom, 6)
                             }
-                            Bubble(message: message)
+                            Bubble(message: message, position: layout[index])
+                                // Tight within a run, roomier between runs.
+                                .padding(.top, layout[index].first && !layout[index].header ? 10 : 2)
                                 .id(message.id)
                         }
                     }
@@ -227,13 +234,28 @@ private struct ConversationView: View {
     }
 }
 
+extension ConversationView {
+    /// "Today 14:32", "Yesterday 09:10", "Mon 18:02", "12 Nov 2026 at 08:15".
+    static func heading(_ date: Date) -> String {
+        let calendar = Calendar.current
+        let time = date.formatted(date: .omitted, time: .shortened)
+        if calendar.isDateInToday(date) { return "Today \(time)" }
+        if calendar.isDateInYesterday(date) { return "Yesterday \(time)" }
+        if let days = calendar.dateComponents([.day], from: date, to: .now).day, days < 7 {
+            return "\(date.formatted(.dateTime.weekday(.wide))) \(time)"
+        }
+        return date.formatted(date: .abbreviated, time: .shortened)
+    }
+}
+
 private struct Bubble: View {
     let message: MessagesStore.Message
+    let position: MessagesStore.Layout
 
     var body: some View {
         HStack {
             if message.outgoing { Spacer(minLength: 60) }
-            VStack(alignment: message.outgoing ? .trailing : .leading, spacing: 2) {
+            VStack(alignment: message.outgoing ? .trailing : .leading, spacing: 3) {
                 Text(message.body)
                     .font(.system(size: 13))
                     .textSelection(.enabled)
@@ -241,23 +263,38 @@ private struct Bubble: View {
                     .padding(.vertical, 7)
                     .foregroundStyle(message.outgoing ? .white : .primary)
                     .background(message.outgoing ? AnyShapeStyle(Color.green.gradient) : AnyShapeStyle(.quaternary),
-                                in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                                in: shape)
                     .opacity(message.pending ? 0.6 : 1)
-                HStack(spacing: 4) {
-                    if message.failed {
-                        Label("Not sent", systemImage: "exclamationmark.circle.fill").foregroundStyle(.red)
-                    } else if message.pending {
-                        Text("Sending…")
-                    } else {
-                        Text(message.date.formatted(date: .omitted, time: .shortened))
+                    .help(message.date.formatted(date: .abbreviated, time: .shortened))
+                // Status/time once per run, under its last bubble (always for problems).
+                if position.last || message.failed || message.pending {
+                    HStack(spacing: 4) {
+                        if message.failed {
+                            Label("Not sent", systemImage: "exclamationmark.circle.fill").foregroundStyle(.red)
+                        } else if message.pending {
+                            Text("Sending…")
+                        } else {
+                            Text(message.date.formatted(date: .omitted, time: .shortened))
+                        }
                     }
+                    .font(.system(size: 10))
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 6)
                 }
-                .font(.system(size: 10))
-                .foregroundStyle(.secondary)
-                .padding(.horizontal, 6)
             }
             if !message.outgoing { Spacer(minLength: 60) }
         }
+    }
+
+    /// Round outside, tighter where bubbles of the same run meet (like Messages).
+    private var shape: UnevenRoundedRectangle {
+        let big: CGFloat = 17, small: CGFloat = 5
+        let top = position.first ? big : small, bottom = position.last ? big : small
+        return message.outgoing
+            ? UnevenRoundedRectangle(topLeadingRadius: big, bottomLeadingRadius: big,
+                                     bottomTrailingRadius: bottom, topTrailingRadius: top, style: .continuous)
+            : UnevenRoundedRectangle(topLeadingRadius: top, bottomLeadingRadius: bottom,
+                                     bottomTrailingRadius: big, topTrailingRadius: big, style: .continuous)
     }
 }
 

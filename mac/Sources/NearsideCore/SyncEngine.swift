@@ -196,7 +196,7 @@ public final class SyncEngine {
                 }
             }
             applySmsAccess()
-        case "sms-threads", "sms-thread", "sms-sent", "sms-changed", "sms-error":
+        case "sms-threads", "sms-thread", "sms-sent", "sms-read", "sms-changed", "sms-error":
             messages.handle(message)
         case "file-ready":
             receiveFile(message)

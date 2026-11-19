@@ -208,3 +208,25 @@ import Testing
         #expect(AdbInstaller.isGoogleSigned(adb))
     }
 }
+
+@Suite struct BubbleLayoutTests {
+    private func msg(_ id: Int64, _ out: Bool, _ seconds: TimeInterval) -> MessagesStore.Message {
+        .init(id: id, body: "", date: Date(timeIntervalSince1970: 1_700_000_000 + seconds), outgoing: out, failed: false, pending: false)
+    }
+
+    @Test func groupsCloseMessagesFromTheSameSide() {
+        let messages = [msg(1, false, 0), msg(2, false, 30), msg(3, false, 60), // a run of three
+                        msg(4, true, 70),                                      // reply: new run
+                        msg(5, true, 70 + 600)]                                // 10 min later: new run
+        let l = MessagesStore.layout(messages)
+        #expect(l.map(\.first) == [true, false, false, true, true])
+        #expect(l.map(\.last) == [false, false, true, true, true])
+        #expect(l.map(\.header) == [true, false, false, false, false])
+    }
+
+    @Test func longPauseGetsAHeaderAndBreaksTheRun() {
+        let l = MessagesStore.layout([msg(1, true, 0), msg(2, true, 2 * 3600)])
+        #expect(l.map(\.header) == [true, true])
+        #expect(l[0].last && l[1].first)
+    }
+}
