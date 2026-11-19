@@ -29,7 +29,7 @@ final class PasteboardWatcher {
         // Password managers mark secrets as concealed (nspasteboard.org convention).
         let types = pasteboard.types ?? []
         if types.contains(NSPasteboard.PasteboardType("org.nspasteboard.ConcealedType")) { return }
-        guard let text = pasteboard.string(forType: .string) else { return }
+        guard let text = pasteboard.string(forType: .string), !text.isEmpty else { return }
         onCopy(text)
     }
 }
