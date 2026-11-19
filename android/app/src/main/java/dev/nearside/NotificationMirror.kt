@@ -99,7 +99,8 @@ class NotificationMirror : NotificationListenerService() {
         if (title.isBlank() && text.isBlank()) return false
 
         active[sbn.key] = n
-        val fingerprint = "$title\u0000$text"
+        // Buttons are part of the version: the Mac's button index must match the phone's list.
+        val fingerprint = "$title\u0000$text\u0000" + usableActions(n).joinToString("\u0001") { it.title.toString() }
         if (delivered[sbn.key] == fingerprint) return false
 
         val actions = JSONArray()
