@@ -43,6 +43,9 @@ struct SetupWizard: View {
 
     @State private var page: Page = .welcome
     @State private var adbStillMissing = false
+    @State private var downloading = false
+    @State private var downloadProgress = 0.0
+    @State private var downloadError: String?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -103,7 +106,7 @@ struct SetupWizard: View {
     private var title: String {
         switch page {
         case .welcome: "Welcome to Nearside"
-        case .adb: "One tool to install"
+        case .adb: "One tool to download"
         case .phone: "Prepare your phone"
         case .pair: "Pair with your phone"
         case .choices: "Choose what to sync"
@@ -114,7 +117,7 @@ struct SetupWizard: View {
     private var subtitle: String {
         switch page {
         case .welcome: "Your Android phone and this Mac, working together. A one-time setup of about two minutes."
-        case .adb: "Nearside talks to your phone through Android's free adb tool."
+        case .adb: "Nearside talks to your phone through adb, Android's free connection tool from Google."
         case .phone: "Nearside connects through Android's Wireless debugging, which lives in Developer options."
         case .pair: "This links your phone and this Mac, once. It stays paired after reboots and Wi-Fi changes."
         case .choices: "You can change all of these later in Settings (the gear in the menu-bar panel)."
@@ -154,16 +157,62 @@ struct SetupWizard: View {
     }
 
     private var adb: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            Text("Install it with Homebrew in Terminal, then click **Check Again**:")
-            CommandBox(command: "brew install --cask android-platform-tools")
-            Text("No Homebrew? Get it from [brew.sh](https://brew.sh) first, or install Android Studio, which includes adb.")
-                .font(.footnote)
-                .foregroundStyle(.secondary)
-            if adbStillMissing {
-                Label("Still not found. It can take a minute to install.", systemImage: "exclamationmark.triangle")
-                    .font(.callout)
-                    .foregroundStyle(.orange)
+        VStack(alignment: .leading, spacing: 16) {
+            VStack(alignment: .leading, spacing: 10) {
+                Text("**Download adb** fetches Google's official platform-tools (about 17 MB) and keeps them in Nearside's own folder. Nearside only uses it if it's signed by Google.")
+                    .fixedSize(horizontal: false, vertical: true)
+                if downloading {
+                    ProgressView(value: downloadProgress) {
+                        Text(downloadProgress < 1 ? "Downloading from Google…" : "Checking Google's signature…")
+                            .font(.callout)
+                    }
+                }
+                if let downloadError {
+                    Label(downloadError, systemImage: "exclamationmark.triangle")
+                        .font(.callout)
+                        .foregroundStyle(.orange)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Text("By downloading you accept Google's [Android SDK terms](https://developer.android.com/studio/terms).")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+            .padding(14)
+            .background(.quaternary.opacity(0.45), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+
+            DisclosureGroup("Or install it yourself") {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("With Homebrew in Terminal, then click **Check Again**:")
+                    CommandBox(command: "brew install --cask android-platform-tools")
+                    HStack {
+                        Button("Check Again") {
+                            if engine.recheckAdb() { adbStillMissing = false; page = .phone } else { adbStillMissing = true }
+                        }
+                        if adbStillMissing {
+                            Text("Still not found.").foregroundStyle(.orange)
+                        }
+                    }
+                }
+                .padding(.top, 6)
+            }
+            .font(.callout)
+        }
+    }
+
+    private func downloadAdb() {
+        downloading = true
+        downloadError = nil
+        downloadProgress = 0
+        Task {
+            let result = await AdbInstaller.install { value in
+                Task { @MainActor in downloadProgress = value }
+            }
+            downloading = false
+            switch result {
+            case .success:
+                if engine.recheckAdb() { page = .phone } else { downloadError = AdbInstaller.Failure.missingAdb.message }
+            case .failure(let failure):
+                downloadError = failure.message
             }
         }
     }
@@ -233,10 +282,11 @@ struct SetupWizard: View {
     @ViewBuilder private var primary: some View {
         switch page {
         case .adb:
-            Button("Check Again") {
-                if engine.recheckAdb() { adbStillMissing = false; page = .phone } else { adbStillMissing = true }
-            }
-            .keyboardShortcut(.defaultAction)
+            Button(downloading ? "Downloading…" : "Download adb", action: downloadAdb)
+                .keyboardShortcut(.defaultAction)
+                .tint(.green)
+                .buttonStyle(.borderedProminent)
+                .disabled(downloading)
         case .pair:
             // Advances by itself once the phone is connected.
             Button("Waiting for your phone…") {}

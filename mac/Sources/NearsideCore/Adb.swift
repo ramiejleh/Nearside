@@ -20,10 +20,13 @@ public enum Adb {
         if let home = ProcessInfo.processInfo.environment["ANDROID_HOME"] {
             candidates.append("\(home)/platform-tools/adb")
         }
+        // An adb the user already has comes first: two different adb versions on one Mac keep
+        // killing each other's server. Ours (downloaded by the wizard) is the fallback.
         candidates += [
             "\(NSHomeDirectory())/Library/Android/sdk/platform-tools/adb",
             "/opt/homebrew/bin/adb",
             "/usr/local/bin/adb",
+            AdbInstaller.installedAdb.path,
         ]
         return candidates.first { FileManager.default.isExecutableFile(atPath: $0) }
     }

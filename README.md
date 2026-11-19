@@ -37,9 +37,10 @@ mac/scripts/bundle.sh                          # → mac/build/Nearside.app
 open mac/build/Nearside.app
 ```
 
-Requirements: macOS 14+, an Android 11+ phone on the same Wi-Fi, and Android's adb
-(`brew install --cask android-platform-tools`). The first launch walks you through pairing
-(Developer options → Wireless debugging → "Pair device with pairing code").
+Requirements: macOS 14+ and an Android 11+ phone on the same Wi-Fi. The first launch opens a
+setup wizard. If you don't have Android's adb, it downloads Google's official platform-tools
+for you (one click; only used if signed by Google). Then you pair by scanning a QR code from
+Developer options → Wireless debugging.
 
 ## Security
 
