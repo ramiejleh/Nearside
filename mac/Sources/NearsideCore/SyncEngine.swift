@@ -50,7 +50,9 @@ public final class SyncEngine {
         if Adb.path == nil {
             state = .adbMissing
         } else {
-            state = defaults.bool(forKey: "setupComplete") ? .searching : .needsSetup
+            // Set up = completed the pairing flow, which is the only place a phone gets pinned.
+            let pinned = defaults.string(forKey: "phoneSerial") != nil
+            state = defaults.bool(forKey: "setupComplete") && pinned ? .searching : .needsSetup
         }
     }
 
@@ -74,7 +76,7 @@ public final class SyncEngine {
         }.fire()
         Timer.scheduledTimer(withTimeInterval: 6 * 3600, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated {
-                let pinned = self?.pinnedSerial
+                guard let pinned = self?.pinnedSerial else { return }
                 Task.detached { Adb.renewAuthorization(pinned: pinned) }
             }
         }
@@ -87,11 +89,11 @@ public final class SyncEngine {
     }
 
     private func tick() {
-        // In .needsSetup we still probe: if this Mac is already paired (e.g. via the PoC CLI),
-        // setup is skipped silently.
-        guard link.isIdle, !preparing, !isPairing, state != .adbMissing else { return }
+        // Only ever talk to the phone pinned during the user-run pairing flow; no discovery
+        // of "whatever phone is around" (that would let a look-alike device be adopted).
+        guard link.isIdle, !preparing, !isPairing, state == .searching || state == .connected,
+              let pinned = pinnedSerial else { return }
         preparing = true
-        let pinned = pinnedSerial
         Task {
             let phone = await Task.detached { Adb.prepareHelper(pinned: pinned) }.value
             preparing = false
@@ -102,15 +104,9 @@ public final class SyncEngine {
     }
 
     private func adopt(_ phone: Adb.Phone) {
-        // An existing pairing found without our setup flow is trusted on first use.
-        if pinnedSerial == nil, let serial = phone.hardwareSerial { pinnedSerial = serial }
         if let model = phone.model {
             phoneName = model
             defaults.set(model, forKey: "phoneName")
-        }
-        if state == .needsSetup {
-            defaults.set(true, forKey: "setupComplete")
-            state = .searching
         }
     }
 

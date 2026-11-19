@@ -96,15 +96,16 @@ public enum Adb {
         return String(out[range].dropFirst("guid=adb-".count).dropLast())
     }
 
-    /// Finds the phone and connects. With `pinned`, only that phone (by hardware serial) is
-    /// accepted, so a device on the LAN advertising wireless debugging can't stand in for it.
+    /// Finds the pinned phone (by hardware serial) and connects. Other devices advertising
+    /// wireless debugging are ignored. Note: the serial is visible on the LAN, so this is not
+    /// cryptographic identity; see vault/README.md "Known gaps".
     /// Polls for up to `wait` seconds. Returns the adb serial to address it with.
-    static func ensureConnected(pinned: String?, wait: TimeInterval = 0) -> String? {
-        func matches(_ serial: String) -> Bool { pinned == nil || hardwareSerial(serial) == pinned }
+    static func ensureConnected(pinned: String, wait: TimeInterval = 0) -> String? {
+        func matches(_ serial: String) -> Bool { hardwareSerial(serial) == pinned }
         let deadline = Date().addingTimeInterval(wait)
         repeat {
             if let serial = connectedWirelessSerials().first(where: matches) { return serial }
-            let endpoints = wirelessEndpoints().filter { pinned == nil || $0.instance.hasPrefix("adb-\(pinned!)-") }
+            let endpoints = wirelessEndpoints().filter { $0.instance.hasPrefix("adb-\(pinned)-") }
             for endpoint in endpoints {
                 let r = run(["connect", endpoint.address], timeout: 10)
                 guard r.out.contains("connected to") else { continue }
@@ -151,7 +152,7 @@ public enum Adb {
     }
 
     /// Connects, starts the helper if needed, and (re)creates the tunnel. nil when unreachable.
-    static func prepareHelper(pinned: String?) -> Phone? {
+    static func prepareHelper(pinned: String) -> Phone? {
         guard let serial = ensureConnected(pinned: pinned) else { return nil }
         if !helperRunning(serial) {
             _ = startHelper(serial)
@@ -163,8 +164,8 @@ public enum Adb {
     }
 
     /// Android revokes an ADB host after 7 days without a fresh connection; reconnecting renews it.
-    static func renewAuthorization(pinned: String?) {
-        if let serial = connectedWirelessSerials().first(where: { pinned == nil || hardwareSerial($0) == pinned }) {
+    static func renewAuthorization(pinned: String) {
+        if let serial = connectedWirelessSerials().first(where: { hardwareSerial($0) == pinned }) {
             run(["disconnect", serial])
         }
         _ = ensureConnected(pinned: pinned)
