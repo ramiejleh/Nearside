@@ -1,13 +1,40 @@
 import NearsideCore
 import SwiftUI
 
+/// Plain AppKit entry point. A SwiftUI `App` must declare a scene, and the only invisible-ish
+/// one (an empty `Settings`) still popped up as an empty "Nearside Settings" window.
 @main
-struct NearsideApp: App {
-    @NSApplicationDelegateAdaptor private var delegate: AppDelegate
+enum NearsideMain {
+    static func main() {
+        let app = NSApplication.shared
+        let delegate = AppDelegate()
+        app.delegate = delegate
+        app.setActivationPolicy(.accessory) // menu-bar app: no Dock icon
+        app.mainMenu = makeMainMenu()
+        app.run()
+    }
 
-    var body: some Scene {
-        // Everything lives in the status item (see StatusItemController); a scene is required.
-        Settings { EmptyView() }
+    /// Never visible for a menu-bar app, but its key equivalents are what give the panel's
+    /// text fields ⌘X/⌘C/⌘V/⌘A/⌘Z, and ⌘Q quits.
+    @MainActor private static func makeMainMenu() -> NSMenu {
+        let main = NSMenu()
+        let appItem = NSMenuItem()
+        appItem.submenu = NSMenu()
+        appItem.submenu?.addItem(withTitle: "Quit Nearside", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        main.addItem(appItem)
+
+        let editItem = NSMenuItem()
+        let edit = NSMenu(title: "Edit")
+        edit.addItem(withTitle: "Undo", action: Selector(("undo:")), keyEquivalent: "z")
+        edit.addItem(withTitle: "Redo", action: Selector(("redo:")), keyEquivalent: "Z")
+        edit.addItem(.separator())
+        edit.addItem(withTitle: "Cut", action: #selector(NSText.cut(_:)), keyEquivalent: "x")
+        edit.addItem(withTitle: "Copy", action: #selector(NSText.copy(_:)), keyEquivalent: "c")
+        edit.addItem(withTitle: "Paste", action: #selector(NSText.paste(_:)), keyEquivalent: "v")
+        edit.addItem(withTitle: "Select All", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
+        editItem.submenu = edit
+        main.addItem(editItem)
+        return main
     }
 }
 
@@ -26,13 +53,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         engine.start()
         self.engine = engine
         statusItem = StatusItemController(engine: engine)
-        // The placeholder Settings scene adds "Settings… ⌘," to the app menu; ⌘, belongs to the
-        // panel's own settings page. (The rest of the menu stays: Edit gives text fields ⌘V.)
-        DispatchQueue.main.async {
-            for menu in NSApp.mainMenu?.items.compactMap(\.submenu) ?? [] {
-                for entry in menu.items where entry.keyEquivalent == "," { menu.removeItem(entry) }
-            }
-        }
     }
 }
 
