@@ -5,6 +5,7 @@ import android.os.Binder
 import android.os.RemoteException
 import dev.nearside.FileNotifications
 import dev.nearside.NotificationMirror
+import dev.nearside.SmsBridge
 import dev.nearside.Status
 import org.json.JSONObject
 
@@ -66,6 +67,7 @@ object HelperConnection {
             "ping" -> send(JSONObject().put("t", "pong").put("id", msg.opt("id")))
             "notif-dismiss" -> NotificationMirror.instance?.dismiss(msg.optString("key"))
             "file-received" -> context?.let { FileNotifications.received(it, msg.optString("name")) }
+            "sms-threads", "sms-thread", "sms-send" -> context?.let { SmsBridge.handle(it, msg) }
             "notif-open" -> NotificationMirror.instance?.open(msg.optString("key"))
             "notif-action" -> NotificationMirror.instance?.runAction(
                 msg.optString("key"),

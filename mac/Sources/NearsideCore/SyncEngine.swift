@@ -44,6 +44,18 @@ public final class SyncEngine {
     /// Whether the Nearside app on the phone is linked to the helper (needed for app features).
     public private(set) var appLinked = false
     public private(set) var transfers: [Transfer] = []
+    /// SMS for the Messages window.
+    public let messages = MessagesStore()
+
+    /// Read and send SMS from the Mac. Turning it off revokes the phone app's SMS and contacts
+    /// permissions, so nothing on the phone can read texts at all.
+    public var textMessages: Bool {
+        didSet {
+            defaults.set(textMessages, forKey: "textMessages")
+            if !textMessages { messages.reset() }
+            applySmsAccess()
+        }
+    }
 
     /// Mirror the phone's notifications to macOS. Turning it off also revokes the phone app's
     /// notification access, so nothing is read on the phone at all.
@@ -79,6 +91,7 @@ public final class SyncEngine {
         history = ClipHistory.load(from: Paths.history, limit: limit)
         phoneName = defaults.string(forKey: "phoneName") ?? "Phone"
         mirrorNotifications = defaults.object(forKey: "mirrorNotifications") as? Bool ?? true
+        textMessages = defaults.object(forKey: "textMessages") as? Bool ?? true
         if Adb.path == nil {
             state = .adbMissing
         } else {
@@ -97,6 +110,10 @@ public final class SyncEngine {
         pasteboard.start()
 
         link.onMessage = { [weak self] message in self?.handle(message) }
+        messages.transport = { [weak self] message in
+            guard let self, self.state == .connected, self.textMessages else { return }
+            self.link.send(message)
+        }
         notifications.onDismiss = { [weak self] key in
             guard !key.hasPrefix(Self.fileNotificationPrefix) else { return } // ours, not the phone's
             self?.link.send(["t": "notif-dismiss", "key": key])
@@ -170,6 +187,9 @@ public final class SyncEngine {
             state = .connected
             applyNotificationAccess()
             if let serial = adbSerial { Task.detached { Adb.grantPostNotifications(serial) } }
+            applySmsAccess()
+        case "sms-threads", "sms-thread", "sms-sent", "sms-changed", "sms-error":
+            messages.handle(message)
         case "file-ready":
             receiveFile(message)
         case "app":
@@ -275,6 +295,17 @@ public final class SyncEngine {
 
     private func setStatus(_ id: UUID, _ status: Transfer.Status) {
         if let i = transfers.firstIndex(where: { $0.id == id }) { transfers[i].status = status }
+    }
+
+    /// Makes the phone app's SMS/contacts permissions match the setting (on every connect).
+    private func applySmsAccess() {
+        let allowed = textMessages
+        guard state == .connected, let serial = adbSerial else { return }
+        let open = messages.isOpen
+        Task {
+            await Task.detached { Adb.setSmsAccess(serial, allowed: allowed) }.value
+            if allowed && open { messages.refresh() }
+        }
     }
 
     /// Makes the phone's notification access match the setting (idempotent, so it's simply

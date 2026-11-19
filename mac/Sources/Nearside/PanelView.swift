@@ -3,6 +3,7 @@ import SwiftUI
 
 struct PanelView: View {
     let engine: SyncEngine
+    let openMessages: () -> Void
     /// Phone clips that were unseen when the panel opened; they keep their "New" tag while open.
     @State private var highlighted: Set<UUID> = []
     @State private var showingSettings = false
@@ -66,6 +67,17 @@ struct PanelView: View {
                 .contentTransition(.opacity)
             Spacer()
             StatusPill(state: engine.state, phoneName: engine.phoneName)
+            if (engine.state == .connected || engine.state == .searching) && !showingSettings {
+                Button(action: openMessages) {
+                    Image(systemName: "message")
+                        .font(.system(size: 13, weight: .medium))
+                        .frame(width: 24, height: 24)
+                        .contentShape(Circle())
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(.secondary)
+                .help("Text messages")
+            }
             if engine.state == .connected && !showingSettings {
                 Button(action: chooseFiles) {
                     Image(systemName: "paperplane")

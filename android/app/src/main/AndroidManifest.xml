@@ -17,6 +17,11 @@
     <!-- "Received from your Mac" for files; granted by the Mac over adb. -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
+    <!-- SMS in the Mac's Messages window; granted by the Mac over adb. -->
+    <uses-permission android:name="android.permission.READ_SMS" />
+    <uses-permission android:name="android.permission.SEND_SMS" />
+    <uses-permission android:name="android.permission.READ_CONTACTS" />
+
     <application
         android:allowBackup="false"
         android:label="Nearside PoC"

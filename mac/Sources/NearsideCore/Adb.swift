@@ -183,6 +183,13 @@ public enum Adb {
         _ = shell(serial, "pm grant \(appPackage) android.permission.POST_NOTIFICATIONS")
     }
 
+    /// Grants or revokes reading/sending SMS and reading contacts (for names in Messages).
+    static func setSmsAccess(_ serial: String, allowed: Bool) {
+        let verb = allowed ? "grant" : "revoke"
+        let permissions = ["READ_SMS", "SEND_SMS", "READ_CONTACTS"].map { "pm \(verb) \(appPackage) android.permission.\($0)" }
+        _ = shell(serial, permissions.joined(separator: "; "))
+    }
+
     static let phoneInbox = "/sdcard/Download/Nearside"
 
     /// Single-quotes a string for the phone's shell.

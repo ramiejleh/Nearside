@@ -5,7 +5,7 @@ notifications, files, SMS and screen mirroring. It runs quietly in the backgroun
 per-use triggering and no cloud account.
 
 > **Status: early.** Two-way clipboard sync and notification mirroring work today: proven on a
-> Pixel 9 Pro running Android 17, surviving reboots and Wi-Fi drops. Files and SMS come next.
+> Pixel 9 Pro running Android 17, surviving reboots and Wi-Fi drops. Files and SMS work too.
 > See [`vault/README.md`](vault/README.md) for the design, research and test results.
 
 ## How it works (short version)
@@ -26,6 +26,8 @@ A menu-bar app with:
 - **Searchable history:** click an item to put it back on both clipboards.
 - **Files both ways:** drag files onto the menu-bar icon to send them to the phone; "Send to
   Mac" in Android's share sheet puts files in your Mac's Downloads.
+- **Text messages:** read and send SMS in a Messages window (RCS chats stay in Google
+  Messages; reply to those from their notifications).
 - **Phone notifications** as native macOS notifications; dismiss on either device and it's
   gone on both.
 

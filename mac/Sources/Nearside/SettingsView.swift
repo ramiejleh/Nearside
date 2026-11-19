@@ -25,6 +25,13 @@ struct SettingsView: View {
                     }
                 }
 
+                Section("Text messages") {
+                    Toggle(isOn: Binding(get: { engine.textMessages }, set: { engine.textMessages = $0 })) {
+                        Text("Read and send SMS")
+                        Text("In the Messages window (the bubble in the header). RCS chats stay in Google Messages.")
+                    }
+                }
+
                 Section("History") {
                     Picker("Keep", selection: Binding(get: { engine.historyLimit }, set: { engine.historyLimit = $0 })) {
                         Text("50 items").tag(50)

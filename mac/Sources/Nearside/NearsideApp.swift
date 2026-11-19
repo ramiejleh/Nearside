@@ -65,13 +65,17 @@ final class StatusItemController: NSObject {
     private let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
     private let popover = NSPopover()
     private var shelf: DropShelfController?
+    private lazy var messagesWindow = MessagesWindowController(engine: engine)
 
     init(engine: SyncEngine) {
         self.engine = engine
         super.init()
         popover.behavior = .transient
         popover.animates = true
-        popover.contentViewController = NSHostingController(rootView: PanelView(engine: engine))
+        popover.contentViewController = NSHostingController(rootView: PanelView(engine: engine, openMessages: { [weak self] in
+            self?.popover.performClose(nil)
+            self?.messagesWindow.show()
+        }))
         popover.contentSize = NSSize(width: 380, height: 540)
 
         guard let button = item.button else { return }

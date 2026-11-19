@@ -156,3 +156,24 @@ import Testing
         #expect(String(cString: buffer).hasPrefix("0083;"))
     }
 }
+
+@Suite struct MessagesStoreTests {
+    @Test func sameNumberIgnoresFormattingAndCountryCode() {
+        #expect(MessagesStore.sameNumber("+45 12 34 56 78", "12345678"))
+        #expect(MessagesStore.sameNumber("(555) 010-9999", "5550109999"))
+        #expect(!MessagesStore.sameNumber("12345678", "87654321"))
+        #expect(MessagesStore.sameNumber("Netflix", "Netflix"))
+    }
+
+    @Test func parsesThreadsAndMessages() {
+        let thread = MessagesStore.thread(["thread": NSNumber(value: 7), "address": "+4512345678", "name": "",
+                                           "snippet": "hi", "date": NSNumber(value: 1_700_000_000_000), "out": true, "unread": NSNumber(value: 2)])
+        #expect(thread?.id == 7)
+        #expect(thread?.title == "+4512345678") // empty name falls back to the number
+        #expect(thread?.unread == 2)
+        #expect(thread?.date == Date(timeIntervalSince1970: 1_700_000_000))
+        let message = MessagesStore.message(["id": NSNumber(value: 3), "body": "yo", "date": NSNumber(value: 0), "out": false])
+        #expect(message?.outgoing == false && message?.failed == false)
+        #expect(MessagesStore.message(["body": "no id"]) == nil)
+    }
+}
