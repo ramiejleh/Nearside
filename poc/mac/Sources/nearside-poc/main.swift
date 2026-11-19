@@ -68,7 +68,6 @@ func setup(pair: String, code: String, apk: String) -> Int32 {
     guard step("install app", Adb.run(["-s", serial, "install", "-r", apk], timeout: 120)) else { return 1 }
     let pkg = Adb.appPackage
     step("grant setup permission", Adb.shell(serial, "pm grant \(pkg) android.permission.WRITE_SECURE_SETTINGS"))
-    step("grant notifications", Adb.shell(serial, "pm grant \(pkg) android.permission.POST_NOTIFICATIONS"))
     step("battery optimisation off", Adb.shell(serial, "cmd deviceidle whitelist +\(pkg)"))
     // Launching once takes the app out of the "stopped" state so it receives BOOT_COMPLETED.
     step("open app", Adb.shell(serial, "am start -n \(pkg)/.MainActivity"))

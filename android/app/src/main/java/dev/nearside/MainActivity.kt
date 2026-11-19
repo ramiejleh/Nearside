@@ -1,6 +1,5 @@
 package dev.nearside
 
-import android.Manifest
 import android.app.Activity
 import android.content.Intent
 import android.net.Uri
@@ -33,21 +32,13 @@ class MainActivity : Activity() {
             setPadding(pad, pad * 2, pad, pad)
             addView(TextView(context).apply { text = "Nearside PoC"; textSize = 24f })
             addView(statusView)
-            addView(button("Allow notifications") {
-                requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 1)
-            })
             addView(button("Disable battery optimisation") {
                 startActivity(
                     Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, Uri.parse("package:$packageName")),
                 )
             })
-            addView(button("Restart service") {
-                stopService(Intent(context, SyncService::class.java))
-                SyncService.start(context)
-            })
         }
         setContentView(root)
-        SyncService.start(this)
     }
 
     override fun onResume() {
@@ -65,7 +56,6 @@ class MainActivity : Activity() {
         fun mark(ok: Boolean) = if (ok) "✅" else "❌"
         statusView.text = buildString {
             appendLine()
-            appendLine("${mark(Status.serviceRunning)} Service running")
             appendLine("${mark(AdbWifi.canWrite(this@MainActivity))} Setup permission granted by Mac")
             appendLine("${mark(AdbWifi.isEnabled(this@MainActivity))} Wireless debugging on")
             appendLine("${mark(battery)} Battery optimisation off")

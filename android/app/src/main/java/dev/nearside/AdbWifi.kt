@@ -5,6 +5,11 @@ import android.content.Context
 import android.content.pm.PackageManager
 import android.provider.Settings
 
+/** Last noteworthy event, shown by [MainActivity]. */
+object Status {
+    @Volatile var lastEvent = "—"
+}
+
 /**
  * Keeps wireless debugging on so the Mac (an already-trusted ADB host) can restart the helper
  * after a reboot or network change. Needs WRITE_SECURE_SETTINGS, granted once by the Mac.
