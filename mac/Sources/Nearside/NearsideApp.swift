@@ -44,6 +44,7 @@ final class StatusItemController: NSObject {
     private let engine: SyncEngine
     private let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
     private let popover = NSPopover()
+    private var shelf: DropShelfController?
 
     init(engine: SyncEngine) {
         self.engine = engine
@@ -68,6 +69,13 @@ final class StatusItemController: NSObject {
         }
         drop.onClick = { [weak button] in button?.performClick(nil) }
         button.addSubview(drop)
+
+        shelf = DropShelfController(engine: engine,
+                                    anchor: { [weak button] in button?.window?.frame },
+                                    onDrop: { [weak self] urls in
+                                        self?.engine.sendFiles(urls)
+                                        self?.show()
+                                    })
 
         updateIcon()
     }
@@ -102,41 +110,9 @@ final class StatusItemController: NSObject {
     }
 }
 
-/// Transparent overlay on the status button that accepts file drags and passes clicks through.
-private final class StatusDropView: NSView {
-    var canAccept: () -> Bool = { false }
-    var onHover: (Bool) -> Void = { _ in }
-    var onDrop: ([URL]) -> Void = { _ in }
+/// Transparent overlay on the status button: takes file drops and passes clicks through.
+private final class StatusDropView: FileDropView {
     var onClick: () -> Void = {}
-
-    override init(frame: NSRect) {
-        super.init(frame: frame)
-        registerForDraggedTypes([.fileURL])
-    }
-
-    required init?(coder: NSCoder) { fatalError("not used") }
-
     override func mouseDown(with event: NSEvent) { onClick() }
     override func rightMouseDown(with event: NSEvent) { onClick() }
-
-    private func fileURLs(_ info: NSDraggingInfo) -> [URL] {
-        info.draggingPasteboard.readObjects(forClasses: [NSURL.self],
-                                            options: [.urlReadingFileURLsOnly: true]) as? [URL] ?? []
-    }
-
-    override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
-        guard canAccept(), !fileURLs(sender).isEmpty else { return [] }
-        onHover(true)
-        return .copy
-    }
-
-    override func draggingExited(_ sender: NSDraggingInfo?) { onHover(false) }
-
-    override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
-        onHover(false)
-        let urls = fileURLs(sender)
-        guard canAccept(), !urls.isEmpty else { return false }
-        onDrop(urls)
-        return true
-    }
 }
