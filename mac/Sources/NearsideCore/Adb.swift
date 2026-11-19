@@ -58,16 +58,24 @@ public enum Adb {
         let address: String  // "ip:port"
     }
 
+    /// Parses `adb mdns services` output ("instance<TAB>type<TAB>ip:port") for one service type.
+    static func services(_ out: String, type: String) -> [Endpoint] {
+        out.split(separator: "\n").compactMap { line in
+            let parts = line.split(whereSeparator: { $0 == "\t" || $0 == " " }).map(String.init)
+            guard parts.count >= 3, parts[1].hasPrefix(type), parts.last!.contains(":") else { return nil }
+            return Endpoint(instance: parts[0], address: parts.last!)
+        }
+    }
+
     /// Phones advertising wireless debugging (`_adb-tls-connect._tcp`).
     static func wirelessEndpoints() -> [Endpoint] {
-        run(["mdns", "services"]).out
-            .split(separator: "\n")
-            .filter { $0.contains("_adb-tls-connect._tcp") }
-            .compactMap { line in
-                let parts = line.split(whereSeparator: { $0 == "\t" || $0 == " " }).map(String.init)
-                guard parts.count >= 3, parts.last!.contains(":") else { return nil }
-                return Endpoint(instance: parts[0], address: parts.last!)
-            }
+        services(run(["mdns", "services"]).out, type: "_adb-tls-connect._tcp")
+    }
+
+    /// The pairing service a phone advertises after scanning our QR code, if it's up yet.
+    static func pairingEndpoint(named name: String) -> String? {
+        services(run(["mdns", "services"]).out, type: "_adb-tls-pairing._tcp")
+            .first { $0.instance == name }?.address
     }
 
     /// Serials of devices currently attached over the network.

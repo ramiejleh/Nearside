@@ -181,8 +181,43 @@ public final class SyncEngine {
 
     // MARK: Setup
 
+    /// The QR code currently offered for "Pair device with QR code"; nil when not listening.
+    public private(set) var qrPairing: QRPairing?
+    private var qrTask: Task<Void, Never>?
+
+    /// Shows a QR code and waits for the phone to scan it, then runs the full setup.
+    /// A failed attempt gets a fresh code (each one works once). Runs until stopped or set up.
+    public func startQRPairing() {
+        guard qrTask == nil else { return }
+        qrPairing = QRPairing.random()
+        qrTask = Task {
+            while !Task.isCancelled, state == .needsSetup {
+                if !isPairing, let session = qrPairing,
+                   let address = await Task.detached(operation: { Adb.pairingEndpoint(named: session.name) }).value,
+                   !Task.isCancelled {
+                    await runSetup(hostPort: address, code: session.password)
+                    if state == .needsSetup { qrPairing = QRPairing.random() }
+                }
+                try? await Task.sleep(for: .seconds(1))
+            }
+            qrTask = nil
+            qrPairing = nil
+        }
+    }
+
+    public func stopQRPairing() {
+        qrTask?.cancel()
+        qrTask = nil
+        qrPairing = nil
+    }
+
     /// One-time setup from the phone's "Pair device with pairing code" screen.
     public func pair(hostPort: String, code: String) {
+        guard !isPairing else { return }
+        Task { await runSetup(hostPort: hostPort, code: code) }
+    }
+
+    private func runSetup(hostPort: String, code: String) async {
         guard !isPairing else { return }
         isPairing = true
         link.disconnect()
@@ -196,7 +231,7 @@ public final class SyncEngine {
         setupSteps = titles.enumerated().map { SetupStep(id: $0.offset, title: $0.element, status: .pending) }
         let apkPath = apkURL?.path
 
-        Task {
+        do {
             defer { isPairing = false }
             let run = runStep
 

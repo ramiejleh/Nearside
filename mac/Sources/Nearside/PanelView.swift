@@ -1,25 +1,34 @@
 import NearsideCore
-import ServiceManagement
 import SwiftUI
 
 struct PanelView: View {
     let engine: SyncEngine
     /// Phone clips that were unseen when the panel opened; they keep their "New" tag while open.
     @State private var highlighted: Set<UUID> = []
+    @State private var showingSettings = false
 
     var body: some View {
         VStack(spacing: 0) {
             header
             Divider()
-            switch engine.state {
-            case .adbMissing:
-                AdbMissingView()
-            case .needsSetup:
-                SetupView(engine: engine)
-            case .searching, .connected:
-                HistoryView(engine: engine, highlighted: highlighted)
+            if showingSettings {
+                SettingsView(engine: engine, onDone: { showingSettings = false })
+                    .transition(.move(edge: .trailing).combined(with: .opacity))
+            } else {
+                Group {
+                    switch engine.state {
+                    case .adbMissing:
+                        AdbMissingView()
+                    case .needsSetup:
+                        SetupView(engine: engine)
+                    case .searching, .connected:
+                        HistoryView(engine: engine, highlighted: highlighted)
+                    }
+                }
+                .transition(.move(edge: .leading).combined(with: .opacity))
             }
         }
+        .animation(.snappy(duration: 0.25), value: showingSettings)
         .frame(width: 380, height: 540)
         // The panel is the app's only key window, so becoming key == the user opened it.
         .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { _ in
@@ -36,11 +45,24 @@ struct PanelView: View {
                 .frame(width: 26, height: 26)
                 .background(LinearGradient(colors: [.green, .teal], startPoint: .topLeading, endPoint: .bottomTrailing),
                             in: RoundedRectangle(cornerRadius: 7, style: .continuous))
-            Text("Nearside")
+            Text(showingSettings ? "Settings" : "Nearside")
                 .font(.system(size: 14, weight: .semibold))
+                .contentTransition(.opacity)
             Spacer()
             StatusPill(state: engine.state, phoneName: engine.phoneName)
-            SettingsMenu(engine: engine)
+            Button {
+                showingSettings.toggle()
+            } label: {
+                Image(systemName: showingSettings ? "xmark" : "gearshape")
+                    .font(.system(size: 13, weight: .medium))
+                    .frame(width: 24, height: 24)
+                    .background(Color.primary.opacity(showingSettings ? 0.08 : 0), in: Circle())
+                    .contentShape(Circle())
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(.secondary)
+            .help(showingSettings ? "Close settings" : "Settings")
+            .keyboardShortcut(",", modifiers: .command)
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 11)
@@ -71,50 +93,6 @@ struct StatusPill: View {
         .padding(.vertical, 4)
         .background(.quaternary.opacity(0.6), in: Capsule())
         .help(state == .searching ? "Make sure the phone is on the same Wi-Fi with Wireless debugging on." : "")
-    }
-}
-
-struct SettingsMenu: View {
-    let engine: SyncEngine
-    @AppStorage("showArrivalToast") private var showArrivalToast = true
-    @State private var confirmClear = false
-    @State private var launchAtLogin = SMAppService.mainApp.status == .enabled
-
-    var body: some View {
-        Menu {
-            Toggle("Show pop-up when a clip arrives", isOn: $showArrivalToast)
-            Toggle("Open at login", isOn: $launchAtLogin)
-                .onChange(of: launchAtLogin) { _, enabled in
-                    do {
-                        if enabled { try SMAppService.mainApp.register() } else { try SMAppService.mainApp.unregister() }
-                    } catch {
-                        launchAtLogin = SMAppService.mainApp.status == .enabled
-                    }
-                }
-            Picker("Keep history", selection: Binding(get: { engine.historyLimit }, set: { engine.historyLimit = $0 })) {
-                Text("50 items").tag(50)
-                Text("200 items").tag(200)
-                Text("500 items").tag(500)
-            }
-            Divider()
-            Button("Clear History…") { confirmClear = true }
-                .disabled(engine.history.items.isEmpty)
-            Button("Set Up Phone Again…") { engine.resetSetup() }
-            Divider()
-            Button("Quit Nearside") { NSApp.terminate(nil) }
-                .keyboardShortcut("q")
-        } label: {
-            Image(systemName: "gearshape")
-                .font(.system(size: 13))
-        }
-        .menuStyle(.borderlessButton)
-        .menuIndicator(.hidden)
-        .fixedSize()
-        .confirmationDialog("Clear all clipboard history?", isPresented: $confirmClear) {
-            Button("Clear History", role: .destructive) { engine.clearHistory() }
-        } message: {
-            Text("This removes every saved item from this Mac. Your current clipboards are not affected.")
-        }
     }
 }
 

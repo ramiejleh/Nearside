@@ -18,6 +18,7 @@ struct HistoryView: View {
 
     @State private var query = ""
     @State private var filter: Filter = .all
+    @State private var confirmClear = false
 
     var body: some View {
         let items = engine.history.filtered(query: query, source: filter.source)
@@ -64,7 +65,10 @@ struct HistoryView: View {
                                            isNew: highlighted.contains(item.id),
                                            now: context.date,
                                            onUse: { engine.use(item) },
-                                           onDelete: { engine.delete(item) })
+                                           onDelete: {
+                                               withAnimation(.easeOut(duration: 0.2)) { engine.delete(item) }
+                                           })
+                                .transition(.asymmetric(insertion: .opacity, removal: .opacity.combined(with: .move(edge: .trailing))))
                             }
                         }
                         .padding(.horizontal, 8)
@@ -74,16 +78,47 @@ struct HistoryView: View {
             }
 
             Divider()
-            HStack {
-                Text(footerText(count: engine.history.items.count))
-                Spacer()
-                Text("Click an item to copy it to both devices")
-            }
-            .font(.system(size: 10.5))
-            .foregroundStyle(.secondary)
-            .padding(.horizontal, 14)
-            .padding(.vertical, 7)
+            footer
         }
+    }
+
+    @ViewBuilder private var footer: some View {
+        let count = engine.history.items.count
+        HStack(spacing: 8) {
+            if confirmClear {
+                Text("Delete all \(footerText(count: count))?")
+                    .foregroundStyle(.primary)
+                Spacer()
+                Button("Cancel") { confirmClear = false }
+                    .buttonStyle(.borderless)
+                Button("Clear All") {
+                    withAnimation(.easeOut(duration: 0.2)) { engine.clearHistory() }
+                    confirmClear = false
+                }
+                .buttonStyle(.borderless)
+                .foregroundStyle(.red)
+                .fontWeight(.semibold)
+            } else {
+                Text(footerText(count: count))
+                Text("·").foregroundStyle(.tertiary)
+                Text("Click to copy to both devices")
+                    .lineLimit(1)
+                Spacer()
+                Button {
+                    confirmClear = true
+                } label: {
+                    Label("Clear", systemImage: "trash")
+                }
+                .buttonStyle(.borderless)
+                .disabled(count == 0)
+                .help("Delete all saved items")
+            }
+        }
+        .font(.system(size: 11))
+        .foregroundStyle(.secondary)
+        .padding(.horizontal, 14)
+        .frame(height: 30)
+        .animation(.easeOut(duration: 0.15), value: confirmClear)
     }
 
     private func footerText(count: Int) -> String {
@@ -124,19 +159,31 @@ struct HistoryRow: View {
                         .foregroundStyle(.secondary)
                 }
             }
-            ZStack {
-                if justCopied {
-                    Image(systemName: "checkmark.circle.fill")
-                        .foregroundStyle(.green)
-                        .transition(.scale.combined(with: .opacity))
-                } else if hovering {
-                    Image(systemName: "doc.on.doc")
-                        .foregroundStyle(.secondary)
-                        .transition(.opacity)
+            HStack(spacing: 2) {
+                if hovering && !justCopied {
+                    Button(action: onDelete) {
+                        Image(systemName: "trash")
+                            .frame(width: 22, height: 22)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(RowIconButtonStyle(hoverColor: .red))
+                    .help("Delete")
+                    .transition(.opacity)
                 }
+                ZStack {
+                    if justCopied {
+                        Image(systemName: "checkmark.circle.fill")
+                            .foregroundStyle(.green)
+                            .transition(.scale.combined(with: .opacity))
+                    } else if hovering {
+                        Image(systemName: "doc.on.doc")
+                            .foregroundStyle(.secondary)
+                            .transition(.opacity)
+                    }
+                }
+                .frame(width: 22, height: 22)
             }
-            .font(.system(size: 13))
-            .frame(width: 18, height: 18)
+            .font(.system(size: 12))
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 8)
@@ -184,6 +231,20 @@ struct HistoryRow: View {
         let source = item.source == .android ? phoneName : "This Mac"
         let size = item.text.count == 1 ? "1 char" : "\(item.text.count.formatted()) chars"
         return "\(source) · \(RelativeTime.string(for: item.date, now: now)) · \(size)"
+    }
+}
+
+/// Small icon button inside a row: secondary colour, tinted while hovered.
+private struct RowIconButtonStyle: ButtonStyle {
+    let hoverColor: Color
+    @State private var hovering = false
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .foregroundStyle(hovering ? hoverColor : .secondary)
+            .background(hoverColor.opacity(hovering ? 0.12 : 0), in: RoundedRectangle(cornerRadius: 5))
+            .opacity(configuration.isPressed ? 0.6 : 1)
+            .onHover { hovering = $0 }
     }
 }
 
