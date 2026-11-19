@@ -56,6 +56,7 @@ object HelperConnection {
     }
 
     private fun handle(msg: JSONObject) {
+        android.util.Log.i("Nearside", "from Mac: ${msg.optString("t")} (mirror ${if (NotificationMirror.instance != null) "on" else "off"})")
         when (msg.optString("t")) {
             // Health check for the whole Mac → helper → app → helper → Mac path.
             "ping" -> send(JSONObject().put("t", "pong").put("id", msg.opt("id")))

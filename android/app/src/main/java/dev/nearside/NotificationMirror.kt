@@ -142,6 +142,8 @@ class NotificationMirror : NotificationListenerService() {
     fun dismiss(key: String) = main.post {
         delivered.remove(key) // don't echo a removal back
         runCatching { cancelNotification(key) }
+            .onSuccess { android.util.Log.i("Nearside", "dismissed on the phone") }
+            .onFailure { android.util.Log.w("Nearside", "dismiss failed: $it") }
     }
 
     /** Runs action [index] of notification [key]; [text] fills its reply field, if any. */
