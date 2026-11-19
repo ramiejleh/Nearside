@@ -201,8 +201,14 @@ public enum Adb {
             candidate = FileNames.numbered(name, n)
             n += 1
         }
-        let r = run(["-s", serial, "push", file.path, "\(phoneInbox)/\(candidate)"], timeout: 3600)
-        return r.ok ? .success(candidate) : .failure(PushError(message: r.out))
+        let remote = "\(phoneInbox)/\(candidate)"
+        let r = run(["-s", serial, "push", file.path, remote], timeout: 3600)
+        guard r.ok else { return .failure(PushError(message: r.out)) }
+        // adb push keeps the Mac's modification date, so a months-old file would be buried in
+        // Downloads and the gallery. Make it "now", then have the media scanner pick that up.
+        let uri = URL(fileURLWithPath: remote).absoluteString
+        _ = shell(serial, "touch \(shellQuote(remote)); am broadcast -a android.intent.action.MEDIA_SCANNER_SCAN_FILE -d \(shellQuote(uri))")
+        return .success(candidate)
     }
 
     public struct PushError: Error, Sendable { public let message: String }
