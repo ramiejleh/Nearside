@@ -29,6 +29,7 @@ object HelperConnection {
             if (Binder.getCallingUid() != SHELL_UID) return
             macConnected = connected
             Status.lastEvent = if (connected) "Mac connected" else "Mac disconnected"
+            if (connected) NotificationMirror.macConnected()
         }
     }
 
@@ -59,6 +60,11 @@ object HelperConnection {
             // Health check for the whole Mac → helper → app → helper → Mac path.
             "ping" -> send(JSONObject().put("t", "pong").put("id", msg.opt("id")))
             "notif-dismiss" -> NotificationMirror.instance?.dismiss(msg.optString("key"))
+            "notif-action" -> NotificationMirror.instance?.runAction(
+                msg.optString("key"),
+                msg.optInt("i", -1),
+                if (msg.has("text")) msg.optString("text") else null,
+            )
         }
     }
 }

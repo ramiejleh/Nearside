@@ -84,6 +84,11 @@ public final class SyncEngine {
         notifications.onDismiss = { [weak self] key in
             self?.link.send(["t": "notif-dismiss", "key": key])
         }
+        notifications.onAction = { [weak self] key, index, text in
+            var message: [String: Any] = ["t": "notif-action", "key": key, "i": index]
+            if let text { message["text"] = text }
+            self?.link.send(message)
+        }
         link.onDisconnect = { [weak self] in
             guard let self, state == .connected else { return }
             state = .searching
@@ -154,7 +159,14 @@ public final class SyncEngine {
                                app: message["app"] as? String ?? "Phone",
                                title: message["title"] as? String ?? "",
                                text: message["text"] as? String ?? "",
-                               iconPNG: (message["icon"] as? String).flatMap { Data(base64Encoded: $0) })
+                               iconPNG: (message["icon"] as? String).flatMap { Data(base64Encoded: $0) },
+                               actions: (message["actions"] as? [[String: Any]] ?? []).compactMap { action in
+                                   guard let title = action["title"] as? String else { return nil }
+                                   return .init(title: title, isReply: action["reply"] as? Bool ?? false)
+                               },
+                               quiet: message["quiet"] as? Bool ?? false)
+        case "notif-active":
+            if mirrorNotifications, let keys = message["keys"] as? [String] { notifications.keepOnly(Set(keys)) }
         case "notif-removed":
             if let key = message["key"] as? String { notifications.remove(key: key) }
         default:

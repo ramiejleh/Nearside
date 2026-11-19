@@ -3,35 +3,64 @@ import UserNotifications
 
 /// Shows the phone's notifications as macOS notifications, one per phone notification key
 /// (so updates replace and phone-side removals clear them). Dismissing one here reports
-/// back through `onDismiss` so the phone can dismiss it too.
+/// back through `onDismiss` so the phone can dismiss it too; buttons and replies come back
+/// through `onAction`.
 @MainActor
 final class PhoneNotifications: NSObject, UNUserNotificationCenterDelegate {
-    var onDismiss: ((String) -> Void)?
+    struct Action: Equatable {
+        let title: String
+        let isReply: Bool
+    }
 
-    private static let category = "phone-notification"
+    var onDismiss: ((String) -> Void)?
+    /// (phone notification key, action index, typed reply text if it was a reply)
+    var onAction: ((String, Int, String?) -> Void)?
+
+    private static let plainCategory = "phone-notification"
+    /// One category per distinct set of buttons; macOS needs them registered up front.
+    private var categories: [String: UNNotificationCategory] = [:]
 
     // Lazy: UNUserNotificationCenter crashes outside an app bundle (e.g. under `swift test`).
     private lazy var center: UNUserNotificationCenter = {
         let center = UNUserNotificationCenter.current()
         center.delegate = self
-        // customDismissAction makes macOS tell us when the user closes a notification.
-        center.setNotificationCategories([
-            UNNotificationCategory(identifier: Self.category, actions: [], intentIdentifiers: [], options: [.customDismissAction]),
-        ])
         return center
     }()
 
+    /// The category for this set of buttons, registering it if it's new.
+    private func category(for actions: [Action]) -> String {
+        let id = actions.isEmpty ? Self.plainCategory
+            : "phone:" + actions.map { ($0.isReply ? "R:" : "B:") + $0.title }.joined(separator: "|")
+        if categories[id] == nil {
+            let buttons: [UNNotificationAction] = actions.enumerated().map { index, action in
+                action.isReply
+                    ? UNTextInputNotificationAction(identifier: "a\(index)", title: action.title, options: [],
+                                                    textInputButtonTitle: "Send", textInputPlaceholder: "Reply…")
+                    : UNNotificationAction(identifier: "a\(index)", title: action.title, options: [])
+            }
+            // customDismissAction makes macOS tell us when the user closes a notification.
+            categories[id] = UNNotificationCategory(identifier: id, actions: buttons, intentIdentifiers: [],
+                                                    options: [.customDismissAction])
+            center.setNotificationCategories(Set(categories.values))
+        }
+        return id
+    }
+
     func activate() {
+        _ = category(for: [])
         center.requestAuthorization(options: [.alert, .sound]) { _, _ in }
     }
 
-    func show(key: String, package: String, app: String, title: String, text: String, iconPNG: Data?) {
+    /// `quiet`: add to Notification Center without a banner or sound (catch-up, own replies).
+    func show(key: String, package: String, app: String, title: String, text: String,
+              iconPNG: Data?, actions: [Action], quiet: Bool) {
         let content = UNMutableNotificationContent()
         content.title = title.isEmpty ? app : title
         if !title.isEmpty { content.subtitle = app }
         content.body = text
         content.threadIdentifier = package
-        content.categoryIdentifier = Self.category
+        content.categoryIdentifier = category(for: actions)
+        if quiet { content.interruptionLevel = .passive }
         if let url = iconFile(package: package, png: iconPNG),
            let attachment = try? UNNotificationAttachment(identifier: "icon", url: url) {
             content.attachments = [attachment]
@@ -41,6 +70,15 @@ final class PhoneNotifications: NSObject, UNUserNotificationCenterDelegate {
 
     func remove(key: String) {
         center.removeDeliveredNotifications(withIdentifiers: [key])
+    }
+
+    /// After catch-up: clear anything the phone no longer shows (dismissed while we were away).
+    func keepOnly(_ keys: Set<String>) {
+        center.getDeliveredNotifications { [weak self] delivered in
+            let stale = delivered.map(\.request.identifier).filter { !keys.contains($0) }
+            guard !stale.isEmpty else { return }
+            Task { @MainActor in self?.center.removeDeliveredNotifications(withIdentifiers: stale) }
+        }
     }
 
     func removeAll() {
@@ -68,18 +106,28 @@ final class PhoneNotifications: NSObject, UNUserNotificationCenterDelegate {
 
     nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter,
                                             willPresent notification: UNNotification) async -> UNNotificationPresentationOptions {
-        // Show banners even while the panel is open (the app counts as active then).
-        [.banner, .list]
+        // Show banners even while the panel is open (the app counts as active then),
+        // except for quiet ones.
+        notification.request.content.interruptionLevel == .passive ? [.list] : [.banner, .list]
     }
 
     nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter,
                                             didReceive response: UNNotificationResponse) async {
-        guard response.actionIdentifier == UNNotificationDismissActionIdentifier else { return }
         let key = response.notification.request.identifier
-        await dismissed(key)
+        let action = response.actionIdentifier
+        if action == UNNotificationDismissActionIdentifier {
+            await dismissed(key)
+        } else if action.hasPrefix("a"), let index = Int(action.dropFirst()) {
+            let text = (response as? UNTextInputNotificationResponse)?.userText
+            await acted(key, index, text)
+        }
     }
 
     private func dismissed(_ key: String) {
         onDismiss?(key)
+    }
+
+    private func acted(_ key: String, _ index: Int, _ text: String?) {
+        onAction?(key, index, text)
     }
 }
