@@ -36,6 +36,8 @@ object Main {
     private val io = Executors.newSingleThreadExecutor()
     @Volatile private var client: Writer? = null
     @Volatile private var lastSetByMac: String? = null
+    private var lastSent: String? = null // main looper only
+    private var lastSentAt = 0L
 
     @JvmStatic
     fun main(args: Array<String>) {
@@ -67,6 +69,11 @@ object Main {
             }
             val text = clip.getItemAt(0).text?.toString() ?: return@addPrimaryClipChangedListener
             if (text == lastSetByMac) return@addPrimaryClipChangedListener // our own echo
+            // Android 17 fires this listener twice per copy (~50 ms apart); send once.
+            val now = System.currentTimeMillis()
+            if (text == lastSent && now - lastSentAt < 1000) return@addPrimaryClipChangedListener
+            lastSent = text
+            lastSentAt = now
             Log.d("clip changed (${text.length} chars)")
             send(JSONObject().put("t", "clip").put("text", text).put("ts", System.currentTimeMillis()))
         }
