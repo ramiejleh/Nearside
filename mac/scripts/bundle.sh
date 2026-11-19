@@ -41,6 +41,13 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <!-- Menu-bar app: no Dock icon, no app menu. -->
   <key>LSUIElement</key><true/>
   <key>NSHumanReadableCopyright</key><string>Apache-2.0</string>
+  <!-- Wireless debugging: find the phone over Bonjour and connect to it on this network. -->
+  <key>NSLocalNetworkUsageDescription</key><string>Nearside connects to your Android phone over this Wi-Fi network (Wireless debugging).</string>
+  <key>NSBonjourServices</key>
+  <array>
+    <string>_adb-tls-connect._tcp</string>
+    <string>_adb-tls-pairing._tcp</string>
+  </array>
 </dict>
 </plist>
 PLIST

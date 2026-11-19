@@ -1,62 +1,63 @@
 import CryptoKit
 import Foundation
-import Network
+import NativeAdb
 
-/// One TCP connection to the helper through `adb forward` (localhost → adb TLS → phone).
-/// Messages are newline-delimited JSON objects.
+/// The link to the helper: an adb stream straight to its abstract socket, over the pinned
+/// phone connection (no port forwarding, so nothing listens on this Mac). Messages are
+/// newline-delimited JSON objects.
 @MainActor
 final class HelperLink {
     var onMessage: (([String: Any]) -> Void)?
     var onDisconnect: (() -> Void)?
 
-    private var connection: NWConnection?
+    private var stream: AdbStream?
+    private var connecting = false
+    private let writer = DispatchQueue(label: "dev.nearside.helper-writer")
     private var buffer = Data()
     private(set) var isConnected = false
     private var verified = false
     private var ourNonce = ""
-    var isIdle: Bool { connection == nil }
+    var isIdle: Bool { stream == nil && !connecting }
 
     func connect() {
-        guard connection == nil else { return }
-        let params = NWParameters.tcp
-        if let tcp = params.defaultProtocolStack.transportProtocol as? NWProtocolTCP.Options {
-            tcp.noDelay = true
+        guard isIdle else { return }
+        connecting = true
+        Task {
+            let stream = await Task.detached { try? Adb.openHelperStream() }.value
+            connecting = false
+            guard let stream else { return } // the next tick retries
+            attach(stream)
         }
-        let connection = NWConnection(host: "127.0.0.1", port: NWEndpoint.Port(rawValue: Adb.helperPort)!, using: params)
-        self.connection = connection
-        connection.stateUpdateHandler = { [weak self] state in
-            MainActor.assumeIsolated {
-                guard let self else { return }
-                switch state {
-                case .ready:
-                    // Mutual challenge-response (see helper/Main.kt `serve`). Nothing else is sent
-                    // or delivered until the helper has proven it knows the token.
-                    self.isConnected = true
-                    self.verified = false
-                    self.ourNonce = Self.randomHex()
-                    self.sendRaw(["t": "hello-mac", "nonce": self.ourNonce])
-                    self.receive()
-                    // A peer that never completes the handshake must not hold the link forever.
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 5) { [weak self] in
-                        MainActor.assumeIsolated {
-                            guard let self, self.connection === connection, !self.verified else { return }
-                            connection.cancel()
-                        }
-                    }
-                case .failed, .cancelled:
-                    self.reset()
-                case .waiting:
-                    self.connection?.cancel()
-                default:
-                    break
-                }
+    }
+
+    private func attach(_ stream: AdbStream) {
+        self.stream = stream
+        isConnected = true
+        verified = false
+        buffer.removeAll()
+        // Mutual challenge-response (see helper/Main.kt `serve`). Nothing else is sent or
+        // delivered until the helper has proven it knows the token.
+        ourNonce = Self.randomHex()
+        sendRaw(["t": "hello-mac", "nonce": ourNonce])
+
+        let reader = Thread { [weak self] in
+            while let data = try? stream.read() {
+                DispatchQueue.main.async { self?.received(data, on: stream) }
             }
+            DispatchQueue.main.async { self?.closed(stream) }
         }
-        connection.start(queue: .main)
+        reader.name = "helper-reader"
+        reader.start()
+
+        // A peer that never completes the handshake must not hold the link forever.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 5) { [weak self] in
+            guard let self, self.stream === stream, !self.verified else { return }
+            stream.close()
+        }
     }
 
     func disconnect() {
-        connection?.cancel()
+        stream?.close()
     }
 
     /// Sends app messages; dropped until the helper is verified.
@@ -66,10 +67,23 @@ final class HelperLink {
     }
 
     private func sendRaw(_ message: [String: Any]) {
-        guard isConnected, let connection,
+        guard isConnected, let stream,
               var data = try? JSONSerialization.data(withJSONObject: message) else { return }
         data.append(0x0A)
-        connection.send(content: data, completion: .contentProcessed { _ in })
+        writer.async {
+            if (try? stream.write(data)) == nil { stream.close() }
+        }
+    }
+
+    private func received(_ data: Data, on stream: AdbStream) {
+        guard self.stream === stream else { return }
+        buffer.append(data)
+        drainLines()
+    }
+
+    private func closed(_ stream: AdbStream) {
+        guard self.stream === stream else { return }
+        reset()
     }
 
     private func handshake(_ message: [String: Any]) {
@@ -80,7 +94,7 @@ final class HelperLink {
               HMAC<SHA256>.isValidAuthenticationCode(
                   proof, authenticating: Data("nearside-helper:\(ourNonce)".utf8), using: key) else {
             // Not our helper (e.g. an app squatting the socket name): say nothing, hang up.
-            connection?.cancel()
+            stream?.close()
             return
         }
         let ours = HMAC<SHA256>.authenticationCode(for: Data("nearside-mac:\(theirNonce)".utf8), using: key)
@@ -105,23 +119,6 @@ final class HelperLink {
         return data
     }
 
-    private func receive() {
-        connection?.receive(minimumIncompleteLength: 1, maximumLength: 256 * 1024) { [weak self] data, _, done, error in
-            MainActor.assumeIsolated {
-                guard let self else { return }
-                if let data {
-                    self.buffer.append(data)
-                    self.drainLines()
-                }
-                if done || error != nil {
-                    self.connection?.cancel()
-                    return
-                }
-                self.receive()
-            }
-        }
-    }
-
     private func drainLines() {
         while let newline = buffer.firstIndex(of: 0x0A) {
             let line = buffer[buffer.startIndex..<newline]
@@ -135,7 +132,7 @@ final class HelperLink {
         let wasConnected = isConnected
         isConnected = false
         verified = false
-        connection = nil
+        stream = nil
         buffer.removeAll()
         if wasConnected { onDisconnect?() }
     }

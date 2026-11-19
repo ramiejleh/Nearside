@@ -9,17 +9,11 @@ import Testing
         #expect(Adb.serialFromPairOutput("Failed: Wrong password or connection was dropped.") == nil)
     }
 
-    @Test func parsesMdnsServicesByType() {
-        let out = """
-        List of discovered mdns services
-        adb-ABC123XYZ0001-AbCdEf\t_adb-tls-connect._tcp\t192.168.0.76:42935
-        nearside-abcd2345\t_adb-tls-pairing._tcp\t192.168.0.76:40111
-        adb-ABC123XYZ0001-AbCdEf\t_adb._tcp\t192.168.0.76:5555
-        """
-        let pairing = Adb.services(out, type: "_adb-tls-pairing._tcp")
-        #expect(pairing.map(\.instance) == ["nearside-abcd2345"])
-        #expect(pairing.map(\.address) == ["192.168.0.76:40111"])
-        #expect(Adb.services(out, type: "_adb-tls-connect._tcp").map(\.address) == ["192.168.0.76:42935"])
+    @Test func pinnedKeyHexRoundTrips() {
+        let key = Data((0..<32).map { UInt8($0 * 7 & 0xFF) })
+        #expect(Data(hexString: key.hexString) == key)
+        #expect(Data(hexString: "abc") == nil)   // odd length
+        #expect(Data(hexString: "zz") == nil)    // not hex
     }
 }
 

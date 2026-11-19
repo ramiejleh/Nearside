@@ -1,9 +1,12 @@
 import Foundation
+import NativeAdb
 
-/// Thin, blocking wrapper over the `adb` binary. Call it off the main thread.
+/// Talking to the phone. Everything goes through our own adb client (NativeAdb) over one
+/// pinned connection; the `adb` binary is only used for `adb pair` (until native pairing).
+/// Blocking: call it off the main thread. The `serial` parameters are kept for the callers'
+/// sake but there is only ever one phone, the pinned one.
 public enum Adb {
     static let appPackage = "dev.nearside"
-    static let helperPort: UInt16 = 47801
 
     /// nil when adb isn't installed (the app then shows install instructions). Re-checked by
     /// `locate()` when the user says they've installed it. Only changed on the main thread.
@@ -62,47 +65,19 @@ public enum Adb {
     }
 
     static func shell(_ serial: String, _ command: String, timeout: TimeInterval = 30) -> Result {
-        run(["-s", serial, "shell", command], timeout: timeout)
-    }
-
-    struct Endpoint {
-        let instance: String // e.g. "adb-ABC123XYZ0001-AbCdEf" — carries the hardware serial
-        let address: String  // "ip:port"
-    }
-
-    /// Parses `adb mdns services` output ("instance<TAB>type<TAB>ip:port") for one service type.
-    static func services(_ out: String, type: String) -> [Endpoint] {
-        out.split(separator: "\n").compactMap { line in
-            let parts = line.split(whereSeparator: { $0 == "\t" || $0 == " " }).map(String.init)
-            guard parts.count >= 3, parts[1].hasPrefix(type), parts.last!.contains(":") else { return nil }
-            return Endpoint(instance: parts[0], address: parts.last!)
+        guard let adb = Native.current() else { return Result(code: -1, out: "not connected") }
+        do {
+            let r = try adb.shell(command, timeout: timeout)
+            return Result(code: r.exitCode, out: r.output)
+        } catch {
+            return Result(code: -1, out: "\(error)")
         }
     }
 
-    /// Phones advertising wireless debugging (`_adb-tls-connect._tcp`).
-    static func wirelessEndpoints() -> [Endpoint] {
-        services(run(["mdns", "services"]).out, type: "_adb-tls-connect._tcp")
-    }
-
-    /// The pairing service a phone advertises after scanning our QR code, if it's up yet.
+    /// The pairing service a phone advertises after scanning our QR code: "ip:port" for `adb pair`.
     static func pairingEndpoint(named name: String) -> String? {
-        services(run(["mdns", "services"]).out, type: "_adb-tls-pairing._tcp")
-            .first { $0.instance == name }?.address
+        Discovery.browse(Discovery.pairingType, timeout: 1).first { $0.name == name }.flatMap(Native.address)
     }
-
-    /// Serials of devices currently attached over the network.
-    static func connectedWirelessSerials() -> [String] {
-        run(["devices"]).out
-            .split(separator: "\n")
-            .compactMap { line -> String? in
-                let parts = line.split(separator: "\t")
-                guard parts.count == 2, parts[1] == "device" else { return nil }
-                let serial = String(parts[0])
-                return serial.contains(":") || serial.contains("_adb-tls-connect") ? serial : nil
-            }
-    }
-
-    static func connectedWirelessSerial() -> String? { connectedWirelessSerials().first }
 
     /// The phone's hardware serial, used to pin the one phone we paired with.
     static func hardwareSerial(_ serial: String) -> String? {
@@ -116,29 +91,21 @@ public enum Adb {
         return String(out[range].dropFirst("guid=adb-".count).dropLast())
     }
 
-    /// Finds the pinned phone (by hardware serial) and connects. Other devices advertising
-    /// wireless debugging are ignored. Note: the serial is visible on the LAN, so this is not
-    /// cryptographic identity; see vault/README.md "Known gaps".
-    /// Polls for up to `wait` seconds. Returns the adb serial to address it with.
-    static func ensureConnected(pinned: String, wait: TimeInterval = 0) -> String? {
-        func matches(_ serial: String) -> Bool { hardwareSerial(serial) == pinned }
+    /// Connects (or reuses the connection) to the pinned phone. Returns its hardware serial,
+    /// which callers pass back in as `serial`. `learnKey`: during pairing, or once for a setup
+    /// made before pinning existed, record the phone's TLS key; afterwards only that key is
+    /// accepted (see `Native`). Polls for up to `wait` seconds.
+    static func ensureConnected(pinned: String, wait: TimeInterval = 0, learnKey: Bool = false) -> String? {
         let deadline = Date().addingTimeInterval(wait)
         repeat {
-            if let serial = connectedWirelessSerials().first(where: matches) { return serial }
-            let endpoints = wirelessEndpoints().filter { $0.instance.hasPrefix("adb-\(pinned)-") }
-            for endpoint in endpoints {
-                let r = run(["connect", endpoint.address], timeout: 10)
-                guard r.out.contains("connected to") else { continue }
-                if let serial = connectedWirelessSerials().first(where: matches) { return serial }
-            }
+            if Native.connect(pinned: pinned, learnKey: learnKey) != nil { return pinned }
             if wait > 0 { Thread.sleep(forTimeInterval: 1) }
         } while Date() < deadline
         return nil
     }
 
     static func model(_ serial: String) -> String? {
-        let out = shell(serial, "getprop ro.product.model").out
-        return out.isEmpty ? nil : out
+        Native.current()?.property("ro.product.model")
     }
 
     /// True only for a process named exactly `nearside-helper` owned by the shell user:
@@ -160,27 +127,38 @@ public enum Adb {
         return shell(serial, command, timeout: 15)
     }
 
-    /// Tunnels localhost:`helperPort` to the helper's abstract socket over adb's TLS connection.
-    static func forward(_ serial: String) -> Result {
-        run(["-s", serial, "forward", "tcp:\(helperPort)", "localabstract:nearside-helper"])
-    }
-
     public struct Phone: Sendable, Equatable {
         public let serial: String
         public let hardwareSerial: String?
         public let model: String?
     }
 
-    /// Connects, starts the helper if needed, and (re)creates the tunnel. nil when unreachable.
-    static func prepareHelper(pinned: String) -> Phone? {
-        guard let serial = ensureConnected(pinned: pinned) else { return nil }
+    /// Connects and starts the helper if needed. nil when unreachable. (The Mac then opens a
+    /// stream straight to the helper's socket over this connection: no port forwarding.)
+    static func prepareHelper(pinned: String, learnKey: Bool = false) -> Phone? {
+        guard let serial = ensureConnected(pinned: pinned, learnKey: learnKey) else { return nil }
         if !helperRunning(serial) {
             _ = startHelper(serial)
             Thread.sleep(forTimeInterval: 1.5)
             guard helperRunning(serial) else { return nil }
         }
-        guard forward(serial).ok else { return nil }
-        return Phone(serial: serial, hardwareSerial: hardwareSerial(serial), model: model(serial))
+        return Phone(serial: serial, hardwareSerial: serial, model: model(serial))
+    }
+
+    /// A stream to the helper's abstract socket, over the pinned connection.
+    static func openHelperStream() throws -> AdbStream {
+        guard let adb = Native.current() else { throw AdbError.closed }
+        return try adb.open("localabstract:nearside-helper")
+    }
+
+    /// Installs (or updates) the phone app.
+    static func install(_ apk: URL) -> Result {
+        guard let adb = Native.current() else { return Result(code: -1, out: "not connected") }
+        do {
+            return Result(code: 0, out: try adb.install(apk))
+        } catch {
+            return Result(code: -1, out: "\(error)")
+        }
     }
 
     /// Grants or revokes the app's notification access (no settings screen needed).
@@ -235,26 +213,28 @@ public enum Adb {
             n += 1
         }
         let remote = "\(phoneInbox)/\(candidate)"
-        let r = run(["-s", serial, "push", file.path, remote], timeout: 3600)
-        guard r.ok else { return .failure(PushError(message: r.out)) }
-        // adb push keeps the Mac's modification date, so a months-old file would be buried in
-        // Downloads and the gallery. Make it "now", then have the media scanner pick that up.
+        guard let adb = Native.current() else { return .failure(PushError(message: "not connected")) }
+        do {
+            // Dated now (not the Mac's modification date) so it shows at the top of Downloads.
+            try adb.push(file, to: remote, modified: Date())
+        } catch {
+            return .failure(PushError(message: "\(error)"))
+        }
         let uri = URL(fileURLWithPath: remote).absoluteString
-        _ = shell(serial, "touch \(shellQuote(remote)); am broadcast -a android.intent.action.MEDIA_SCANNER_SCAN_FILE -d \(shellQuote(uri))")
+        _ = shell(serial, "am broadcast -a android.intent.action.MEDIA_SCANNER_SCAN_FILE -d \(shellQuote(uri))")
         return .success(candidate)
     }
 
     public struct PushError: Error, Sendable { public let message: String }
 
     static func pull(_ serial: String, remote: String, to local: URL) -> Bool {
-        run(["-s", serial, "pull", remote, local.path], timeout: 3600).ok
+        guard let adb = Native.current() else { return false }
+        return (try? adb.pull(remote, to: local)) != nil
     }
 
     /// Android revokes an ADB host after 7 days without a fresh connection; reconnecting renews it.
     static func renewAuthorization(pinned: String) {
-        if let serial = connectedWirelessSerials().first(where: { hardwareSerial($0) == pinned }) {
-            run(["disconnect", serial])
-        }
+        Native.disconnect()
         _ = ensureConnected(pinned: pinned)
     }
 }

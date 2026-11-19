@@ -62,6 +62,12 @@ final class TCPSocket: Channel, @unchecked Sendable {
         var one: Int32 = 1
         setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, &one, socklen_t(MemoryLayout<Int32>.size))
         setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &one, socklen_t(MemoryLayout<Int32>.size))
+        // Notice a phone that vanished (Wi-Fi off, out of range) within ~25 s.
+        var idle: Int32 = 10, interval: Int32 = 5, count: Int32 = 3
+        setsockopt(fd, SOL_SOCKET, SO_KEEPALIVE, &one, socklen_t(MemoryLayout<Int32>.size))
+        setsockopt(fd, IPPROTO_TCP, TCP_KEEPALIVE, &idle, socklen_t(MemoryLayout<Int32>.size))
+        setsockopt(fd, IPPROTO_TCP, TCP_KEEPINTVL, &interval, socklen_t(MemoryLayout<Int32>.size))
+        setsockopt(fd, IPPROTO_TCP, TCP_KEEPCNT, &count, socklen_t(MemoryLayout<Int32>.size))
 
         // Connect with a timeout: non-blocking connect + poll, then back to blocking.
         let flags = fcntl(fd, F_GETFL)

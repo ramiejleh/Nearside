@@ -95,13 +95,10 @@ public final class SyncEngine {
         phoneName = defaults.string(forKey: "phoneName") ?? "Phone"
         mirrorNotifications = defaults.object(forKey: "mirrorNotifications") as? Bool ?? true
         textMessages = defaults.object(forKey: "textMessages") as? Bool ?? true
-        if Adb.path == nil {
-            state = .adbMissing
-        } else {
-            // Set up = completed the pairing flow, which is the only place a phone gets pinned.
-            let pinned = defaults.string(forKey: "phoneSerial") != nil
-            state = defaults.bool(forKey: "setupComplete") && pinned ? .searching : .needsSetup
-        }
+        // Set up = completed the pairing flow, which is the only place a phone gets pinned.
+        // Once paired, everything runs on our own adb client; the adb tool is only needed to pair.
+        let paired = defaults.bool(forKey: "setupComplete") && defaults.string(forKey: "phoneSerial") != nil
+        state = paired ? .searching : (Adb.path == nil ? .adbMissing : .needsSetup)
     }
 
     // MARK: Lifecycle
@@ -166,7 +163,9 @@ public final class SyncEngine {
               let pinned = pinnedSerial else { return }
         preparing = true
         Task {
-            let phone = await Task.detached { Adb.prepareHelper(pinned: pinned) }.value
+            // A setup made before key pinning learns the phone's key once, on this first connect.
+            let learn = Native.pinnedKey == nil
+            let phone = await Task.detached { Adb.prepareHelper(pinned: pinned, learnKey: learn) }.value
             preparing = false
             guard let phone else { return }
             adopt(phone)
@@ -386,7 +385,9 @@ public final class SyncEngine {
     public func resetSetup() {
         defaults.set(false, forKey: "setupComplete")
         pinnedSerial = nil
+        Native.pinnedKey = nil
         link.disconnect()
+        Task.detached { Native.disconnect() }
         setupSteps = []
         state = .needsSetup
     }
@@ -464,15 +465,17 @@ public final class SyncEngine {
             }
             setupSteps[0].status = .done
             pinnedSerial = phoneSerial
+            Native.pinnedKey = nil // a new pairing: learn this phone's key on the first connect
+            await Task.detached { Native.disconnect() }.value
 
             guard await run(1, {
-                Adb.ensureConnected(pinned: phoneSerial, wait: 20) == nil ? "Paired, but the phone isn't visible on the network. Keep Wireless debugging open and try again." : nil
+                Adb.ensureConnected(pinned: phoneSerial, wait: 20, learnKey: true) == nil ? "Paired, but the phone isn't visible on the network. Keep Wireless debugging open and try again." : nil
             }) else { return }
 
             guard await run(2, {
                 guard let apkPath else { return "The app bundle is missing nearside.apk." }
-                guard let serial = Adb.ensureConnected(pinned: phoneSerial) else { return "Lost the connection to the phone." }
-                let r = Adb.run(["-s", serial, "install", "-r", apkPath], timeout: 180)
+                guard Adb.ensureConnected(pinned: phoneSerial) != nil else { return "Lost the connection to the phone." }
+                let r = Adb.install(URL(fileURLWithPath: apkPath))
                 return r.ok ? nil : Self.friendly(r.out)
             }) else { return }
 
