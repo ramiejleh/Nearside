@@ -14,9 +14,13 @@ final class DropShelfController {
     private var monitors: [Any] = []
     private var dragChangeCount = -1
     private var dragHasFiles = false
+    private var watch: Timer?
+    private var hiding = false
 
     /// How close to the top of the screen a file drag must get before the shelf appears.
     private let reveal: CGFloat = 220
+    /// It hides again once the drag goes this much further down (slack against flicker).
+    private let slack: CGFloat = 80
 
     init(engine: SyncEngine, anchor: @escaping () -> NSRect?, onDrop: @escaping ([URL]) -> Void) {
         self.engine = engine
@@ -45,9 +49,24 @@ final class DropShelfController {
     }
 
     private func dragEnded() {
-        guard panel?.isVisible == true else { return }
-        // performDragOperation can land just after the global mouse-up; hide a beat later.
+        guard panel?.isVisible == true, !hiding else { return }
+        hiding = true
+        // performDragOperation can land just after the mouse-up; hide a beat later.
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { [weak self] in self?.hide() }
+    }
+
+    /// While shown: global mouse-up isn't reliably delivered during a drag session, and moving
+    /// away should dismiss it too, so check the pointer and the button state ourselves.
+    private func check() {
+        guard let panel, panel.isVisible, !hiding else { return }
+        if NSEvent.pressedMouseButtons & 1 == 0 { // drag finished (dropped or cancelled)
+            dragEnded()
+            return
+        }
+        let mouse = NSEvent.mouseLocation
+        let screen = NSScreen.screens.first(where: { NSMouseInRect(mouse, $0.frame, false) })
+        let tooLow = screen.map { mouse.y < $0.frame.maxY - reveal - slack } ?? true
+        if tooLow && !model.hovering { hide() }
     }
 
     private func show(on screen: NSScreen, near mouse: NSPoint) {
@@ -55,6 +74,11 @@ final class DropShelfController {
         self.panel = panel
         model.phoneName = engine.phoneName
         guard !panel.isVisible else { return }
+        hiding = false
+        watch?.invalidate()
+        watch = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated { self?.check() }
+        }
         let size = panel.frame.size
         let visible = screen.visibleFrame // below the menu bar
         // Under the menu-bar icon when it's on this screen, else under the pointer.
@@ -69,6 +93,8 @@ final class DropShelfController {
     }
 
     private func hide() {
+        watch?.invalidate()
+        watch = nil
         guard let panel, panel.isVisible else { return }
         model.hovering = false
         NSAnimationContext.runAnimationGroup({ $0.duration = 0.15; panel.animator().alphaValue = 0 }) {
