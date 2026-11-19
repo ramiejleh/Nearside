@@ -65,9 +65,7 @@ class MainActivity : Activity() {
         fun mark(ok: Boolean) = if (ok) "✅" else "❌"
         statusView.text = buildString {
             appendLine()
-            appendLine("${mark(Status.serviceRunning)} Sync service running")
-            appendLine("${mark(Status.macConnected)} Mac connected")
-            appendLine("${mark(Status.helperConnected)} Clipboard helper running")
+            appendLine("${mark(Status.serviceRunning)} Service running")
             appendLine("${mark(AdbWifi.canWrite(this@MainActivity))} Setup permission granted by Mac")
             appendLine("${mark(AdbWifi.isEnabled(this@MainActivity))} Wireless debugging on")
             appendLine("${mark(battery)} Battery optimisation off")

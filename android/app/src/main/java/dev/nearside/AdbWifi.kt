@@ -20,7 +20,12 @@ object AdbWifi {
     // reconnecting over ADB periodically (see `run` in the Mac CLI).
     fun ensureEnabled(context: Context) {
         if (!canWrite(context) || isEnabled(context)) return
+        // Android 17 additionally requires MANAGE_DEBUGGING here, which apps can't be granted.
         runCatching { Settings.Global.putInt(context.contentResolver, "adb_wifi_enabled", 1) }
-            .onFailure { android.util.Log.w("Nearside", "cannot enable wireless debugging", it) }
+            .onSuccess { Status.lastEvent = "re-enabled wireless debugging" }
+            .onFailure {
+                Status.lastEvent = "can't re-enable wireless debugging: ${it.message}"
+                android.util.Log.w("Nearside", "cannot enable wireless debugging: ${it.message}")
+            }
     }
 }

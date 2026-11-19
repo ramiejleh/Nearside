@@ -87,6 +87,11 @@ enum Adb {
         return nil
     }
 
+    /// Tunnels localhost:`port` to the helper's abstract socket over adb's TLS connection.
+    static func forward(_ serial: String, port: UInt16) -> Result {
+        run(["-s", serial, "forward", "tcp:\(port)", "localabstract:nearside-helper"])
+    }
+
     static func helperRunning(_ serial: String) -> Bool {
         shell(serial, "ps -A -o NAME").out.contains("nearside-helper")
     }

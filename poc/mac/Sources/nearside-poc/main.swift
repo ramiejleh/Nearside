@@ -1,5 +1,4 @@
 import AppKit
-import CryptoKit
 import Foundation
 
 func log(_ message: String) {
@@ -10,31 +9,8 @@ func log(_ message: String) {
 
 func nowMs() -> Int64 { Int64(Date().timeIntervalSince1970 * 1000) }
 
-func hmacHex(_ message: String) -> String {
-    let key = SymmetricKey(data: Data(Token.value.utf8))
-    return HMAC<SHA256>.authenticationCode(for: Data(message.utf8), using: key)
-        .map { String(format: "%02x", $0) }.joined()
-}
-
-func hexBytes(_ hex: String) -> Data? {
-    guard hex.count % 2 == 0 else { return nil }
-    var data = Data()
-    var index = hex.startIndex
-    while index < hex.endIndex {
-        let next = hex.index(index, offsetBy: 2)
-        guard let byte = UInt8(hex[index..<next], radix: 16) else { return nil }
-        data.append(byte)
-        index = next
-    }
-    return data
-}
-
-func randomHex() -> String {
-    SymmetricKey(size: .bits256).withUnsafeBytes { Data($0) }.map { String(format: "%02x", $0) }.joined()
-}
-
 let usage = """
-nearside-poc: Nearside proof of concept (clipboard sync over LAN + wireless ADB helper)
+nearside-poc: Nearside proof of concept (clipboard sync through a wireless-ADB helper)
 
 USAGE:
   nearside-poc setup <pair-ip:port> <pair-code> [--apk <path>]
@@ -42,9 +18,9 @@ USAGE:
       permissions, and start the clipboard helper.
       On the phone: Developer options → Wireless debugging → "Pair device with pairing code".
   nearside-poc ensure-helper
-      Connect over wireless ADB and start the helper if it is not running.
+      Connect over wireless ADB, start the helper if needed, and open the tunnel to it.
   nearside-poc run
-      Sync clipboards both ways and restart the helper automatically when needed.
+      Sync clipboards both ways, re-establishing the helper and tunnel automatically.
 """
 
 // Default APK: the Android PoC's debug build, located relative to this source file.
@@ -59,20 +35,23 @@ func step(_ title: String, _ result: Adb.Result) -> Bool {
     return result.ok
 }
 
-func ensureHelper() -> Bool {
+/// Connects over wireless ADB, starts the helper if needed, and (re)creates the tunnel.
+func ensureHelper(quiet: Bool = false) -> Bool {
     guard let serial = Adb.ensureConnected() else {
-        log("✗ phone not found over wireless debugging (is it on, and on the same Wi-Fi?)")
+        if !quiet { log("✗ phone not found over wireless debugging (is it on, and on the same Wi-Fi?)") }
         return false
     }
-    if Adb.helperRunning(serial) {
-        log("✓ helper already running on \(serial)")
-        return true
+    if !Adb.helperRunning(serial) {
+        step("start helper on \(serial)", Adb.startHelper(serial))
+        Thread.sleep(forTimeInterval: 1.5)
+        guard Adb.helperRunning(serial) else {
+            log("✗ helper did not start; see: adb shell cat /data/local/tmp/nearside-helper.log")
+            return false
+        }
+        log("✓ helper running")
     }
-    step("start helper on \(serial)", Adb.startHelper(serial))
-    Thread.sleep(forTimeInterval: 1.5)
-    let running = Adb.helperRunning(serial)
-    log(running ? "✓ helper running" : "✗ helper did not start; see: adb shell cat /data/local/tmp/nearside-helper.log")
-    return running
+    return quiet ? Adb.forward(serial, port: HelperLink.localPort).ok
+                 : step("tunnel localhost:\(HelperLink.localPort) → helper", Adb.forward(serial, port: HelperLink.localPort))
 }
 
 func setup(pair: String, code: String, apk: String) -> Int32 {
@@ -98,98 +77,63 @@ func setup(pair: String, code: String, apk: String) -> Int32 {
 
 func run() -> Never {
     _ = NSApplication.shared // Pasteboard access from a CLI needs an app instance.
-    let link = PhoneLink()
-    var authed = false
-    var answeredChallenge = false
-    var ourNonce = ""
+    let link = HelperLink()
+    var ready = false // the helper accepted our token and said hello
+
     let board = PasteboardWatcher { text in
-        guard link.isConnected, authed else { return }
+        guard ready else { return }
         log("Mac → phone (\(text.count) chars)")
         link.send(["t": "clip", "text": text, "ts": nowMs()])
     }
 
-    var helperUp = false
-    var ensuring = false
-    func ensureHelperInBackground() {
-        guard !ensuring else { return }
-        ensuring = true
-        DispatchQueue.global().async {
-            _ = ensureHelper()
-            DispatchQueue.main.async { ensuring = false }
-        }
-    }
-
     link.onMessage = { message in
         switch message["t"] as? String {
-        case "challenge":
-            // Prove we know the token without sending it, and challenge the phone back
-            // (see Auth.kt). Answer only once per connection, as the very first exchange.
-            guard !answeredChallenge, let nonce = message["nonce"] as? String else { return }
-            answeredChallenge = true
-            ourNonce = randomHex()
-            link.send(["t": "auth", "mac": hmacHex("nearside-mac:\(nonce)"), "nonce": ourNonce])
-        case "auth-ok":
-            guard !authed, !ourNonce.isEmpty, let proof = (message["mac"] as? String).flatMap(hexBytes),
-                  HMAC<SHA256>.isValidAuthenticationCode(
-                      proof, authenticating: Data("nearside-phone:\(ourNonce)".utf8),
-                      using: SymmetricKey(data: Data(Token.value.utf8))) else {
-                log("✗ peer failed to authenticate; dropping it")
-                link.drop(penalize: true)
-                return
-            }
-            authed = true
-            log("✓ phone authenticated")
+        case "hello":
+            ready = true
+            log("✓ helper connected (Android SDK \(message["sdk"] ?? "?"))")
         case "clip":
-            guard authed else { link.drop(penalize: true); return }
-            guard let text = message["text"] as? String else { return }
+            guard ready, let text = message["text"] as? String else { return }
             let sent = (message["ts"] as? NSNumber)?.int64Value ?? nowMs()
             log("phone → Mac (\(text.count) chars, ~\(nowMs() - sent) ms)")
             board.write(text)
-        case "status":
-            guard authed else { link.drop(penalize: true); return }
-            helperUp = (message["helper"] as? Bool) ?? false
-            log("phone status: helper \(helperUp ? "connected" : "not running")")
-            if !helperUp { ensureHelperInBackground() }
         default:
             break
         }
     }
-    var connectionCount = 0
-    link.onConnect = {
-        // Handshake deadline: a peer that hasn't authenticated within 5 s is dropped and skipped.
-        connectionCount += 1
-        let thisConnection = connectionCount
-        DispatchQueue.main.asyncAfter(deadline: .now() + 5) {
-            if thisConnection == connectionCount && link.isConnected && !authed {
-                log("✗ handshake timed out; dropping peer")
-                link.drop(penalize: true)
+    link.onDisconnect = {
+        if ready { log("helper link lost; will retry") }
+        ready = false
+    }
+
+    // Keep the tunnel and helper alive. When idle, (re)establish them off the main queue,
+    // then connect. Quiet retries every 3 s, with a visible status line once a minute.
+    var ensuring = false
+    var lastComplaint = Date.distantPast
+    Timer.scheduledTimer(withTimeInterval: 3, repeats: true) { _ in
+        guard link.isIdle, !ensuring else { return }
+        ensuring = true
+        let loud = Date().timeIntervalSince(lastComplaint) > 60
+        if loud { lastComplaint = Date() }
+        DispatchQueue.global().async {
+            let ok = ensureHelper(quiet: !loud)
+            DispatchQueue.main.async {
+                ensuring = false
+                if ok { link.connect() }
             }
         }
-    }
-    link.onDisconnect = {
-        authed = false
-        answeredChallenge = false
-        ourNonce = ""
-        helperUp = false
-    }
-    // The phone sends a status message on connect; this timer covers missed updates.
-    Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { _ in
-        if link.isConnected && !helperUp { ensureHelperInBackground() }
-    }
+    }.fire()
+
     // Android revokes an ADB host after 7 days without a connection. Reconnecting every 6 h
     // keeps this Mac authorised without disabling that expiry.
     Timer.scheduledTimer(withTimeInterval: 6 * 3600, repeats: true) { _ in
-        guard link.isConnected else { return }
         DispatchQueue.global().async {
-            // A fresh connection is what refreshes the phone's "last connected" time.
             if let serial = Adb.connectedWirelessSerial() { Adb.run(["disconnect", serial]) }
-            _ = Adb.ensureConnected()
+            _ = ensureHelper(quiet: true)
         }
     }
 
-    link.start()
     board.start()
-    log("running; looking for the phone on the local network…")
+    log("running")
     RunLoop.main.run()
     exit(0)
 }

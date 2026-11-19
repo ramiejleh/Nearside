@@ -9,23 +9,29 @@ import android.net.LocalSocket
 import android.os.Handler
 import android.os.Looper
 import org.json.JSONObject
+import java.io.ByteArrayOutputStream
 import java.io.IOException
+import java.io.InputStream
 import java.io.Writer
+import java.security.MessageDigest
 import java.util.concurrent.Executors
 import kotlin.system.exitProcess
 
 /**
  * Privileged helper. The Mac starts it over wireless ADB:
  *
- *   CLASSPATH=<apk> app_process / dev.nearside.helper.Main
+ *   NEARSIDE_TOKEN=<t> CLASSPATH=<apk> app_process / dev.nearside.helper.Main
  *
- * It runs as the shell user, watches the clipboard, and serves it to the Nearside app
- * (and only that app, checked by peer uid) over the abstract unix socket below.
- * Protocol: newline-delimited JSON, `{"t":"clip","text":"…","ts":<epoch ms>}` both ways.
+ * It runs as the shell user and watches the clipboard. The Mac reaches it through
+ * `adb forward tcp:<port> localabstract:nearside-helper`: the link rides adb's TLS and is
+ * never exposed on the LAN. Apps can't connect at all (SELinux denies untrusted_app →
+ * shell sockets), and we additionally require the peer to be adbd (shell uid) plus the token.
+ * Protocol: newline-delimited JSON. Mac first sends `{"t":"auth","token":…}`; afterwards
+ * `{"t":"clip","text":"…","ts":<epoch ms>}` flows both ways.
  */
 object Main {
     const val SOCKET_NAME = "nearside-helper"
-    private const val APP_PACKAGE = "dev.nearside"
+    private const val SHELL_UID = 2000
 
     private val io = Executors.newSingleThreadExecutor()
     @Volatile private var client: Writer? = null
@@ -37,6 +43,11 @@ object Main {
         Looper.prepareMainLooper()
         Workarounds.apply()
 
+        val token = System.getenv("NEARSIDE_TOKEN")
+        if (token == null || token.length < 32) {
+            Log.d("missing NEARSIDE_TOKEN; exiting")
+            exitProcess(1)
+        }
         val server = try {
             LocalServerSocket(SOCKET_NAME)
         } catch (e: IOException) {
@@ -44,15 +55,7 @@ object Main {
             exitProcess(0)
         }
 
-        val context = FakeContext.instance
-        val appUid = try {
-            context.packageManager.getApplicationInfo(APP_PACKAGE, 0).uid
-        } catch (t: Throwable) {
-            Log.d("cannot resolve uid of $APP_PACKAGE: $t")
-            exitProcess(1)
-        }
-
-        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+        val clipboard = FakeContext.instance.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
         val main = Handler(Looper.getMainLooper())
 
         clipboard.addPrimaryClipChangedListener {
@@ -68,37 +71,51 @@ object Main {
             send(JSONObject().put("t", "clip").put("text", text).put("ts", System.currentTimeMillis()))
         }
 
-        Thread({ acceptLoop(server, appUid, clipboard, main) }, "accept").start()
-        Log.d("helper ready (uid=${android.os.Process.myUid()}, app uid=$appUid)")
+        Thread({ acceptLoop(server, token, clipboard, main) }, "accept").start()
+        Log.d("helper ready (uid=${android.os.Process.myUid()}, sdk=${android.os.Build.VERSION.SDK_INT})")
         Looper.loop()
     }
 
-    private fun acceptLoop(server: LocalServerSocket, appUid: Int, clipboard: ClipboardManager, main: Handler) {
+    private fun acceptLoop(server: LocalServerSocket, token: String, clipboard: ClipboardManager, main: Handler) {
         while (true) {
             val socket: LocalSocket = try { server.accept() } catch (e: IOException) { continue }
-            val peer = socket.peerCredentials.uid
-            if (peer != appUid) {
+            val peer = runCatching { socket.peerCredentials.uid }.getOrDefault(-1)
+            if (peer != SHELL_UID) {
                 Log.d("rejecting peer uid $peer")
-                socket.close()
+                runCatching { socket.close() }
                 continue
             }
-            Log.d("app connected")
-            Thread({ serve(socket, clipboard, main) }, "client").start()
+            Thread({ serve(socket, token, clipboard, main) }, "client").start()
         }
     }
 
-    private fun serve(socket: LocalSocket, clipboard: ClipboardManager, main: Handler) {
+    private fun serve(socket: LocalSocket, token: String, clipboard: ClipboardManager, main: Handler) {
+        try {
+            socket.soTimeout = 5000
+            val auth = JSONObject(readBoundedLine(socket.inputStream, 512))
+            val ok = auth.optString("t") == "auth" &&
+                MessageDigest.isEqual(token.toByteArray(), auth.optString("token").toByteArray())
+            if (!ok) {
+                Log.d("rejecting client with bad token")
+                socket.close()
+                return
+            }
+            socket.soTimeout = 0
+        } catch (e: Exception) {
+            runCatching { socket.close() }
+            return
+        }
+
         val writer = socket.outputStream.bufferedWriter()
-        client = writer
-        // The Mac's shared secret, passed in by the Mac when it launched us (see Auth.kt).
-        val hello = JSONObject().put("t", "hello").put("sdk", android.os.Build.VERSION.SDK_INT)
-        System.getenv("NEARSIDE_TOKEN")?.let { hello.put("token", it) }
-        send(hello)
+        client = writer // one Mac at a time; the newest wins
+        Log.d("Mac connected")
+        send(JSONObject().put("t", "hello").put("sdk", android.os.Build.VERSION.SDK_INT))
         try {
             socket.inputStream.bufferedReader().forEachLine { line ->
                 val msg = runCatching { JSONObject(line) }.getOrNull() ?: return@forEachLine
                 if (msg.optString("t") == "clip") {
                     val text = msg.optString("text")
+                    Log.d("set clip from Mac (${text.length} chars, ${System.currentTimeMillis() - msg.optLong("ts")} ms)")
                     main.post {
                         lastSetByMac = text
                         clipboard.setPrimaryClip(ClipData.newPlainText("Nearside", text))
@@ -109,7 +126,7 @@ object Main {
         } finally {
             if (client === writer) client = null
             runCatching { socket.close() }
-            Log.d("app disconnected")
+            Log.d("Mac disconnected")
         }
     }
 
@@ -123,6 +140,18 @@ object Main {
             } catch (_: IOException) {
                 if (client === w) client = null
             }
+        }
+    }
+
+    /** One '\n'-terminated line of at most [max] bytes; unbuffered so nothing past it is consumed. */
+    private fun readBoundedLine(input: InputStream, max: Int): String {
+        val bytes = ByteArrayOutputStream()
+        while (true) {
+            val b = input.read()
+            if (b == -1) throw IOException("eof")
+            if (b == '\n'.code) return bytes.toString(Charsets.UTF_8.name())
+            if (bytes.size() >= max) throw IOException("line too long")
+            bytes.write(b)
         }
     }
 

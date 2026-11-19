@@ -4,65 +4,37 @@ import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.Service
-import android.content.ClipData
-import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.net.ConnectivityManager
-import android.net.LocalSocket
-import android.net.LocalSocketAddress
 import android.net.Network
 import android.net.NetworkCapabilities
 import android.net.NetworkRequest
-import android.net.nsd.NsdManager
-import android.net.nsd.NsdServiceInfo
-import android.os.Handler
 import android.os.IBinder
-import android.os.Looper
-import org.json.JSONObject
-import java.io.ByteArrayOutputStream
-import java.io.IOException
-import java.io.InputStream
-import java.io.Writer
-import java.util.concurrent.atomic.AtomicInteger
-import java.net.ServerSocket
-import java.net.Socket
-import java.util.concurrent.Executors
 
 /** Live state shown by [MainActivity]. PoC only: plain volatile fields. */
 object Status {
     @Volatile var serviceRunning = false
-    @Volatile var helperConnected = false
-    @Volatile var macConnected = false
     @Volatile var lastEvent = "—"
 }
 
 /**
- * Bridges the Mac (TCP on the LAN, advertised as `_nearside._tcp`) and the privileged
- * helper (abstract unix socket). Messages are newline-delimited JSON, see helper/Main.kt.
- * No encryption or pairing: this is a throwaway LAN-only proof of concept.
+ * PoC role: stay alive as a foreground service and try to keep wireless debugging on, so the
+ * Mac can (re)start the helper. Clipboard traffic goes Mac ⇄ helper over the adb tunnel; the
+ * app can't talk to the helper directly (SELinux blocks untrusted_app → shell sockets; the real
+ * app will use a Binder handed over Shizuku-style). Tier-1 features will live here later.
  */
 class SyncService : Service() {
     companion object {
-        const val PORT = 47800
         private const val CHANNEL = "sync"
-        private const val SHELL_UID = 2000 // android.os.Process.SHELL_UID (hidden)
 
         fun start(context: Context) {
             context.startForegroundService(Intent(context, SyncService::class.java))
         }
     }
 
-    private val io = Executors.newSingleThreadExecutor()
-    private val main = Handler(Looper.getMainLooper())
-    @Volatile private var mac: Writer? = null
-    @Volatile private var macSocket: Socket? = null
-    @Volatile private var helper: Writer? = null
     @Volatile private var running = false
-    private val pendingHandshakes = AtomicInteger(0)
-    private var serverSocket: ServerSocket? = null
-    private var nsdListener: NsdManager.RegistrationListener? = null
     private var networkCallback: ConnectivityManager.NetworkCallback? = null
 
     override fun onBind(intent: Intent?): IBinder? = null
@@ -73,8 +45,6 @@ class SyncService : Service() {
             running = true
             Status.serviceRunning = true
             AdbWifi.ensureEnabled(this)
-            Thread(::macLoop, "mac").start()
-            Thread(::helperLoop, "helper").start()
             watchWifi()
         }
         return START_STICKY
@@ -83,181 +53,14 @@ class SyncService : Service() {
     override fun onDestroy() {
         running = false
         Status.serviceRunning = false
-        runCatching { serverSocket?.close() }
-        nsdListener?.let { runCatching { getSystemService(NsdManager::class.java).unregisterService(it) } }
         networkCallback?.let { getSystemService(ConnectivityManager::class.java).unregisterNetworkCallback(it) }
         super.onDestroy()
     }
 
-    // --- Mac side -------------------------------------------------------------------------
-
-    private fun macLoop() {
-        val server = try {
-            ServerSocket(PORT).also { serverSocket = it }
-        } catch (e: IOException) {
-            event("cannot listen on $PORT: $e")
-            return
-        }
-        advertise()
-        while (running) {
-            val socket = try { server.accept() } catch (e: IOException) { continue }
-            socket.tcpNoDelay = true
-            socket.keepAlive = true
-            Thread({ serveMac(socket) }, "mac-client").start()
-        }
-    }
-
-    private fun serveMac(socket: Socket) {
-        // Challenge-response first; nothing is relayed to or from an unauthenticated peer.
-        // Bounded: ≤ 4 pending handshakes, ≤ 512-byte reply, hard 5 s deadline.
-        if (pendingHandshakes.incrementAndGet() > 4) {
-            pendingHandshakes.decrementAndGet()
-            runCatching { socket.close() }
-            return
-        }
-        val deadline = Runnable { runCatching { socket.close() } }
-        main.postDelayed(deadline, 5000)
-        val authed = try {
-            val nonce = Auth.newNonce()
-            val out = socket.getOutputStream()
-            out.write("${JSONObject().put("t", "challenge").put("nonce", nonce)}\n".toByteArray())
-            out.flush()
-            val reply = JSONObject(readBoundedLine(socket.getInputStream(), 512))
-            val macNonce = reply.optString("nonce")
-            val ok = reply.optString("t") == "auth" && macNonce.length == 64 &&
-                Auth.verifyMac(this, nonce, reply.optString("mac"))
-            // Mutual: prove ourselves to the Mac too, so a fake phone can't receive its clipboard.
-            if (ok) {
-                val proof = Auth.phoneProof(this, macNonce)
-                out.write("${JSONObject().put("t", "auth-ok").put("mac", proof)}\n".toByteArray())
-                out.flush()
-            }
-            ok
-        } catch (_: Exception) {
-            false
-        } finally {
-            main.removeCallbacks(deadline)
-            pendingHandshakes.decrementAndGet()
-        }
-        val reader = socket.getInputStream().bufferedReader()
-        if (!authed) {
-            event("rejected unauthenticated client ${socket.inetAddress.hostAddress}")
-            runCatching { socket.close() }
-            return
-        }
-        // One Mac at a time; an authenticated connection replaces the old one.
-        runCatching { macSocket?.close() }
-        macSocket = socket
-        val writer = socket.getOutputStream().bufferedWriter()
-        mac = writer
-        Status.macConnected = true
-        event("Mac connected from ${socket.inetAddress.hostAddress}")
-        sendStatus()
-        try {
-            reader.forEachLine { line ->
-                val msg = runCatching { JSONObject(line) }.getOrNull() ?: return@forEachLine
-                if (msg.optString("t") == "clip") onClipFromMac(msg)
-            }
-        } catch (_: IOException) {
-        } finally {
-            if (mac === writer) {
-                mac = null
-                Status.macConnected = false
-                event("Mac disconnected")
-            }
-            runCatching { socket.close() }
-        }
-    }
-
-    private fun onClipFromMac(msg: JSONObject) {
-        val text = msg.optString("text")
-        event("Mac → phone (${text.length} chars, ${System.currentTimeMillis() - msg.optLong("ts")} ms)")
-        if (helper != null) {
-            write(helper, msg)
-        } else {
-            // Fallback: background apps may still *write* the clipboard.
-            main.post {
-                getSystemService(ClipboardManager::class.java)
-                    .setPrimaryClip(ClipData.newPlainText("Nearside", text))
-            }
-        }
-    }
-
-    private fun sendStatus() {
-        write(mac, JSONObject().put("t", "status").put("helper", helper != null))
-    }
-
-    private fun advertise() {
-        val info = NsdServiceInfo().apply {
-            serviceName = "Nearside ${android.os.Build.MODEL}"
-            serviceType = "_nearside._tcp"
-            port = PORT
-        }
-        val listener = object : NsdManager.RegistrationListener {
-            override fun onServiceRegistered(info: NsdServiceInfo) = event("advertised as ${info.serviceName}")
-            override fun onRegistrationFailed(info: NsdServiceInfo, code: Int) = event("advertise failed: $code")
-            override fun onServiceUnregistered(info: NsdServiceInfo) {}
-            override fun onUnregistrationFailed(info: NsdServiceInfo, code: Int) {}
-        }
-        nsdListener = listener
-        getSystemService(NsdManager::class.java).registerService(info, NsdManager.PROTOCOL_DNS_SD, listener)
-    }
-
-    // --- Helper side ----------------------------------------------------------------------
-
-    private fun helperLoop() {
-        while (running) {
-            val socket = LocalSocket()
-            try {
-                socket.connect(LocalSocketAddress("nearside-helper"))
-            } catch (e: IOException) {
-                runCatching { socket.close() }
-                Thread.sleep(2000)
-                continue
-            }
-            // Abstract socket names aren't owned: any app could bind this one first. Only trust
-            // the helper we started as the shell user.
-            val peerUid = runCatching { socket.peerCredentials.uid }.getOrDefault(-1)
-            if (peerUid != SHELL_UID) {
-                event("ignoring impostor on helper socket (uid $peerUid)")
-                runCatching { socket.close() }
-                Thread.sleep(2000)
-                continue
-            }
-            val writer = socket.outputStream.bufferedWriter()
-            helper = writer
-            Status.helperConnected = true
-            event("helper connected")
-            sendStatus()
-            try {
-                socket.inputStream.bufferedReader().forEachLine { line ->
-                    val msg = runCatching { JSONObject(line) }.getOrNull() ?: return@forEachLine
-                    when (msg.optString("t")) {
-                        "hello" -> msg.optString("token").takeIf { it.isNotEmpty() }
-                            ?.let { Auth.store(this, it) }
-                        "clip" -> {
-                            event("phone → Mac (${msg.optString("text").length} chars)")
-                            write(mac, msg)
-                        }
-                    }
-                }
-            } catch (_: IOException) {
-            }
-            helper = null
-            Status.helperConnected = false
-            event("helper disconnected")
-            sendStatus()
-            runCatching { socket.close() }
-        }
-    }
-
-    // --- Wireless debugging upkeep ----------------------------------------------------------
-
     private fun watchWifi() {
         val cm = getSystemService(ConnectivityManager::class.java)
         val callback = object : ConnectivityManager.NetworkCallback() {
-            // Android switches wireless debugging off when Wi-Fi changes; turn it back on so the
-            // Mac can restart the helper.
+            // Android switches wireless debugging off when Wi-Fi changes; try to turn it back on.
             override fun onAvailable(network: Network) {
                 AdbWifi.ensureEnabled(this@SyncService)
             }
@@ -267,38 +70,6 @@ class SyncService : Service() {
             NetworkRequest.Builder().addTransportType(NetworkCapabilities.TRANSPORT_WIFI).build(),
             callback,
         )
-    }
-
-    // --- Utilities ------------------------------------------------------------------------
-
-    /** Reads one '\n'-terminated line, failing if it exceeds [max] bytes. Unbuffered on purpose
-     *  so no bytes past the line are consumed before the buffered reader takes over. */
-    private fun readBoundedLine(input: InputStream, max: Int): String {
-        val bytes = ByteArrayOutputStream()
-        while (true) {
-            val b = input.read()
-            if (b == -1) throw IOException("eof")
-            if (b == '\n'.code) return bytes.toString(Charsets.UTF_8.name())
-            if (bytes.size() >= max) throw IOException("line too long")
-            bytes.write(b)
-        }
-    }
-
-    private fun write(target: Writer?, msg: JSONObject) {
-        val w = target ?: return
-        io.execute {
-            try {
-                w.write(msg.toString())
-                w.write("\n")
-                w.flush()
-            } catch (_: IOException) {
-            }
-        }
-    }
-
-    private fun event(text: String) {
-        Status.lastEvent = text
-        android.util.Log.i("Nearside", text)
     }
 
     private fun notification(): Notification {
