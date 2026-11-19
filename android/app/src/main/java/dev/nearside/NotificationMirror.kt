@@ -180,11 +180,15 @@ class NotificationMirror : NotificationListenerService() {
             val extras = sbn.notification.extras
             val title = (extras.getCharSequence(Notification.EXTRA_CONVERSATION_TITLE)
                 ?: extras.getCharSequence(Notification.EXTRA_TITLE))?.toString() ?: continue
-            val matches = (name != null && title == name) ||
+            val matches = (name != null && title.equals(name, ignoreCase = true)) ||
                 (digits.length >= 6 && title.filter(Char::isDigit).takeLast(8) == digits) || title == address
-            if (!matches) continue
-            val action = sbn.notification.actions.orEmpty()
-                .firstOrNull { it.semanticAction == Notification.Action.SEMANTIC_ACTION_MARK_AS_READ } ?: continue
+            val actions = sbn.notification.actions.orEmpty()
+            // Prefer the semantic tag (any language); some apps don't set it, so fall back to the label.
+            val action = actions.firstOrNull { it.semanticAction == Notification.Action.SEMANTIC_ACTION_MARK_AS_READ }
+                ?: actions.firstOrNull { it.title?.toString().equals("Mark as read", ignoreCase = true) }
+            android.util.Log.i("Nearside", "Google Messages notification: title match=$matches (have name=${name != null}), " +
+                "semantic actions=${actions.map { it.semanticAction }}, mark-read button=${action != null}")
+            if (!matches || action == null) continue
             runCatching { fire(action.actionIntent, null) }
                 .onSuccess { android.util.Log.i("Nearside", "pressed Mark as read in Google Messages") }
         }
