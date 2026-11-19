@@ -89,9 +89,18 @@ final class PhoneNotifications: NSObject, UNUserNotificationCenterDelegate {
             let ids = delivered.map(\.request.identifier)
             Task { @MainActor in
                 guard let self else { return }
-                for id in ids where self.shown[id] == nil { self.shown[id] = .distantPast }
+                for id in ids where self.shown[id] == nil && !id.hasPrefix("file:") { self.shown[id] = .distantPast }
             }
         }
+    }
+
+    /// A notification of our own (e.g. "Received photo.jpg"); not tracked as a phone notification.
+    func showLocal(id: String, title: String, body: String) {
+        let content = UNMutableNotificationContent()
+        content.title = title
+        content.body = body
+        content.categoryIdentifier = category(for: [])
+        center.add(UNNotificationRequest(identifier: id, content: content, trigger: nil))
     }
 
     func remove(key: String) {

@@ -10,10 +10,13 @@ import android.os.Binder
 import android.os.Build
 import android.os.Bundle
 import android.os.IBinder
+import android.os.ParcelFileDescriptor
 import android.os.RemoteException
 import dev.nearside.link.IAppCallback
 import dev.nearside.link.IHelper
 import org.json.JSONObject
+import java.io.File
+import java.util.UUID
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 
@@ -30,7 +33,10 @@ object AppLink {
     private const val AUTHORITY = "dev.nearside.link"
     private const val MAX_MESSAGE = 1 shl 20
     /** Message types the helper owns; the app may not send these to the Mac. */
-    private val RESERVED = setOf("clip", "hello", "challenge", "auth", "hello-mac", "app")
+    private val RESERVED = setOf("clip", "hello", "challenge", "auth", "hello-mac", "app", "file-ready")
+    /** Shared files wait here (shell-owned) until the Mac has pulled them over adb. */
+    private val STAGING = File("/data/local/tmp/nearside-out")
+    private val files = Executors.newSingleThreadExecutor()
 
     /** Relays to the Mac; false when no Mac is connected. Set by [Main]. */
     lateinit var toMac: (JSONObject) -> Boolean
@@ -42,7 +48,11 @@ object AppLink {
 
     val isLinked get() = app != null
 
-    fun start() = scheduler.execute(::attach)
+    fun start() {
+        STAGING.deleteRecursively() // leftovers from a previous run
+        STAGING.mkdirs()
+        scheduler.execute(::attach)
+    }
 
     private val helperBinder = object : IHelper.Stub() {
         override fun sendToMac(json: String): Boolean {
@@ -56,6 +66,28 @@ object AppLink {
         override fun isMacConnected(): Boolean {
             if (Binder.getCallingUid() != appUid) throw SecurityException("not the Nearside app")
             return macConnected()
+        }
+
+        override fun sendFile(name: String, fd: ParcelFileDescriptor): Boolean {
+            if (Binder.getCallingUid() != appUid) throw SecurityException("not the Nearside app")
+            if (!macConnected()) return false
+            val id = UUID.randomUUID().toString()
+            val safe = safeName(name)
+            val copy = ParcelFileDescriptor.dup(fd.fileDescriptor) // the app closes its fd on return
+            files.execute {
+                val staged = File(STAGING, id)
+                runCatching {
+                    ParcelFileDescriptor.AutoCloseInputStream(copy).use { input ->
+                        staged.outputStream().use { input.copyTo(it, 256 * 1024) }
+                    }
+                    toMac(JSONObject().put("t", "file-ready").put("id", id).put("name", safe)
+                        .put("size", staged.length()).put("path", staged.path))
+                }.onFailure {
+                    Log.d("staging $safe failed: $it")
+                    staged.delete()
+                }
+            }
+            return true
         }
 
         override fun sendIntent(intent: PendingIntent, fillIn: Intent?): Boolean {
@@ -77,6 +109,11 @@ object AppLink {
 
     /** A Mac message the helper doesn't handle itself goes to the app. */
     fun deliver(msg: JSONObject) {
+        if (msg.optString("t") == "file-pulled") { // ours, not the app's
+            val id = msg.optString("id")
+            if (id.matches(Regex("[0-9a-f-]{36}"))) File(STAGING, id).delete()
+            return
+        }
         val target = app
         if (target == null) Log.d("Mac → app: ${msg.optString("t")} dropped, app not linked")
         try {
@@ -183,6 +220,12 @@ object AppLink {
             provider.javaClass.getMethod("call", s, s, s, s, s, b)
                 .invoke(provider, FakeContext.PACKAGE_NAME, null, AUTHORITY, method, null, extras)
         } as Bundle?
+    }
+
+    /** A plain file name: no directories, no control characters, not hidden. */
+    private fun safeName(name: String): String {
+        val base = name.substringAfterLast('/').filter { it >= ' ' }.trim().trimStart('.').take(200)
+        return base.ifEmpty { "file" }
     }
 
     private fun field(obj: Any, name: String): Any? =

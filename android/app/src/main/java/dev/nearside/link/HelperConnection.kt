@@ -1,7 +1,9 @@
 package dev.nearside.link
 
+import android.content.Context
 import android.os.Binder
 import android.os.RemoteException
+import dev.nearside.FileNotifications
 import dev.nearside.NotificationMirror
 import dev.nearside.Status
 import org.json.JSONObject
@@ -17,6 +19,7 @@ object HelperConnection {
         private set
     @Volatile var macConnected = false
         private set
+    @Volatile private var context: Context? = null
 
     internal val callback = object : IAppCallback.Stub() {
         override fun onMessage(json: String) {
@@ -33,7 +36,8 @@ object HelperConnection {
         }
     }
 
-    internal fun attached(h: IHelper) {
+    internal fun attached(h: IHelper, appContext: Context) {
+        context = appContext
         helper = h
         Status.lastEvent = "linked to helper"
         runCatching {
@@ -61,6 +65,7 @@ object HelperConnection {
             // Health check for the whole Mac → helper → app → helper → Mac path.
             "ping" -> send(JSONObject().put("t", "pong").put("id", msg.opt("id")))
             "notif-dismiss" -> NotificationMirror.instance?.dismiss(msg.optString("key"))
+            "file-received" -> context?.let { FileNotifications.received(it, msg.optString("name")) }
             "notif-open" -> NotificationMirror.instance?.open(msg.optString("key"))
             "notif-action" -> NotificationMirror.instance?.runAction(
                 msg.optString("key"),

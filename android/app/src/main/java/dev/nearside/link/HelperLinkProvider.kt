@@ -18,7 +18,7 @@ class HelperLinkProvider : ContentProvider() {
         if (Binder.getCallingUid() != HelperConnection.SHELL_UID) throw SecurityException("shell only")
         if (method != "attach") return null
         val binder = extras?.getBinder("helper") ?: return null
-        HelperConnection.attached(IHelper.Stub.asInterface(binder))
+        HelperConnection.attached(IHelper.Stub.asInterface(binder), context!!.applicationContext)
         return Bundle().apply { putBinder("app", HelperConnection.callback) }
     }
 

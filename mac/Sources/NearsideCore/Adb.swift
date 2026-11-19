@@ -178,6 +178,39 @@ public enum Adb {
         return shell(serial, "cmd notification \(allowed ? "allow_listener" : "disallow_listener") \(component)").ok
     }
 
+    /// Lets the phone app post "Received from your Mac" notifications.
+    static func grantPostNotifications(_ serial: String) {
+        _ = shell(serial, "pm grant \(appPackage) android.permission.POST_NOTIFICATIONS")
+    }
+
+    static let phoneInbox = "/sdcard/Download/Nearside"
+
+    /// Single-quotes a string for the phone's shell.
+    static func shellQuote(_ s: String) -> String {
+        "'" + s.replacingOccurrences(of: "'", with: "'\\''") + "'"
+    }
+
+    /// Pushes a file into Download/Nearside, renaming "x.pdf" to "x (2).pdf" if it exists.
+    /// Returns the name it got on the phone, or an error message.
+    static func push(_ serial: String, file: URL) -> Swift.Result<String, PushError> {
+        _ = shell(serial, "mkdir -p \(shellQuote(phoneInbox))")
+        let name = FileNames.safe(file.lastPathComponent)
+        var candidate = name
+        var n = 2
+        while shell(serial, "test -e \(shellQuote("\(phoneInbox)/\(candidate)"))").ok, n < 1000 {
+            candidate = FileNames.numbered(name, n)
+            n += 1
+        }
+        let r = run(["-s", serial, "push", file.path, "\(phoneInbox)/\(candidate)"], timeout: 3600)
+        return r.ok ? .success(candidate) : .failure(PushError(message: r.out))
+    }
+
+    public struct PushError: Error, Sendable { public let message: String }
+
+    static func pull(_ serial: String, remote: String, to local: URL) -> Bool {
+        run(["-s", serial, "pull", remote, local.path], timeout: 3600).ok
+    }
+
     /// Android revokes an ADB host after 7 days without a fresh connection; reconnecting renews it.
     static func renewAuthorization(pinned: String) {
         if let serial = connectedWirelessSerials().first(where: { hardwareSerial($0) == pinned }) {

@@ -113,3 +113,33 @@ import Testing
         #expect(ClipHistory.load(from: url, limit: 5).items.isEmpty)
     }
 }
+
+@Suite struct FileNamesTests {
+    @Test func stripsDirectoriesHiddenDotsAndControlCharacters() {
+        #expect(FileNames.safe("../../etc/passwd") == "passwd")
+        #expect(FileNames.safe(".hidden") == "hidden")
+        #expect(FileNames.safe("a\u{0}b\nc.txt") == "abc.txt")
+        #expect(FileNames.safe("") == "file")
+        #expect(FileNames.safe("...") == "file")
+        #expect(FileNames.safe("weird:name.pdf") == "weirdname.pdf")
+    }
+
+    @Test func numbersBeforeTheExtension() {
+        #expect(FileNames.numbered("photo.jpg", 2) == "photo (2).jpg")
+        #expect(FileNames.numbered("README", 3) == "README (3)")
+    }
+
+    @Test func uniqueAvoidsExistingFiles() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        #expect(FileNames.unique("a.txt", in: dir).lastPathComponent == "a.txt")
+        try Data().write(to: dir.appendingPathComponent("a.txt"))
+        try Data().write(to: dir.appendingPathComponent("a (2).txt"))
+        #expect(FileNames.unique("a.txt", in: dir).lastPathComponent == "a (3).txt")
+    }
+
+    @Test func shellQuoteSurvivesQuotes() {
+        #expect(Adb.shellQuote("it's.txt") == "'it'\\''s.txt'")
+    }
+}

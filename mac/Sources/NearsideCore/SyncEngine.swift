@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import Observation
 
@@ -10,6 +11,20 @@ public final class SyncEngine {
         case needsSetup      // never paired: show the setup flow
         case searching       // paired, phone not reachable right now
         case connected
+    }
+
+    /// A file going to or coming from the phone (most recent first in `transfers`).
+    public struct Transfer: Identifiable, Equatable, Sendable {
+        public enum Direction: Sendable { case toPhone, toMac }
+        public enum Status: Equatable, Sendable {
+            case inProgress
+            case done(URL?) // where it landed on the Mac (toMac), nil for toPhone
+            case failed(String)
+        }
+        public let id: UUID
+        public let name: String
+        public let direction: Direction
+        public var status: Status
     }
 
     public struct SetupStep: Identifiable, Equatable, Sendable {
@@ -28,6 +43,7 @@ public final class SyncEngine {
     public private(set) var isPairing = false
     /// Whether the Nearside app on the phone is linked to the helper (needed for app features).
     public private(set) var appLinked = false
+    public private(set) var transfers: [Transfer] = []
 
     /// Mirror the phone's notifications to macOS. Turning it off also revokes the phone app's
     /// notification access, so nothing is read on the phone at all.
@@ -82,9 +98,15 @@ public final class SyncEngine {
 
         link.onMessage = { [weak self] message in self?.handle(message) }
         notifications.onDismiss = { [weak self] key in
+            guard !key.hasPrefix(Self.fileNotificationPrefix) else { return } // ours, not the phone's
             self?.link.send(["t": "notif-dismiss", "key": key])
         }
         notifications.onOpen = { [weak self] key in
+            if key.hasPrefix(Self.fileNotificationPrefix) {
+                let path = String(key.dropFirst(Self.fileNotificationPrefix.count))
+                NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: path)])
+                return
+            }
             self?.link.send(["t": "notif-open", "key": key])
         }
         notifications.onAction = { [weak self] key, index, text in
@@ -147,6 +169,9 @@ public final class SyncEngine {
         case "hello":
             state = .connected
             applyNotificationAccess()
+            if let serial = adbSerial { Task.detached { Adb.grantPostNotifications(serial) } }
+        case "file-ready":
+            receiveFile(message)
         case "app":
             appLinked = message["linked"] as? Bool ?? false
         case "clip":
@@ -176,6 +201,71 @@ public final class SyncEngine {
         default:
             break
         }
+    }
+
+    // MARK: Files
+
+    private static let fileNotificationPrefix = "file:"
+
+    /// Sends files to the phone's Download/Nearside folder, one after another.
+    public func sendFiles(_ urls: [URL]) {
+        guard state == .connected, let serial = adbSerial else { return }
+        let jobs = urls.map { url in (url, Transfer(id: UUID(), name: url.lastPathComponent, direction: .toPhone, status: .inProgress)) }
+        for (_, transfer) in jobs { addTransfer(transfer) }
+        Task {
+            for (url, transfer) in jobs {
+                var isDirectory: ObjCBool = false
+                guard FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory), !isDirectory.boolValue else {
+                    setStatus(transfer.id, .failed("Folders can't be sent yet"))
+                    continue
+                }
+                let result = await Task.detached { Adb.push(serial, file: url) }.value
+                switch result {
+                case .success(let name):
+                    setStatus(transfer.id, .done(nil))
+                    link.send(["t": "file-received", "name": name])
+                case .failure(let error):
+                    setStatus(transfer.id, .failed(Self.friendly(error.message)))
+                }
+            }
+        }
+    }
+
+    /// The phone shared a file with us: pull it into ~/Downloads.
+    private func receiveFile(_ message: [String: Any]) {
+        guard let id = message["id"] as? String, let remote = message["path"] as? String,
+              remote.hasPrefix("/data/local/tmp/nearside-out/"), let serial = adbSerial else { return }
+        let name = FileNames.safe(message["name"] as? String ?? "file")
+        let transfer = Transfer(id: UUID(), name: name, direction: .toMac, status: .inProgress)
+        addTransfer(transfer)
+        let downloads = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask)[0]
+        let destination = FileNames.unique(name, in: downloads)
+        let phone = phoneName
+        Task {
+            let ok = await Task.detached { Adb.pull(serial, remote: remote, to: destination) }.value
+            link.send(["t": "file-pulled", "id": id]) // the phone can delete its staged copy
+            guard ok else {
+                setStatus(transfer.id, .failed("Couldn't copy it from the phone."))
+                return
+            }
+            setStatus(transfer.id, .done(destination))
+            notifications.showLocal(id: Self.fileNotificationPrefix + destination.path,
+                                    title: "Received \(destination.lastPathComponent)",
+                                    body: "From your \(phone) · in Downloads. Click to show it.")
+        }
+    }
+
+    public func dismissTransfer(_ id: UUID) {
+        transfers.removeAll { $0.id == id }
+    }
+
+    private func addTransfer(_ transfer: Transfer) {
+        transfers.insert(transfer, at: 0)
+        if transfers.count > 20 { transfers.removeLast(transfers.count - 20) }
+    }
+
+    private func setStatus(_ id: UUID, _ status: Transfer.Status) {
+        if let i = transfers.firstIndex(where: { $0.id == id }) { transfers[i].status = status }
     }
 
     /// Makes the phone's notification access match the setting (idempotent, so it's simply
