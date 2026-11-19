@@ -4,8 +4,8 @@ Apple-style Continuity between an Android phone and a Mac: a shared clipboard bo
 notifications, files, SMS and screen mirroring. It runs quietly in the background, with no
 per-use triggering and no cloud account.
 
-> **Status: early.** Two-way clipboard sync works today: it's proven on a Pixel 9 Pro running
-> Android 17 and survives reboots and Wi-Fi drops. Notifications, files and SMS come next.
+> **Status: early.** Two-way clipboard sync and notification mirroring work today: proven on a
+> Pixel 9 Pro running Android 17, surviving reboots and Wi-Fi drops. Files and SMS come next.
 > See [`vault/README.md`](vault/README.md) for the design, research and test results.
 
 ## How it works (short version)
@@ -24,6 +24,8 @@ A menu-bar app with:
 - **Arrival toasts:** a card slides in when a clip arrives from the phone.
 - **Unseen count:** the menu-bar icon shows how many phone clips you haven't looked at.
 - **Searchable history:** click an item to put it back on both clipboards.
+- **Phone notifications** as native macOS notifications; dismiss on either device and it's
+  gone on both.
 
 ```sh
 (cd android && ./gradlew assembleDebug)   # the phone app, embedded in the Mac app

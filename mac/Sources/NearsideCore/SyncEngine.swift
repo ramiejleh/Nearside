@@ -29,6 +29,16 @@ public final class SyncEngine {
     /// Whether the Nearside app on the phone is linked to the helper (needed for app features).
     public private(set) var appLinked = false
 
+    /// Mirror the phone's notifications to macOS. Turning it off also revokes the phone app's
+    /// notification access, so nothing is read on the phone at all.
+    public var mirrorNotifications: Bool {
+        didSet {
+            defaults.set(mirrorNotifications, forKey: "mirrorNotifications")
+            if !mirrorNotifications { notifications.removeAll() }
+            applyNotificationAccess()
+        }
+    }
+
     /// Called for every clip that arrives from the phone (drives the arrival toast).
     public var onArrival: ((ClipItem) -> Void)?
 
@@ -40,6 +50,9 @@ public final class SyncEngine {
     private let apkURL: URL?
     private let defaults = UserDefaults.standard
     private let link = HelperLink()
+    private let notifications = PhoneNotifications()
+    /// adb serial of the phone we're connected to right now (for one-off adb commands).
+    private var adbSerial: String?
     private var pasteboard: PasteboardWatcher!
     private var preparing = false
     private var started = false
@@ -49,6 +62,7 @@ public final class SyncEngine {
         let limit = defaults.object(forKey: "historyLimit") as? Int ?? 200
         history = ClipHistory.load(from: Paths.history, limit: limit)
         phoneName = defaults.string(forKey: "phoneName") ?? "Phone"
+        mirrorNotifications = defaults.object(forKey: "mirrorNotifications") as? Bool ?? true
         if Adb.path == nil {
             state = .adbMissing
         } else {
@@ -67,6 +81,9 @@ public final class SyncEngine {
         pasteboard.start()
 
         link.onMessage = { [weak self] message in self?.handle(message) }
+        notifications.onDismiss = { [weak self] key in
+            self?.link.send(["t": "notif-dismiss", "key": key])
+        }
         link.onDisconnect = { [weak self] in
             guard let self, state == .connected else { return }
             state = .searching
@@ -107,6 +124,7 @@ public final class SyncEngine {
     }
 
     private func adopt(_ phone: Adb.Phone) {
+        adbSerial = phone.serial
         if let model = phone.model {
             phoneName = model
             defaults.set(model, forKey: "phoneName")
@@ -119,6 +137,7 @@ public final class SyncEngine {
         switch message["t"] as? String {
         case "hello":
             state = .connected
+            applyNotificationAccess()
         case "app":
             appLinked = message["linked"] as? Bool ?? false
         case "clip":
@@ -128,9 +147,28 @@ public final class SyncEngine {
             unseenIDs.insert(item.id)
             persist()
             onArrival?(item)
+        case "notif":
+            guard mirrorNotifications, let key = message["key"] as? String else { return }
+            notifications.show(key: key,
+                               package: message["pkg"] as? String ?? "",
+                               app: message["app"] as? String ?? "Phone",
+                               title: message["title"] as? String ?? "",
+                               text: message["text"] as? String ?? "",
+                               iconPNG: (message["icon"] as? String).flatMap { Data(base64Encoded: $0) })
+        case "notif-removed":
+            if let key = message["key"] as? String { notifications.remove(key: key) }
         default:
             break
         }
+    }
+
+    /// Makes the phone's notification access match the setting (idempotent, so it's simply
+    /// re-applied on every connect; that also covers phones set up before this feature).
+    private func applyNotificationAccess() {
+        let allowed = mirrorNotifications
+        if allowed { notifications.activate() }
+        guard state == .connected, let serial = adbSerial else { return }
+        Task.detached { Adb.setNotificationAccess(serial, allowed: allowed) }
     }
 
     private func macCopied(_ text: String) {

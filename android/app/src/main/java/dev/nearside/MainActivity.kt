@@ -62,6 +62,7 @@ class MainActivity : Activity() {
             appendLine("${mark(battery)} Battery optimisation off")
             appendLine("${mark(HelperConnection.helper != null)} Linked to clipboard helper")
             appendLine("${mark(HelperConnection.macConnected)} Mac connected")
+            appendLine("${mark(NotificationMirror.instance != null)} Notification mirroring")
             appendLine()
             appendLine("Last event: ${Status.lastEvent}")
         }

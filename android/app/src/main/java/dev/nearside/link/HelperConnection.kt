@@ -2,6 +2,7 @@ package dev.nearside.link
 
 import android.os.Binder
 import android.os.RemoteException
+import dev.nearside.NotificationMirror
 import dev.nearside.Status
 import org.json.JSONObject
 
@@ -57,6 +58,7 @@ object HelperConnection {
         when (msg.optString("t")) {
             // Health check for the whole Mac → helper → app → helper → Mac path.
             "ping" -> send(JSONObject().put("t", "pong").put("id", msg.opt("id")))
+            "notif-dismiss" -> NotificationMirror.instance?.dismiss(msg.optString("key"))
         }
     }
 }

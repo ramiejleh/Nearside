@@ -15,6 +15,10 @@ struct SettingsView: View {
         VStack(spacing: 0) {
             Form {
                 Section("Notifications") {
+                    Toggle(isOn: Binding(get: { engine.mirrorNotifications }, set: { engine.mirrorNotifications = $0 })) {
+                        Text("Mirror phone notifications")
+                        Text("Your \(engine.phoneName)'s notifications appear on this Mac. Dismissing one here dismisses it on the phone.")
+                    }
                     Toggle(isOn: $showArrivalToast) {
                         Text("Pop-up when a clip arrives")
                         Text("A card slides in at the top right when you copy on your \(engine.phoneName).")

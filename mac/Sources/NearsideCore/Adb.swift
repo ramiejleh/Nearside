@@ -171,6 +171,13 @@ public enum Adb {
         return Phone(serial: serial, hardwareSerial: hardwareSerial(serial), model: model(serial))
     }
 
+    /// Grants or revokes the app's notification access (no settings screen needed).
+    @discardableResult
+    static func setNotificationAccess(_ serial: String, allowed: Bool) -> Bool {
+        let component = "\(appPackage)/\(appPackage).NotificationMirror"
+        return shell(serial, "cmd notification \(allowed ? "allow_listener" : "disallow_listener") \(component)").ok
+    }
+
     /// Android revokes an ADB host after 7 days without a fresh connection; reconnecting renews it.
     static func renewAuthorization(pinned: String) {
         if let serial = connectedWirelessSerials().first(where: { hardwareSerial($0) == pinned }) {
