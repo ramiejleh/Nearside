@@ -77,10 +77,42 @@ object AppLink {
 
     /** A Mac message the helper doesn't handle itself goes to the app. */
     fun deliver(msg: JSONObject) {
+        val target = app
+        if (target == null) Log.d("Mac → app: ${msg.optString("t")} dropped, app not linked")
         try {
-            app?.onMessage(msg.toString())
-        } catch (_: RemoteException) {
+            target?.onMessage(msg.toString())
+        } catch (e: RemoteException) {
+            Log.d("Mac → app failed: $e")
         }
+        if (target != null) wake()
+    }
+
+    /**
+     * Android 17 freezes the app even while it's a bound notification listener, and then
+     * new-notification callbacks just queue up (nothing reached the Mac within 30 s in testing).
+     * Shell may pin a process unfrozen for its lifetime; we re-run this for every new app
+     * process (each re-link). An idle unfrozen process is asleep, so this costs no battery.
+     */
+    private fun keepUnfrozen() {
+        runCatching {
+            val p = ProcessBuilder("cmd", "activity", "unfreeze", "--sticky", PACKAGE).redirectErrorStream(true).start()
+            val out = p.inputStream.bufferedReader().readText().trim()
+            p.waitFor()
+            if (out.isNotEmpty()) Log.d("unfreeze: $out")
+        }.onFailure { Log.d("unfreeze failed: $it") }
+    }
+
+    /**
+     * Backup for [keepUnfrozen]: Android 17 freezes the app even while it's a bound notification listener; our oneway
+     * calls then wait in its queue. Delivering a broadcast always thaws the receiver, so the
+     * queued calls run right away.
+     */
+    private fun wake() {
+        val intent = Intent("dev.nearside.WAKE")
+            .setPackage(PACKAGE)
+            .addFlags(Intent.FLAG_RECEIVER_FOREGROUND)
+        runCatching { FakeContext.instance.sendBroadcast(intent) }
+            .onFailure { Log.d("wake broadcast failed: $it") }
     }
 
     fun macConnectionChanged(connected: Boolean) {
@@ -127,6 +159,7 @@ object AppLink {
             }, 0)
             app = callback
             Log.d("linked to app (uid $appUid)")
+            keepUnfrozen()
             toMac(JSONObject().put("t", "app").put("linked", true))
             callback.onMacConnectionChanged(macConnected())
             return true
