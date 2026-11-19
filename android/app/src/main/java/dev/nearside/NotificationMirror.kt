@@ -166,6 +166,30 @@ class NotificationMirror : NotificationListenerService() {
         }.onFailure { Status.lastEvent = "action failed: ${it.message}" }
     }
 
+    /**
+     * Google Messages keeps its own read state and ignores the SMS store, so after marking a
+     * conversation read we also press "Mark as read" on its notification, if it still has one.
+     * Matched by conversation title (contact name or number); the button by its semantic
+     * action, so it works in any language.
+     */
+    fun markConversationRead(name: String?, address: String) = main.post {
+        val digits = address.filter(Char::isDigit).takeLast(8)
+        val notifications = runCatching { activeNotifications }.getOrNull() ?: return@post
+        for (sbn in notifications) {
+            if (sbn.packageName != "com.google.android.apps.messaging") continue
+            val extras = sbn.notification.extras
+            val title = (extras.getCharSequence(Notification.EXTRA_CONVERSATION_TITLE)
+                ?: extras.getCharSequence(Notification.EXTRA_TITLE))?.toString() ?: continue
+            val matches = (name != null && title == name) ||
+                (digits.length >= 6 && title.filter(Char::isDigit).takeLast(8) == digits) || title == address
+            if (!matches) continue
+            val action = sbn.notification.actions.orEmpty()
+                .firstOrNull { it.semanticAction == Notification.Action.SEMANTIC_ACTION_MARK_AS_READ } ?: continue
+            runCatching { fire(action.actionIntent, null) }
+                .onSuccess { android.util.Log.i("Nearside", "pressed Mark as read in Google Messages") }
+        }
+    }
+
     /** Opens the notification's target on the phone, as tapping it would. */
     fun open(key: String) = main.post {
         val n = active[key] ?: return@post

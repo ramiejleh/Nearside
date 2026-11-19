@@ -187,34 +187,16 @@ private struct ConversationView: View {
     let thread: MessagesStore.Thread
     @State private var draft = ""
 
+    private static let bottom = "bottom"
+
     var body: some View {
-        let messages = store.messages[thread.id] ?? []
         VStack(spacing: 0) {
-            ScrollViewReader { proxy in
-                ScrollView {
-                    let layout = MessagesStore.layout(messages)
-                    LazyVStack(spacing: 0) {
-                        ForEach(Array(messages.enumerated()), id: \.element.id) { index, message in
-                            if layout[index].header {
-                                Text(Self.heading(message.date))
-                                    .font(.system(size: 11, weight: .medium))
-                                    .foregroundStyle(.secondary)
-                                    .padding(.top, index == 0 ? 4 : 16)
-                                    .padding(.bottom, 6)
-                            }
-                            Bubble(message: message, position: layout[index])
-                                // Tight within a run, roomier between runs.
-                                .padding(.top, layout[index].first && !layout[index].header ? 10 : 2)
-                                .id(message.id)
-                        }
-                    }
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 12)
-                }
-                .defaultScrollAnchor(.bottom)
-                .onChange(of: messages.last?.id) { _, last in
-                    if let last { withAnimation(.easeOut(duration: 0.2)) { proxy.scrollTo(last, anchor: .bottom) } }
-                }
+            if let messages = store.messages[thread.id] {
+                transcript(messages)
+                    .id(thread.id) // a fresh scroll view per conversation, starting at the bottom
+            } else {
+                // Wait for the messages instead of showing an empty list that then jumps.
+                ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
             }
             if let error = store.sendError {
                 Text(error)
@@ -231,6 +213,41 @@ private struct ConversationView: View {
         }
         .navigationTitle(thread.title)
         .navigationSubtitle(thread.name == nil ? "" : thread.address)
+    }
+
+    private func transcript(_ messages: [MessagesStore.Message]) -> some View {
+        let layout = MessagesStore.layout(messages)
+        return ScrollViewReader { proxy in
+            ScrollView {
+                // Not lazy: a lazy stack only estimates the height of unseen bubbles, so
+                // "scroll to the bottom" stopped short. 150 messages lay out instantly.
+                VStack(spacing: 0) {
+                    ForEach(Array(messages.enumerated()), id: \.element.id) { index, message in
+                        if layout[index].header {
+                            Text(Self.heading(message.date))
+                                .font(.system(size: 11, weight: .medium))
+                                .foregroundStyle(.secondary)
+                                .padding(.top, index == 0 ? 4 : 16)
+                                .padding(.bottom, 6)
+                        }
+                        Bubble(message: message, position: layout[index])
+                            // Tight within a run, roomier between runs.
+                            .padding(.top, layout[index].first && !layout[index].header ? 10 : 2)
+                            .id(message.id)
+                    }
+                    Color.clear.frame(height: 1).id(Self.bottom)
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 12)
+            }
+            .defaultScrollAnchor(.bottom)
+            .onChange(of: messages.last?.id) {
+                // Once the new bubble is laid out: all the way down, time label included.
+                DispatchQueue.main.async {
+                    withAnimation(.easeOut(duration: 0.2)) { proxy.scrollTo(Self.bottom, anchor: .bottom) }
+                }
+            }
+        }
     }
 }
 

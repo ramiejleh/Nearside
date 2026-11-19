@@ -130,6 +130,13 @@ object SmsBridge {
             "${Telephony.Sms.THREAD_ID} = ? AND ${Telephony.Sms.READ} = 0", arrayOf(thread.toString()),
         )
         android.util.Log.i("Nearside", "marked $updated texts read")
+        if (updated > 0) {
+            val address = context.contentResolver.query(
+                Telephony.Sms.CONTENT_URI, arrayOf(Telephony.Sms.ADDRESS),
+                "${Telephony.Sms.THREAD_ID} = ?", arrayOf(thread.toString()), "${Telephony.Sms.DATE} DESC LIMIT 1",
+            )?.use { c -> if (c.moveToFirst()) c.getString(0) else null }
+            if (address != null) NotificationMirror.instance?.markConversationRead(name(context, address), address)
+        }
         return updated
     }
 
