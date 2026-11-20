@@ -57,6 +57,7 @@ class DisplaySession(
     @Volatile private var video: DisplayWire.Conn? = null
     private var taskId = -1
     private var taskGone = false
+    private var hiddenPolls = 0
     private val openedAt = SystemClock.uptimeMillis()
     private val watcher = Executors.newSingleThreadScheduledExecutor { Thread(it, "display-$id-tasks") }
     private var downTime = 0L
@@ -179,7 +180,16 @@ class DisplaySession(
         }
         if (taskGone) return
         val task = tasks.firstOrNull { it.taskId == taskId }
-        if (task?.displayId == displayId) return
+        if (task?.displayId == displayId) {
+            // Back on an app's first screen sends it to the background (Android 12+) instead of
+            // closing it; on our display nothing is behind it, so the window would just go black.
+            hiddenPolls = if (task.visible) 0 else hiddenPolls + 1
+            if (hiddenPolls < 2) return
+            taskGone = true
+            Log.d("display session $id: task $taskId went to the background")
+            ctl?.send(DisplayWire.TASK_GONE, byteArrayOf(DisplayWire.GONE_EXITED.toByte()))
+            return
+        }
         taskGone = true
         val reason = if (task != null) DisplayWire.GONE_MOVED else DisplayWire.GONE_EXITED
         Log.d("display session $id: task $taskId ${if (task != null) "moved to display ${task.displayId}" else "ended"}")

@@ -38,6 +38,10 @@ public final class PhoneAppSession: @unchecked Sendable {
     private let kbps: Int
     private let writer = DispatchQueue(label: "phone-app-control")
     private let decoder = VideoDecoder()
+    /// phone µs − Mac µs, from the lowest-RTT ping so far (for latency stats).
+    private var clockOffset: Int64?
+    private var bestRTT = Int64.max
+    private var pinger: Timer?
 
     static let socket = "localabstract:nearside-display"
     static let graceSeconds: TimeInterval = 30
@@ -59,7 +63,10 @@ public final class PhoneAppSession: @unchecked Sendable {
         decoder.onFrame = { [weak self] frame in
             guard let self else { return }
             Trace.log("decoded \(frame.ptsMicros)")
-            if lock.withLock({ state }) != .showing { set(.showing) }
+            // Only opening/reconnecting become "showing": a last frame after the app closed (its
+            // exit animation) must not hide the "was closed" state again.
+            let current = lock.withLock { state }
+            if current == .opening || current == .reconnecting { set(.showing) }
             onFrame?(frame)
         }
         Thread { [self] in
@@ -103,6 +110,7 @@ public final class PhoneAppSession: @unchecked Sendable {
                 return false
             }
             if stale { ctl.close(); vid.close(); return true }
+            DispatchQueue.main.async { [self] in startPinging() }
             Thread { [self] in readControl(ctl, ctlStart) }.start()
             Thread { [self] in readVideo(vid, vidStart) }.start()
             return true
@@ -135,6 +143,12 @@ public final class PhoneAppSession: @unchecked Sendable {
             switch message {
             case .taskGone(let reason): set(.gone(reason))
             case .error(_, let text): fail(text.isEmpty ? "The app couldn't be opened." : text)
+            case let .pong(t0, phone):
+                let now = monotonicMicros(), rtt = now - Int64(t0)
+                lock.withLock {
+                    if rtt < bestRTT { bestRTT = rtt; clockOffset = Int64(phone) - (Int64(t0) + now) / 2 }
+                }
+                if rtt > 50_000 { Trace.log("rtt \(rtt / 1000) ms") }
             default: break
             }
         }
@@ -165,8 +179,12 @@ public final class PhoneAppSession: @unchecked Sendable {
                         let size = CGSize(width: width, height: height)
                         if let onVideoSize { Task { @MainActor in onVideoSize(size) } }
                     }
-                case let .frame(gen, pts, _, _, data):
-                    Trace.log("recv \(pts)")
+                case let .frame(gen, pts, encoded, _, data):
+                    if Trace.enabled, let offset = lock.withLock({ clockOffset }) {
+                        Trace.log("recv \(pts) capture→recv \((now - (pts - offset)) / 1000) ms encode \((encoded - pts) / 1000) ms size \(data.count)")
+                    } else {
+                        Trace.log("recv \(pts)")
+                    }
                     decoder.decode(annexB: data, gen: gen, ptsMicros: pts, receivedMicros: now)
                 default: break
                 }
@@ -227,10 +245,30 @@ public final class PhoneAppSession: @unchecked Sendable {
     /// Hidden windows stop the video (the app keeps running).
     public func setVisible(_ visible: Bool) {
         send(DisplayWire.packet(DisplayWire.visibility, Data([visible ? 0 : 1])))
+        DispatchQueue.main.async { [self] in
+            self.visible = visible
+            startPinging()
+        }
+    }
+
+    /// While the window is visible, a ping every 40 ms keeps the phone's Wi-Fi out of power save:
+    /// idle, it dozes within ~100 ms and the next touch then waits for its next wake-up (measured:
+    /// round trip p95 177 ms pinging once a second, 111 ms at 100 ms, 17 ms at 50 ms). Hidden, once
+    /// a second is enough to keep the session alive.
+    private var visible = true
+
+    @MainActor private func startPinging() {
+        pinger?.invalidate()
+        guard !lock.withLock({ closing }) else { return }
+        pinger = Timer.scheduledTimer(withTimeInterval: visible ? 0.04 : 1, repeats: true) { [weak self] _ in
+            self?.send(DisplayWire.ping(UInt64(monotonicMicros())))
+        }
+        pinger?.tolerance = 0.005
     }
 
     /// Closes the window's session; the app goes back to the phone, under what's showing there.
     public func close() {
+        DispatchQueue.main.async { [self] in pinger?.invalidate() }
         let streams = lock.withLock { () -> (AdbStream?, AdbStream?) in
             closing = true
             state = .closed
@@ -253,7 +291,10 @@ public final class PhoneAppSession: @unchecked Sendable {
             state = new
             return true
         }
-        if changed { NSLog("Nearside: phone app \(target): \(new)") }
+        if changed {
+            NSLog("Nearside: phone app \(target): \(new)")
+            Trace.log("state \(new)")
+        }
         if changed, let onState { Task { @MainActor in onState(new) } }
     }
 

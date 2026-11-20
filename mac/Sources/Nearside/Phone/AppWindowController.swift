@@ -8,26 +8,30 @@ import SwiftUI
 final class AppWindowController: NSObject, NSWindowDelegate {
     let app: PhoneApp
     let window: NSWindow
-    private let session: PhoneAppSession
+    private var session: PhoneAppSession! // made once the toolbar is in, so the size is final
     private let stream: StreamView
     private let overlay = OverlayHostingView(rootView: AppWindowOverlay(state: .opening, label: ""))
     private var state: PhoneAppSession.State = .opening
     private var resizeWork: DispatchWorkItem?
     private let onClosed: (AppWindowController) -> Void
 
-    /// Phone-shaped (9:20) and 80 % of the screen's height, unless this app has a saved size.
+    /// 75 % of the screen's height (at most 900 pt), a little wider than a phone, unless this app has
+    /// a saved size.
     init?(app: PhoneApp, engine: SyncEngine, renderer: MetalRenderer, onClosed: @escaping (AppWindowController) -> Void) {
         self.app = app
         self.onClosed = onClosed
         let screen = NSScreen.main?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
-        let height = (screen.height * 0.8).rounded()
-        let content = NSRect(x: 0, y: 0, width: (height * 9 / 20).rounded(), height: height)
+        // Taller than wide, like the app expects, but roomier than a phone (9:20 felt cramped);
+        // resize freely, the app relays itself out, and each app remembers its size.
+        let height = min(screen.height * 0.75, 900).rounded()
+        let content = NSRect(x: 0, y: 0, width: (height * 0.62).rounded(), height: height)
         window = NSWindow(contentRect: content, styleMask: [.titled, .closable, .miniaturizable, .resizable],
                           backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false
         window.title = app.label
         window.tabbingMode = .disallowed
         window.contentMinSize = NSSize(width: 280, height: 360)
+        window.collectionBehavior.insert(.fullScreenPrimary)
         window.setFrameAutosaveName("PhoneApp-\(app.package)")
         if !window.setFrameUsingName("PhoneApp-\(app.package)") { window.center() }
 
@@ -46,12 +50,11 @@ final class AppWindowController: NSObject, NSWindowDelegate {
         }
         window.contentView = container
 
-        let scale = window.backingScaleFactor
-        let size = PhoneDisplaySize.forWindow(window.contentLayoutRect.size, scale: scale)
-        session = engine.makePhoneAppSession(app, width: size.width, height: size.height, dpi: size.dpi)
         super.init()
-        window.delegate = self
         installToolbar()
+        window.delegate = self
+        let size = PhoneDisplaySize.forWindow(window.contentLayoutRect.size, scale: window.backingScaleFactor)
+        session = engine.makePhoneAppSession(app, width: size.width, height: size.height, dpi: size.dpi)
         render(.opening)
 
         session.onFrame = { [renderer] frame in renderer.show(frame) }
@@ -71,6 +74,7 @@ final class AppWindowController: NSObject, NSWindowDelegate {
     // MARK: - States
 
     private func render(_ new: PhoneAppSession.State) {
+        Trace.log("window shows \(new)")
         if new == .showing, state != .showing { testInputIfAsked() }
         state = new
         overlay.rootView = AppWindowOverlay(state: new, label: app.label, reopen: { [weak self] in self?.reopen() },
@@ -85,6 +89,14 @@ final class AppWindowController: NSObject, NSWindowDelegate {
         Task { @MainActor [weak self] in
             try? await Task.sleep(for: .seconds(2))
             guard let self, let touch = stream.onTouch else { return }
+            if mode == "resize" {
+                var frame = window.frame
+                frame.size.width = (frame.size.height * 0.9).rounded()
+                window.setFrame(frame, display: true) // not a live resize, like zoom or tiling
+                try? await Task.sleep(for: .seconds(3))
+                goBack() // then Back on the app's first screen
+                return
+            }
             if mode == "click" {
                 // Real AppKit mouse events through the window, like a person's click.
                 let point = stream.convert(NSPoint(x: stream.bounds.midX, y: stream.bounds.height * 0.25), to: nil)
@@ -133,8 +145,15 @@ final class AppWindowController: NSObject, NSWindowDelegate {
 
     // MARK: - Window events
 
-    func windowDidEndLiveResize(_ notification: Notification) {
-        // Let the hand settle, then give the phone the window's new size.
+    func windowDidResize(_ notification: Notification) {
+        // Zoom, tiling, full screen: no live resize, so react here (a drag waits for its end).
+        if !window.inLiveResize { scheduleResize() }
+    }
+
+    func windowDidEndLiveResize(_ notification: Notification) { scheduleResize() }
+
+    /// Let the hand settle, then give the phone the window's new size.
+    private func scheduleResize() {
         resizeWork?.cancel()
         let work = DispatchWorkItem { [weak self] in
             guard let self else { return }
@@ -146,7 +165,7 @@ final class AppWindowController: NSObject, NSWindowDelegate {
     }
 
     func windowDidChangeBackingProperties(_ notification: Notification) {
-        windowDidEndLiveResize(notification) // moved to a screen with a different scale
+        scheduleResize() // moved to a screen with a different scale
     }
 
     @objc private func occlusionChanged() {

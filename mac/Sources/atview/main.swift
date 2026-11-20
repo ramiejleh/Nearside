@@ -88,7 +88,7 @@ if args.dropFirst().first == "--ping" {
                 got = true
             }
         }
-        Thread.sleep(forTimeInterval: 0.05)
+        Thread.sleep(forTimeInterval: Double(ProcessInfo.processInfo.environment["PING_MS"] ?? "50")! / 1000)
     }
     print(String(format: "idle RTT p50 %.1f ms, p95 %.1f ms", percentile(rtts, 50), percentile(rtts, 95)))
     exit(0)
