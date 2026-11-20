@@ -342,6 +342,8 @@ final class AppWindowController: NSObject, NSWindowDelegate {
 
     func windowDidResignKey(_ notification: Notification) { stream.cancelInput() }
 
+    func windowDidBecomeKey(_ notification: Notification) { PhoneWindowManager.shared?.focused(self) }
+
     @objc private func keyboardLayoutChanged() { session.setKeyboardLayout(Self.keyboardLayout()) }
 
     /// The Mac's keyboard layout as "name\nlanguage" ("Danish\nda", "US\nen"): the phone picks the

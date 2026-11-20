@@ -88,6 +88,7 @@ final class PhoneWindowManager {
 
     private func closed(_ controller: AppWindowController) {
         windows.removeAll { $0 === controller }
+        showDockIcon(for: windows.last)
         // Let the close finish before the Dock icon goes (switching policy mid-close drops focus).
         DispatchQueue.main.async { [weak self] in self?.updateActivationPolicy() }
     }
@@ -97,6 +98,44 @@ final class PhoneWindowManager {
         guard NSApp.activationPolicy() != wanted else { return }
         NSApp.setActivationPolicy(wanted)
         if wanted == .regular { NSApp.activate() } // otherwise the menu bar may not switch over
+    }
+
+    // MARK: - Dock icon
+
+    /// The Dock (and ⌘-Tab) icon follows the phone app in front: all windows share Nearside's
+    /// one Dock tile, so it shows that app's icon with a small Nearside badge.
+    func focused(_ controller: AppWindowController) { showDockIcon(for: controller) }
+
+    private var dockIconApp: String?
+
+    private func showDockIcon(for controller: AppWindowController?) {
+        guard let controller, let icon = library.icons[controller.app.id] else {
+            if controller == nil { NSApp.applicationIconImage = nil; dockIconApp = nil } // Nearside's own
+            return
+        }
+        guard dockIconApp != controller.app.id else { return }
+        dockIconApp = controller.app.id
+        let image = Self.badged(icon)
+        NSApp.applicationIconImage = image
+        // Test hook: NEARSIDE_TEST_DOCK_ICON=<png> saves what the Dock shows.
+        if let path = ProcessInfo.processInfo.environment["NEARSIDE_TEST_DOCK_ICON"],
+           let tiff = image.tiffRepresentation, let png = NSBitmapImageRep(data: tiff)?.representation(using: .png, properties: [:]) {
+            try? png.write(to: URL(fileURLWithPath: path))
+        }
+    }
+
+    private static let badge = Bundle.main.image(forResource: "AppIcon")
+
+    private static func badged(_ icon: NSImage) -> NSImage {
+        NSImage(size: NSSize(width: 512, height: 512), flipped: false) { rect in
+            icon.draw(in: rect)
+            if let badge {
+                // Bottom right, like a shortcut's badge; the badge's own tile is inset 10 %.
+                let side = rect.width * 0.42
+                badge.draw(in: NSRect(x: rect.maxX - side * 0.98, y: rect.minY - side * 0.02, width: side, height: side))
+            }
+            return true
+        }
     }
 
     /// The Dock icon's menu: the open phone apps, then "Open Phone App…".
