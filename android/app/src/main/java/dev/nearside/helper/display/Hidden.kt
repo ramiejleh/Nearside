@@ -59,6 +59,23 @@ object Hidden {
         return false
     }
 
+    /**
+     * Keeps one display's power group awake (and wakes it). A virtual display with
+     * OWN_DISPLAY_GROUP gets its own group, which sleeps after the screen timeout like a phone
+     * screen would; then the app stops drawing. A screen wake lock tied to the display keeps it on
+     * without touching the phone's own screen. (Hidden PowerManager.newWakeLock(flags, tag, displayId).)
+     */
+    @Suppress("DEPRECATION")
+    fun keepAwake(displayId: Int, tag: String): android.os.PowerManager.WakeLock? = runCatching {
+        val pm = FakeContext.instance.getSystemService(Context.POWER_SERVICE) as android.os.PowerManager
+        val flags = android.os.PowerManager.SCREEN_BRIGHT_WAKE_LOCK or android.os.PowerManager.ACQUIRE_CAUSES_WAKEUP
+        val lock = pm.javaClass.getMethod("newWakeLock", Int::class.java, String::class.java, Int::class.java)
+            .invoke(pm, flags, tag, displayId) as android.os.PowerManager.WakeLock
+        lock.setReferenceCounted(false)
+        lock.acquire()
+        lock
+    }.onFailure { Log.d("keeping display $displayId awake failed: ${it.cause ?: it}") }.getOrNull()
+
     /** A root task as the system reports it. */
     data class RootTask(val taskId: Int, val displayId: Int, val packageName: String?, val visible: Boolean)
 

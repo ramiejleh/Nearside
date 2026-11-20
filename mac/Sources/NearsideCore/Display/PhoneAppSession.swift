@@ -158,6 +158,7 @@ public final class PhoneAppSession: @unchecked Sendable {
             for message in batch {
                 switch message {
                 case let .config(gen, width, height, sets):
+                    NSLog("Nearside: phone app \(target): video \(width)x\(height) (gen \(gen))")
                     if decoder.configure(parameterSets: sets, gen: gen) {
                         lock.withLock { self.gen = gen }
                         let size = CGSize(width: width, height: height)
@@ -249,6 +250,7 @@ public final class PhoneAppSession: @unchecked Sendable {
             state = new
             return true
         }
+        if changed { NSLog("Nearside: phone app \(target): \(new)") }
         if changed, let onState { Task { @MainActor in onState(new) } }
     }
 

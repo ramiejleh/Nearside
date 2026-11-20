@@ -60,14 +60,17 @@ class DisplaySession(
     private val openedAt = SystemClock.uptimeMillis()
     private val watcher = Executors.newSingleThreadScheduledExecutor { Thread(it, "display-$id-tasks") }
     private var downTime = 0L
+    private var awake: android.os.PowerManager.WakeLock? = null
 
     fun start() {
         val surface = newEncoder()
         display = Hidden.displayManager.createVirtualDisplay("nearside-$id", w, h, dpi, surface, FLAGS)
         Log.d("display session $id: display $displayId ${w}x$h@$dpi for $target")
+        awake = Hidden.keepAwake(displayId, "Nearside:display-$id")
         Thread(::encodeLoop, "display-$id-video").start()
         launch()
         watcher.scheduleWithFixedDelay({ runCatching { watchTasks() } }, 300, 500, TimeUnit.MILLISECONDS)
+        watcher.scheduleWithFixedDelay({ logStats() }, 5, 5, TimeUnit.SECONDS)
     }
 
     // MARK: - Connections
@@ -238,8 +241,24 @@ class DisplaySession(
             val key = info.flags and MediaCodec.BUFFER_FLAG_KEY_FRAME != 0
             val frame = ByteBuffer.allocate(21 + data.size).putInt(myGen).putLong(info.presentationTimeUs)
                 .putLong(System.nanoTime() / 1000).put(if (key) 1 else 0).put(data).array()
-            video?.send(DisplayWire.FRAME, frame)
+            video?.let {
+                it.send(DisplayWire.FRAME, frame)
+                framesSent++
+                bytesSent += frame.size
+            }
         }
+    }
+
+    @Volatile private var framesSent = 0
+    @Volatile private var bytesSent = 0L
+
+    private fun logStats() {
+        val frames = framesSent; val bytes = bytesSent
+        framesSent = 0; bytesSent = 0
+        if (frames == 0 && touchesOk == 0 && touchesFailed == 0) return
+        Log.d("display session $id: $frames frames, ${bytes * 8 / 5000} kbps, touches ok $touchesOk failed $touchesFailed, " +
+            "video ${if (video == null) "detached" else "attached"}")
+        touchesOk = 0; touchesFailed = 0
     }
 
     private fun requestKeyframe() {
@@ -269,15 +288,42 @@ class DisplaySession(
 
     // MARK: - Input
 
+    // A finger, as scrcpy builds it (Controller.injectTouch): explicit pointer properties
+    // (TOOL_TYPE_FINGER), pressure 1 while down and 0 on UP, a consistent DOWN…MOVE…UP stream.
+    // The one-line MotionEvent.obtain() leaves the tool type unknown, and the input dispatcher
+    // rejected everything after the first DOWN (Gate "first window" test, Android 17).
+    private val pointerProps = arrayOf(MotionEvent.PointerProperties().apply {
+        id = 0; toolType = MotionEvent.TOOL_TYPE_FINGER
+    })
+    private val pointerCoords = arrayOf(MotionEvent.PointerCoords().apply { size = 1f })
+    private var fingerDown = false
+    private var touchesOk = 0
+    private var touchesFailed = 0
+
     private fun touch(action: Int, pointer: Int, touchGen: Int, x: Float, y: Float) {
         if (touchGen != gen) return // aimed at a frame size that's gone
         if (action !in 0..2) return
+        // Keep the stream consistent whatever arrives (a lost DOWN or UP would wedge the app).
+        if (action == MotionEvent.ACTION_DOWN && fingerDown) injectTouch(MotionEvent.ACTION_UP, pointerCoords[0].x, pointerCoords[0].y)
+        if (action != MotionEvent.ACTION_DOWN && !fingerDown) return
+        injectTouch(action, x.coerceIn(0f, 1f) * w, y.coerceIn(0f, 1f) * h)
+    }
+
+    private fun injectTouch(action: Int, px: Float, py: Float) {
         val now = SystemClock.uptimeMillis()
         if (action == MotionEvent.ACTION_DOWN) downTime = now
-        val event = MotionEvent.obtain(downTime, now, action, x.coerceIn(0f, 1f) * w, y.coerceIn(0f, 1f) * h, 0)
-        event.source = InputDevice.SOURCE_TOUCHSCREEN
-        Hidden.inject(event, displayId)
+        pointerCoords[0].x = px
+        pointerCoords[0].y = py
+        pointerCoords[0].pressure = if (action == MotionEvent.ACTION_UP) 0f else 1f
+        val event = MotionEvent.obtain(downTime, now, action, 1, pointerProps, pointerCoords, 0, 0, 1f, 1f,
+            0, 0, InputDevice.SOURCE_TOUCHSCREEN, 0)
+        val ok = runCatching { Hidden.inject(event, displayId) }.getOrDefault(false)
         event.recycle()
+        fingerDown = action != MotionEvent.ACTION_UP
+        if (ok) touchesOk++ else {
+            touchesFailed++
+            Log.d("display session $id: injecting touch action $action at (${px.toInt()},${py.toInt()}) failed")
+        }
     }
 
     private fun nav(which: Int) {
@@ -305,6 +351,7 @@ class DisplaySession(
         closed = true
         val onOurs = Hidden.rootTasks().filter { it.displayId == displayId }
         if (toPhone) onOurs.forEach { Hidden.moveTask(it.taskId, 0, onTop = false) }
+        runCatching { awake?.release() }
         runCatching { display.release() }
         codec?.let { runCatching { it.stop() }; it.release() }
         watcher.shutdownNow()

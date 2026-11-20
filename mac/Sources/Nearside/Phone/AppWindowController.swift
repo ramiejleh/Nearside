@@ -71,10 +71,30 @@ final class AppWindowController: NSObject, NSWindowDelegate {
     // MARK: - States
 
     private func render(_ new: PhoneAppSession.State) {
+        if new == .showing, state != .showing { testInputIfAsked() }
         state = new
         overlay.rootView = AppWindowOverlay(state: new, label: app.label, reopen: { [weak self] in self?.reopen() },
                                             close: { [weak self] in self?.window.close() })
         overlay.isHidden = new == .showing
+    }
+
+    /// Test hook: NEARSIDE_TEST_INPUT=1 taps the middle, then drags up, through the same path
+    /// as the mouse (StreamView.onTouch → session), so input can be checked without a person.
+    private func testInputIfAsked() {
+        guard ProcessInfo.processInfo.environment["NEARSIDE_TEST_INPUT"] == "1" else { return }
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(2))
+            guard let touch = self?.stream.onTouch else { return }
+            touch(.down, 0.5, 0.75); try? await Task.sleep(for: .milliseconds(80)); touch(.up, 0.5, 0.75)
+            try? await Task.sleep(for: .seconds(1))
+            touch(.down, 0.5, 0.8)
+            for i in 1...20 {
+                try? await Task.sleep(for: .milliseconds(16))
+                touch(.move, 0.5, 0.8 - Float(i) * 0.025)
+            }
+            touch(.up, 0.5, 0.3)
+            NSLog("Nearside: test input sent")
+        }
     }
 
     private func reopen() {
@@ -114,7 +134,9 @@ final class AppWindowController: NSObject, NSWindowDelegate {
     }
 
     @objc private func occlusionChanged() {
-        session.setVisible(window.occlusionState.contains(.visible))
+        let visible = window.occlusionState.contains(.visible)
+        NSLog("Nearside: phone app window \(app.package) \(visible ? "visible" : "hidden")")
+        session.setVisible(visible)
     }
 
     func windowWillClose(_ notification: Notification) {
