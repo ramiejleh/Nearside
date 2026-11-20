@@ -24,6 +24,8 @@ rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN" "$APP/Contents/MacOS/Nearside"
 cp "$APK" "$APP/Contents/Resources/nearside.apk"
+# Made by scripts/make-icon.swift (re-run it to change the icon).
+cp "$MAC_DIR/Resources/AppIcon.icns" "$APP/Contents/Resources/AppIcon.icns"
 
 cat > "$APP/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
@@ -35,10 +37,11 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <key>CFBundleIdentifier</key><string>dev.nearside.mac</string>
   <key>CFBundleExecutable</key><string>Nearside</string>
   <key>CFBundlePackageType</key><string>APPL</string>
+  <key>CFBundleIconFile</key><string>AppIcon</string>
   <key>CFBundleShortVersionString</key><string>$VERSION</string>
   <key>CFBundleVersion</key><string>1</string>
   <key>LSMinimumSystemVersion</key><string>14.0</string>
-  <!-- Menu-bar app: no Dock icon, no app menu. -->
+  <!-- Menu-bar app: no Dock icon or menus until a phone-app window opens. -->
   <key>LSUIElement</key><true/>
   <key>NSHumanReadableCopyright</key><string>Apache-2.0</string>
   <!-- Wireless debugging: find the phone over Bonjour and connect to it on this network. -->
