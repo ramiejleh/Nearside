@@ -110,6 +110,7 @@ public final class PhoneAppSession: @unchecked Sendable {
                 return false
             }
             if stale { ctl.close(); vid.close(); return true }
+            if let hint = lock.withLock({ layoutHint }) { try ctl.write(DisplayWire.utf8(DisplayWire.layout, hint)) }
             DispatchQueue.main.async { [self] in startPinging() }
             Thread { [self] in readControl(ctl, ctlStart) }.start()
             Thread { [self] in readVideo(vid, vidStart) }.start()
@@ -250,6 +251,25 @@ public final class PhoneAppSession: @unchecked Sendable {
     }
 
     public func back() { send(DisplayWire.packet(DisplayWire.nav, Data([1]))) }
+
+    // MARK: Keyboard
+
+    public func keys(_ keys: [KeyMap.Key]) { keys.forEach { send(DisplayWire.key($0)) } }
+
+    /// Typed text (the Mac's layout already applied).
+    public func text(_ text: String) { send(DisplayWire.utf8(DisplayWire.text, text)) }
+
+    /// ⌘V: the Mac's clipboard text (nil: paste what the phone has).
+    public func paste(_ text: String?) { send(DisplayWire.utf8(DisplayWire.paste, text ?? "")) }
+
+    /// The Mac's keyboard layout ("Danish\nda"), so the phone can type every character it can.
+    /// Kept, and sent again after a reconnect.
+    public func setKeyboardLayout(_ hint: String) {
+        lock.withLock { layoutHint = hint }
+        send(DisplayWire.utf8(DisplayWire.layout, hint))
+    }
+
+    private var layoutHint: String?
 
     /// The window's new pixel size; the phone re-lays the app out for it.
     public func resize(width: Int, height: Int, dpi: Int) {

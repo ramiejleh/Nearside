@@ -1,5 +1,6 @@
 import NearsideCore
 import AppKit
+import Carbon
 import SwiftUI
 
 /// One phone app in a native Mac window. Resizing the window resizes the app's display on the
@@ -61,6 +62,10 @@ final class AppWindowController: NSObject, NSWindowDelegate {
         session.onState = { [weak self] state in self?.render(state) }
         session.onVideoSize = { [weak self] size in self?.stream.videoSize = size }
         stream.session = session
+        window.initialFirstResponder = stream
+        session.setKeyboardLayout(Self.keyboardLayout())
+        NotificationCenter.default.addObserver(self, selector: #selector(keyboardLayoutChanged),
+                                               name: NSTextInputContext.keyboardSelectionDidChangeNotification, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(occlusionChanged),
                                                name: NSWindow.didChangeOcclusionStateNotification, object: window)
         session.start()
@@ -142,6 +147,45 @@ final class AppWindowController: NSObject, NSWindowDelegate {
             let touch = { [stream] (action: DisplayWire.TouchAction, x: CGFloat, y: CGFloat) in
                 stream.button(action, at: CGPoint(x: x * size.width, y: y * size.height), time: now())
             }
+            if mode == "keys" {
+                // Real key events through the app, as the keyboard sends them: "ab", ⌘A, ⌫ (empties
+                // the field), "ok cool", ⌥⌫ (deletes the word) → "ok ".
+                @MainActor func key(_ code: UInt16, _ chars: String, _ flags: NSEvent.ModifierFlags = []) async {
+                    for type in [NSEvent.EventType.keyDown, .keyUp] {
+                        if let e = NSEvent.keyEvent(with: type, location: .zero, modifierFlags: flags, timestamp: now(),
+                                                    windowNumber: window.windowNumber, context: nil, characters: chars,
+                                                    charactersIgnoringModifiers: chars, isARepeat: false, keyCode: code) {
+                            // ⌘ keys go to the key window's views first; launched from a shell the
+                            // window can't become key, so hand them over as AppKit would.
+                            if type == .keyDown, flags.contains(.command), window.performKeyEquivalent(with: e) { continue }
+                            NSApp.sendEvent(e)
+                        }
+                    }
+                    try? await Task.sleep(for: .milliseconds(120))
+                }
+                window.makeFirstResponder(stream)
+                await key(0x00, "a"); await key(0x0B, "b")
+                await key(0x00, "a", .command); await key(0x33, "\u{7f}")
+                for (code, c) in [(0x1F, "o"), (0x28, "k"), (0x31, " "), (0x08, "c"), (0x1F, "o"), (0x1F, "o"), (0x25, "l")] {
+                    await key(UInt16(code), c)
+                }
+                await key(0x33, "\u{7f}", .option)
+                Trace.log("test keys sent")
+                return
+            }
+            if mode == "type" {
+                // Tap the search field (Settings), then type: plain, Danish letters, dead-key
+                // letters, AltGr symbols, an emoji (pasted), then ⌫ and Return.
+                touch(.down, 0.5, 0.065); touch(.up, 0.5, 0.065)
+                try? await Task.sleep(for: .seconds(2))
+                let text = ProcessInfo.processInfo.environment["NEARSIDE_TEST_TEXT"] ?? "Hej æøå é ü @{}[] € ~ 🙂!"
+                for c in text { // one at a time, as typed
+                    stream.typeForTesting(String(c))
+                    try? await Task.sleep(for: .milliseconds(300))
+                }
+                Trace.log("test type sent")
+                return
+            }
             if mode == "resize" {
                 var frame = window.frame
                 frame.size.width = (frame.size.height * 0.9).rounded()
@@ -222,6 +266,22 @@ final class AppWindowController: NSObject, NSWindowDelegate {
     }
 
     func windowDidResignKey(_ notification: Notification) { stream.cancelInput() }
+
+    @objc private func keyboardLayoutChanged() { session.setKeyboardLayout(Self.keyboardLayout()) }
+
+    /// The Mac's keyboard layout as "name\nlanguage" ("Danish\nda", "US\nen"): the phone picks the
+    /// Android layout that can type the same characters. The name is from the input source id, so
+    /// it's the same whatever language the Mac's menus are in.
+    static func keyboardLayout() -> String {
+        guard let source = TISCopyCurrentKeyboardLayoutInputSource()?.takeRetainedValue() else { return "" }
+        func property(_ key: CFString) -> AnyObject? {
+            TISGetInputSourceProperty(source, key).map { Unmanaged<AnyObject>.fromOpaque($0).takeUnretainedValue() }
+        }
+        let id = property(kTISPropertyInputSourceID) as? String ?? ""
+        let language = (property(kTISPropertyInputSourceLanguages) as? [String])?.first ?? ""
+        let name = id.components(separatedBy: ".").last ?? ""
+        return "\(name)\n\(language)"
+    }
 
     @objc private func occlusionChanged() {
         let visible = window.occlusionState.contains(.visible)

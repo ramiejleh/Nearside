@@ -61,6 +61,8 @@
             </intent-filter>
         </activity>
 
+        <!-- Probe (removed with the probes): a text field that logs the keys it gets. -->
+        <activity android:name=".helper.probe.KeyTestActivity" android:exported="true" />
         <receiver
             android:name=".BootReceiver"
             android:exported="true">

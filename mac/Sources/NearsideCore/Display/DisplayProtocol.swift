@@ -10,6 +10,9 @@ public enum DisplayWire {
     static let open: UInt8 = 0x10, resume: UInt8 = 0x11, touch: UInt8 = 0x12, resize: UInt8 = 0x13
     static let nav: UInt8 = 0x14, ping: UInt8 = 0x15, visibility: UInt8 = 0x16, close: UInt8 = 0x17
     static let sync: UInt8 = 0x18, scroll: UInt8 = 0x19, mouse: UInt8 = 0x1A
+    static let key: UInt8 = 0x1B, text: UInt8 = 0x1C, layout: UInt8 = 0x1D, paste: UInt8 = 0x1E
+    /// The helper reads control packets up to 1 MiB; a longer paste is cut.
+    static let maxControlBody = 1024 * 1024 - 16
     // phone → Mac
     static let task: UInt8 = 0x20, taskGone: UInt8 = 0x21, pong: UInt8 = 0x22, error: UInt8 = 0x23
     static let config: UInt8 = 0x30, frame: UInt8 = 0x31
@@ -99,6 +102,20 @@ public enum DisplayWire {
         var b = Data()
         b.appendBE(UInt16(width)); b.appendBE(UInt16(height)); b.appendBE(UInt16(dpi))
         return packet(resize, b)
+    }
+
+    /// An Android key press: KEY{u16 key code, u32 meta state}.
+    static func key(_ k: KeyMap.Key) -> Data {
+        var b = Data()
+        b.appendBE(k.code); b.appendBE(k.meta)
+        return packet(key, b)
+    }
+
+    /// TEXT, LAYOUT, PASTE: UTF-8, cut at a character boundary to fit.
+    static func utf8(_ type: UInt8, _ string: String) -> Data {
+        var s = Substring(string)
+        while s.utf8.count > maxControlBody { s = s.dropLast(max(1, s.count / 10)) }
+        return packet(type, Data(s.utf8))
     }
 
     static func ping(_ t0: UInt64) -> Data {

@@ -61,12 +61,14 @@ class DisplaySession(
     private val openedAt = SystemClock.uptimeMillis()
     private val watcher = Executors.newSingleThreadScheduledExecutor { Thread(it, "display-$id-tasks") }
     private var awake: android.os.PowerManager.WakeLock? = null
+    private var keyboard: Keyboard? = null
 
     fun start() {
         val surface = newEncoder()
         display = Hidden.displayManager.createVirtualDisplay("nearside-$id", w, h, dpi, surface, FLAGS)
         Log.d("display session $id: display $displayId ${w}x$h@$dpi for $target")
         awake = Hidden.keepAwake(displayId, "Nearside:display-$id")
+        keyboard = Keyboard(displayId, id).also { it.create() }
         Thread(::encodeLoop, "display-$id-video").start()
         launch()
         watcher.scheduleWithFixedDelay({ runCatching { watchTasks() } }, 300, 500, TimeUnit.MILLISECONDS)
@@ -115,6 +117,10 @@ class DisplaySession(
             }
             DisplayWire.SCROLL -> if (b.remaining() >= 20) scroll(b.int, b.float, b.float, b.float, b.float)
             DisplayWire.MOUSE -> if (b.remaining() >= 13) mouse(b.get().toInt(), b.int, b.float, b.float)
+            DisplayWire.KEY -> if (b.remaining() >= 6) keyboard?.press(b.short.toInt() and 0xffff, b.int)
+            DisplayWire.TEXT -> keyboard?.type(utf8(b))
+            DisplayWire.LAYOUT -> keyboard?.setLayout(utf8(b))
+            DisplayWire.PASTE -> keyboard?.paste(utf8(b).ifEmpty { null }, restore = false)
             DisplayWire.RESIZE -> if (b.remaining() >= 6) {
                 resize(b.short.toInt() and 0xffff, b.short.toInt() and 0xffff, b.short.toInt() and 0xffff)
             }
@@ -128,6 +134,8 @@ class DisplaySession(
             DisplayWire.CLOSE -> close(toPhone = true)
         }
     }
+
+    private fun utf8(b: ByteBuffer) = String(b.array(), b.arrayOffset() + b.position(), b.remaining(), Charsets.UTF_8)
 
     // MARK: - App
 
@@ -492,6 +500,7 @@ class DisplaySession(
         val onOurs = Hidden.rootTasks().filter { it.displayId == displayId }
         if (toPhone) onOurs.forEach { Hidden.moveTask(it.taskId, 0, onTop = false) }
         runCatching { awake?.release() }
+        runCatching { keyboard?.close() }
         runCatching { display.release() }
         codec?.let { runCatching { it.stop() }; it.release() }
         watcher.shutdownNow()

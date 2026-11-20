@@ -80,20 +80,22 @@ final class MetalRenderer: @unchecked Sendable {
         buffer.commit()
     }
 
-    private var snapshotWork: DispatchWorkItem?
+    private var snapshotPending = false
 
-    /// Trace mode: the last frame shown, as <trace>.png, a second after the picture settles.
+    /// Trace mode: the latest frame shown, as <trace>.png, at most once a second (a blinking caret
+    /// never lets the picture settle).
     private func saveSnapshotSoon(_ frame: VideoDecoder.Frame) {
-        snapshotWork?.cancel()
-        let work = DispatchWorkItem {
-            guard let path = Trace.path else { return }
+        guard !snapshotPending else { return }
+        snapshotPending = true
+        let work = DispatchWorkItem { [self] in
+            guard let path = Trace.path, let frame = lastFrame else { return }
+            lock.withLock { snapshotPending = false }
             let image = CIImage(cvPixelBuffer: frame.image)
             let context = CIContext()
             try? context.writePNGRepresentation(of: image, to: URL(fileURLWithPath: path + ".png"),
                                                 format: .RGBA8, colorSpace: CGColorSpace(name: CGColorSpace.sRGB)!)
             Trace.log("snapshot \(frame.ptsMicros)")
         }
-        snapshotWork = work
         DispatchQueue.global().asyncAfter(deadline: .now() + 1, execute: work)
     }
 
@@ -286,4 +288,84 @@ final class StreamView: NSView {
 
     /// The video's size in points (for test hooks working in video points).
     var videoPointSize: CGSize { videoRect.size }
+
+    // MARK: - Keyboard
+
+    /// Dead-key / input-method composition in progress (the Mac shows its own candidate UI).
+    private var marked = ""
+
+    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        // ⌘ shortcuts reach views before the menus: the phone's, except the Mac's own (⌘W, ⌘Q…).
+        guard event.type == .keyDown, window?.firstResponder === self, event.modifierFlags.contains(.command) else {
+            return super.performKeyEquivalent(with: event)
+        }
+        let action = keyAction(event)
+        if action == .mac { return super.performKeyEquivalent(with: event) }
+        perform(action, event)
+        return true
+    }
+
+    override func keyDown(with event: NSEvent) {
+        let action = hasMarkedText() ? .text : keyAction(event) // composing: the input method owns the keys
+        perform(action, event)
+    }
+
+    private func keyAction(_ event: NSEvent) -> KeyMap.Action {
+        var m: KeyMap.Modifiers = []
+        let flags = event.modifierFlags
+        if flags.contains(.shift) { m.insert(.shift) }
+        if flags.contains(.control) { m.insert(.control) }
+        if flags.contains(.option) { m.insert(.option) }
+        if flags.contains(.command) { m.insert(.command) }
+        return KeyMap.action(keyCode: event.keyCode, modifiers: m, characters: event.charactersIgnoringModifiers)
+    }
+
+    private func perform(_ action: KeyMap.Action, _ event: NSEvent) {
+        switch action {
+        case .text: interpretKeyEvents([event])
+        case .keys(let keys): session?.keys(keys)
+        case .paste: session?.paste(NSPasteboard.general.string(forType: .string))
+        case .back: session?.back()
+        case .mac: super.keyDown(with: event)
+        case .none: break
+        }
+    }
+
+    /// Lets the test hook type as if from the keyboard.
+    func typeForTesting(_ text: String) { insertText(text, replacementRange: NSRange(location: NSNotFound, length: 0)) }
+}
+
+extension StreamView: @preconcurrency NSTextInputClient {
+    func insertText(_ string: Any, replacementRange: NSRange) {
+        marked = ""
+        let text = (string as? NSAttributedString)?.string ?? (string as? String) ?? ""
+        if !text.isEmpty { session?.text(text) }
+    }
+
+    /// Keys that aren't text were handled before the text system saw them; nothing else to do.
+    override func doCommand(by selector: Selector) {}
+
+    func setMarkedText(_ string: Any, selectedRange: NSRange, replacementRange: NSRange) {
+        marked = (string as? NSAttributedString)?.string ?? (string as? String) ?? ""
+    }
+
+    func unmarkText() { marked = "" }
+    func hasMarkedText() -> Bool { !marked.isEmpty }
+    func selectedRange() -> NSRange { NSRange(location: NSNotFound, length: 0) }
+
+    func markedRange() -> NSRange {
+        marked.isEmpty ? NSRange(location: NSNotFound, length: 0) : NSRange(location: 0, length: (marked as NSString).length)
+    }
+
+    func attributedSubstring(forProposedRange range: NSRange, actualRange: NSRangePointer?) -> NSAttributedString? { nil }
+    func validAttributesForMarkedText() -> [NSAttributedString.Key] { [] }
+    func characterIndex(for point: NSPoint) -> Int { NSNotFound }
+
+    /// Where an input method puts its candidates: we can't know the phone's caret, so low in the
+    /// window, where keyboards and text fields usually are.
+    func firstRect(forCharacterRange range: NSRange, actualRange: NSRangePointer?) -> NSRect {
+        let r = videoRect
+        let rect = NSRect(x: r.minX + 24, y: r.minY + r.height * 0.3, width: 1, height: 20)
+        return window?.convertToScreen(convert(rect, to: nil)) ?? .zero
+    }
 }

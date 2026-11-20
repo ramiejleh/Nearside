@@ -13,6 +13,12 @@ public struct PhoneApp: Identifiable, Hashable, Sendable {
     public let activity: String
     public let label: String
     public var id: String { "\(package)/\(activity)" }
+
+    public init(package: String, activity: String, label: String) {
+        self.package = package
+        self.activity = activity
+        self.label = label
+    }
 }
 
 extension SyncEngine {

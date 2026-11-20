@@ -62,7 +62,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         Task { @MainActor in
             while engine.state != .connected { try? await Task.sleep(for: .milliseconds(300)) }
             try? await Task.sleep(for: .seconds(1))
-            guard let app = await engine.phoneApps().first(where: { $0.package == package }) else {
+            // "pkg/activity" opens that activity even if it isn't in the launcher (test screens).
+            let parts = package.split(separator: "/", maxSplits: 1).map(String.init)
+            let direct = parts.count == 2 ? PhoneApp(package: parts[0], activity: parts[1], label: "Test") : nil
+            var found = direct
+            if found == nil { found = await engine.phoneApps().first(where: { $0.package == package }) }
+            guard let app = found else {
                 return NSLog("Nearside: test hook: \(package) not found")
             }
             statusItem?.openPhoneApp(app)

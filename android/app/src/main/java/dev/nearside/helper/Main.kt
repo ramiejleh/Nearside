@@ -85,6 +85,22 @@ object Main {
             send(JSONObject().put("t", "clip").put("text", text).put("ts", System.currentTimeMillis()))
         }
 
+        // Pastes into phone-app windows: set on the main looper (waited for, so the paste that
+        // follows reads it), marked as the Mac's so it isn't sent back.
+        dev.nearside.helper.display.PhoneClipboard.set = { text ->
+            val latch = java.util.concurrent.CountDownLatch(1)
+            main.post {
+                try {
+                    lastSetByMac = text
+                    clipboard.setPrimaryClip(ClipData.newPlainText("Nearside", text))
+                } finally { latch.countDown() }
+            }
+            latch.await(500, java.util.concurrent.TimeUnit.MILLISECONDS)
+        }
+        dev.nearside.helper.display.PhoneClipboard.get = {
+            clipboard.primaryClip?.takeIf { it.itemCount > 0 }?.getItemAt(0)?.text?.toString()
+        }
+
         // Phone apps can be used from the Mac while the phone is locked, so the phone must always
         // show that: no app link (no notification) means no new sessions, and a relink re-posts it.
         displays = DisplayServer(token, canNotify = { AppLink.isLinked }) { open ->

@@ -84,6 +84,61 @@ object Hidden {
         lock
     }.onFailure { Log.d("keeping display $displayId awake failed: ${it.cause ?: it}") }.getOrNull()
 
+    // MARK: Keyboards
+
+    private val inputService by lazy { service("input", "android.hardware.input.IInputManager") }
+    private val windowService by lazy { service("window", "android.view.IWindowManager") }
+
+    private fun inputCall(name: String, vararg args: Any?): Any? =
+        inputService.javaClass.methods.first { it.name == name && it.parameterCount == args.size }.invoke(inputService, *args)
+
+    /** Input devices on that port (UHID `phys`) belong to the display, not the phone's screen. */
+    fun associateInputPort(port: String, displayUniqueId: String): Boolean = runCatching {
+        inputCall("addUniqueIdAssociationByPort", port, displayUniqueId); true
+    }.onFailure { Log.d("addUniqueIdAssociationByPort failed: ${it.cause ?: it}") }.getOrDefault(false)
+
+    fun removeInputPortAssociation(port: String) {
+        runCatching { inputCall("removeUniqueIdAssociationByPort", port) }
+            .onFailure { Log.d("removeUniqueIdAssociationByPort failed: ${it.cause ?: it}") }
+    }
+
+    fun displayUniqueId(displayId: Int): String? = runCatching {
+        val display = displayManager.getDisplay(displayId)
+        display.javaClass.getMethod("getUniqueId").invoke(display) as String
+    }.getOrNull()
+
+    fun inputDevice(name: String): android.view.InputDevice? = runCatching {
+        (inputCall("getInputDeviceIds") as IntArray).asSequence()
+            .mapNotNull { inputCall("getInputDevice", it) as? android.view.InputDevice }
+            .firstOrNull { it.name == name }
+    }.getOrNull()
+
+    /** A keyboard layout Android ships: (label, descriptor, languages). */
+    class Layout(val label: String, val descriptor: String, val languages: List<String>)
+
+    val keyboardLayouts: List<Layout> by lazy {
+        runCatching {
+            (inputCall("getKeyboardLayouts") as Array<*>).filterNotNull().map { l ->
+                fun get(m: String) = l.javaClass.getMethod(m).invoke(l)
+                val locales = runCatching { get("getLocales") as android.os.LocaleList }.getOrNull()
+                Layout(get("getLabel") as String, get("getDescriptor") as String,
+                    (0 until (locales?.size() ?: 0)).map { locales!![it].language })
+            }
+        }.onFailure { Log.d("getKeyboardLayouts failed: ${it.cause ?: it}") }.getOrDefault(emptyList())
+    }
+
+    fun setKeyboardLayout(device: android.view.InputDevice, descriptor: String): Boolean = runCatching {
+        inputCall("setKeyboardLayoutOverrideForInputDevice", device.javaClass.getMethod("getIdentifier").invoke(device), descriptor)
+        true
+    }.onFailure { Log.d("setKeyboardLayoutOverrideForInputDevice failed: ${it.cause ?: it}") }.getOrDefault(false)
+
+    /** DISPLAY_IME_POLICY_HIDE (2): no on-screen keyboard for that display, on it or the phone's. */
+    fun hideImeOn(displayId: Int) {
+        runCatching {
+            windowService.javaClass.getMethod("setDisplayImePolicy", Int::class.java, Int::class.java).invoke(windowService, displayId, 2)
+        }.onFailure { Log.d("setDisplayImePolicy failed: ${it.cause ?: it}") }
+    }
+
     /** A root task as the system reports it. */
     data class RootTask(val taskId: Int, val displayId: Int, val packageName: String?, val visible: Boolean)
 
