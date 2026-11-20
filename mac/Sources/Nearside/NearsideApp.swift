@@ -53,6 +53,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         engine.start()
         self.engine = engine
         statusItem = StatusItemController(engine: engine)
+        openAppForTesting(engine)
+    }
+
+    /// Test hook: NEARSIDE_OPEN_APP=<package> opens that phone app once the phone is connected.
+    private func openAppForTesting(_ engine: SyncEngine) {
+        guard let package = ProcessInfo.processInfo.environment["NEARSIDE_OPEN_APP"] else { return }
+        Task { @MainActor in
+            while engine.state != .connected { try? await Task.sleep(for: .milliseconds(300)) }
+            try? await Task.sleep(for: .seconds(1))
+            guard let app = await engine.phoneApps().first(where: { $0.package == package }) else {
+                return NSLog("Nearside: test hook: \(package) not found")
+            }
+            statusItem?.openPhoneApp(app)
+        }
     }
 }
 
@@ -67,6 +81,7 @@ final class StatusItemController: NSObject {
     private var shelf: DropShelfController?
     private lazy var messagesWindow = MessagesWindowController(engine: engine)
     private lazy var setupWindow = SetupWindowController(engine: engine)
+    private lazy var phoneApps = PhoneWindowManager(engine: engine)
 
     init(engine: SyncEngine) {
         self.engine = engine
@@ -79,6 +94,9 @@ final class StatusItemController: NSObject {
         }, openSetup: { [weak self] in
             self?.popover.performClose(nil)
             self?.setupWindow.show()
+        }, openApps: { [weak self] in
+            self?.popover.performClose(nil)
+            self?.phoneApps.showPicker()
         }))
         popover.contentSize = NSSize(width: 380, height: 540)
 
@@ -106,12 +124,15 @@ final class StatusItemController: NSObject {
                                     })
 
         updateIcon()
+        engine.onPhoneAppsStop = { [weak self] in self?.phoneApps.closeAll() }
 
         // First run (or re-pairing needed): open the setup wizard straight away.
         if engine.state == .needsSetup {
             DispatchQueue.main.async { [weak self] in self?.setupWindow.show() }
         }
     }
+
+    func openPhoneApp(_ app: PhoneApp) { phoneApps.open(app) }
 
     @objc private func toggle() {
         popover.isShown ? popover.performClose(nil) : show()

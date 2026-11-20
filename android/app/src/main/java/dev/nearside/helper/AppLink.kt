@@ -33,6 +33,8 @@ object AppLink {
     private const val AUTHORITY = "dev.nearside.link"
     private const val MAX_MESSAGE = 1 shl 20
     /** Message types the helper owns; the app may not send these to the Mac. */
+    /** Ends every app window (set by Main). */
+    var stopApps: () -> Unit = {}
     private val RESERVED = setOf("clip", "hello", "challenge", "auth", "hello-mac", "app", "file-ready")
     /** Shared files wait here (shell-owned) until the Mac has pulled them over adb. */
     private val STAGING = File("/data/local/tmp/nearside-out")
@@ -59,7 +61,9 @@ object AppLink {
             if (Binder.getCallingUid() != appUid) throw SecurityException("not the Nearside app")
             if (json.length > MAX_MESSAGE) return false
             val msg = runCatching { JSONObject(json) }.getOrNull() ?: return false
-            if (msg.optString("t").isEmpty() || msg.optString("t") in RESERVED) return false
+            val type = msg.optString("t")
+            if (type == "apps-stop") stopApps() // the phone's "Stop" on the in-use notification
+            if (type.isEmpty() || type in RESERVED || type.startsWith("display-")) return false
             return toMac(msg)
         }
 

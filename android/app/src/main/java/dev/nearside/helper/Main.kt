@@ -8,6 +8,7 @@ import android.net.LocalServerSocket
 import android.net.LocalSocket
 import android.os.Handler
 import android.os.Looper
+import dev.nearside.helper.display.DisplayServer
 import org.json.JSONObject
 import java.io.ByteArrayOutputStream
 import java.io.IOException
@@ -41,6 +42,7 @@ object Main {
     private val io = Executors.newSingleThreadExecutor()
     @Volatile private var client: Writer? = null
     @Volatile private var lastSetByMac: String? = null
+    private lateinit var displays: DisplayServer
     private var lastSent: String? = null // main looper only
     private var lastSentAt = 0L
 
@@ -82,6 +84,11 @@ object Main {
             Log.d("clip changed (${text.length} chars)")
             send(JSONObject().put("t", "clip").put("text", text).put("ts", System.currentTimeMillis()))
         }
+
+        displays = DisplayServer(token) { open ->
+            AppLink.deliver(JSONObject().put("t", "display-state").put("open", open))
+        }.also { it.start() }
+        AppLink.stopApps = { displays.closeAll() }
 
         AppLink.toMac = { msg -> client != null && send(msg) }
         AppLink.macConnected = { client != null }
@@ -148,7 +155,10 @@ object Main {
         try {
             socket.inputStream.bufferedReader().forEachLine { line ->
                 val msg = runCatching { JSONObject(line) }.getOrNull() ?: return@forEachLine
-                if (msg.optString("t") != "clip") {
+                val type = msg.optString("t")
+                if (type.startsWith("display-")) {
+                    handleDisplay(msg)
+                } else if (type != "clip") {
                     AppLink.deliver(msg) // everything else is for the app's features
                 } else {
                     val text = msg.optString("text")
@@ -167,6 +177,24 @@ object Main {
             }
             runCatching { socket.close() }
             Log.d("Mac disconnected")
+        }
+    }
+
+    /** Phone-apps requests on the control link (the streams themselves use nearside-display). */
+    private fun handleDisplay(msg: JSONObject) {
+        when (msg.optString("t")) {
+            "display-ticket" -> send(JSONObject().put("t", "display-ticket").put("req", msg.opt("req"))
+                .put("ticket", displays.issueTicket()))
+            "display-apps" -> Thread {
+                val started = System.currentTimeMillis()
+                val reply = runCatching { displays.apps() }.getOrElse {
+                    Log.d("display-apps failed: $it")
+                    JSONObject().put("t", "display-apps").put("error", it.toString())
+                }
+                Log.d("display-apps: ${reply.optJSONArray("apps")?.length() ?: 0} apps in ${System.currentTimeMillis() - started} ms")
+                send(reply.put("req", msg.opt("req")))
+            }.start()
+            "display-stop-all" -> displays.closeAll()
         }
     }
 

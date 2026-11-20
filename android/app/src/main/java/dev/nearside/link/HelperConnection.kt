@@ -7,6 +7,7 @@ import dev.nearside.FileNotifications
 import dev.nearside.NotificationMirror
 import dev.nearside.SmsBridge
 import dev.nearside.Status
+import dev.nearside.phone.InUseNotification
 import org.json.JSONObject
 
 /**
@@ -69,6 +70,7 @@ object HelperConnection {
             "file-received" -> context?.let { FileNotifications.received(it, msg.optString("name")) }
             "sms-threads", "sms-thread", "sms-send", "sms-read" -> context?.let { SmsBridge.handle(it, msg) }
             "notif-open" -> NotificationMirror.instance?.open(msg.optString("key"))
+            "display-state" -> context?.let { InUseNotification.update(it, msg.optInt("open")) }
             "notif-action" -> NotificationMirror.instance?.runAction(
                 msg.optString("key"),
                 msg.optInt("i", -1),

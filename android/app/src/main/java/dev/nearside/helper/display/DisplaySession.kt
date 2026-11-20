@@ -1,0 +1,318 @@
+// One phone app shown in one Mac window: its own virtual display, a hardware HEVC encoder fed by
+// that display, input injected into it, and the app's task tracked so the Mac knows when it ends.
+// Encoder setup and input injection adapted from scrcpy (Apache-2.0, Copyright (C) Genymobile).
+package dev.nearside.helper.display
+
+import android.app.ActivityOptions
+import android.content.ComponentName
+import android.content.Intent
+import android.hardware.display.VirtualDisplay
+import android.media.MediaCodec
+import android.media.MediaCodecInfo
+import android.media.MediaFormat
+import android.os.Bundle
+import android.os.SystemClock
+import android.view.InputDevice
+import android.view.KeyCharacterMap
+import android.view.KeyEvent
+import android.view.MotionEvent
+import android.view.Surface
+import dev.nearside.helper.FakeContext
+import dev.nearside.helper.Log
+import java.io.IOException
+import java.nio.ByteBuffer
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
+
+class DisplaySession(
+    val id: String,
+    private val server: DisplayServer,
+    open: DisplayWire.Open,
+) {
+    companion object {
+        // PUBLIC | OWN_CONTENT_ONLY | SUPPORTS_TOUCH | TRUSTED | OWN_DISPLAY_GROUP | ALWAYS_UNLOCKED |
+        // TOUCH_FEEDBACK_DISABLED | OWN_FOCUS. OWN_CONTENT_ONLY matters: without it an empty display
+        // mirrors the phone's own screen. No system decorations: on Android 17 they divert launches
+        // into desktop "desks" (and fail while locked). See vault/phone-apps-plan.md, Gate A.
+        const val FLAGS = (1 shl 0) or (1 shl 3) or (1 shl 6) or (1 shl 10) or (1 shl 11) or (1 shl 12) or
+            (1 shl 13) or (1 shl 14)
+        private const val GRACE_MS = 30_000L
+        private const val LAUNCH_TIMEOUT_MS = 10_000L
+    }
+
+    private var w = open.width
+    private var h = open.height
+    private var dpi = open.dpi
+    private val fps = open.fps
+    private val kbps = open.kbps
+    private val target = open.target
+
+    private lateinit var display: VirtualDisplay
+    val displayId get() = display.display.displayId
+    @Volatile private var codec: MediaCodec? = null
+    @Volatile private var gen = 0
+    @Volatile private var lastConfig: ByteArray? = null
+    @Volatile private var closed = false
+    @Volatile private var ctl: DisplayWire.Conn? = null
+    @Volatile private var video: DisplayWire.Conn? = null
+    private var taskId = -1
+    private var taskGone = false
+    private val openedAt = SystemClock.uptimeMillis()
+    private val watcher = Executors.newSingleThreadScheduledExecutor { Thread(it, "display-$id-tasks") }
+    private var downTime = 0L
+
+    fun start() {
+        val surface = newEncoder()
+        display = Hidden.displayManager.createVirtualDisplay("nearside-$id", w, h, dpi, surface, FLAGS)
+        Log.d("display session $id: display $displayId ${w}x$h@$dpi for $target")
+        Thread(::encodeLoop, "display-$id-video").start()
+        launch()
+        watcher.scheduleWithFixedDelay({ runCatching { watchTasks() } }, 300, 500, TimeUnit.MILLISECONDS)
+    }
+
+    // MARK: - Connections
+
+    fun attachControl(conn: DisplayWire.Conn) {
+        ctl?.close()
+        ctl = conn
+        Thread({ controlLoop(conn) }, "display-$id-ctl").start()
+        if (taskId != -1) sendTask()
+    }
+
+    fun attachVideo(conn: DisplayWire.Conn) {
+        video?.close()
+        video = conn
+        lastConfig?.let { conn.send(DisplayWire.CONFIG, it) }
+        requestKeyframe()
+    }
+
+    private fun controlLoop(conn: DisplayWire.Conn) {
+        try {
+            while (!closed) {
+                val (type, body) = conn.read() ?: break
+                handle(type, ByteBuffer.wrap(body))
+            }
+        } catch (e: Exception) {
+            Log.d("display session $id: control ended ($e)")
+        } finally {
+            conn.close()
+            if (ctl === conn && !closed) {
+                ctl = null
+                // The Mac may come back (Wi-Fi blip, sleep): keep the app where it is for a while.
+                Log.d("display session $id: Mac gone; keeping it for ${GRACE_MS / 1000} s")
+                watcher.schedule({ if (ctl == null && !closed) close(toPhone = true) }, GRACE_MS, TimeUnit.MILLISECONDS)
+            }
+        }
+    }
+
+    private fun handle(type: Int, b: ByteBuffer) {
+        when (type) {
+            DisplayWire.TOUCH -> if (b.remaining() >= 14) {
+                touch(b.get().toInt(), b.get().toInt(), b.int, b.float, b.float)
+            }
+            DisplayWire.RESIZE -> if (b.remaining() >= 6) {
+                resize(b.short.toInt() and 0xffff, b.short.toInt() and 0xffff, b.short.toInt() and 0xffff)
+            }
+            DisplayWire.NAV -> if (b.remaining() >= 1) nav(b.get().toInt())
+            DisplayWire.PING -> if (b.remaining() >= 8) {
+                val t0 = b.long
+                ctl?.send(DisplayWire.PONG, ByteBuffer.allocate(16).putLong(t0).putLong(System.nanoTime() / 1000).array())
+            }
+            DisplayWire.VISIBILITY -> if (b.remaining() >= 1) setVisible(b.get().toInt() == 0)
+            DisplayWire.SYNC -> requestKeyframe()
+            DisplayWire.CLOSE -> close(toPhone = true)
+        }
+    }
+
+    // MARK: - App
+
+    private fun launch() {
+        val component = if ('/' in target) ComponentName.unflattenFromString(target) else null
+        val pkg = component?.packageName ?: target
+        // A running app is moved over, keeping its state, rather than started again.
+        val existing = Hidden.rootTasks().firstOrNull { it.packageName == pkg && it.displayId != displayId }
+        if (existing != null && Hidden.moveTask(existing.taskId, displayId, onTop = true)) {
+            Log.d("display session $id: moved task ${existing.taskId} ($pkg) here")
+            return
+        }
+        val intent = (if (component != null) Intent(Intent.ACTION_MAIN).setComponent(component)
+            .addCategory(Intent.CATEGORY_LAUNCHER) else FakeContext.instance.packageManager.getLaunchIntentForPackage(pkg))
+            ?: return fail(DisplayWire.ERR_NOT_FOUND, "$pkg has nothing to open")
+        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        val options = ActivityOptions.makeBasic().setLaunchDisplayId(displayId).toBundle()
+        if (!Hidden.startActivity(intent, options) && !shellStart(intent)) {
+            fail(DisplayWire.ERR_LAUNCH, "couldn't open $pkg")
+        }
+    }
+
+    private fun shellStart(intent: Intent): Boolean {
+        val c = intent.component ?: return false
+        return runCatching {
+            Runtime.getRuntime().exec(arrayOf("am", "start", "--display", "$displayId", "-n", c.flattenToShortString()))
+                .waitFor() == 0
+        }.getOrDefault(false)
+    }
+
+    private fun fail(code: Int, message: String) {
+        Log.d("display session $id: $message")
+        ctl?.send(DisplayWire.ERROR, byteArrayOf(code.toByte()) + message.toByteArray())
+    }
+
+    /** Polled: which task is ours, and did it leave (closed, or moved to the phone)? */
+    private fun watchTasks() {
+        if (closed) return
+        val tasks = Hidden.rootTasks()
+        if (taskId == -1) {
+            val mine = tasks.firstOrNull { it.displayId == displayId }
+            if (mine != null) {
+                taskId = mine.taskId
+                Log.d("display session $id: task $taskId (${mine.packageName})")
+                sendTask()
+            } else if (SystemClock.uptimeMillis() - openedAt > LAUNCH_TIMEOUT_MS && !taskGone) {
+                taskGone = true
+                fail(DisplayWire.ERR_LAUNCH, "the app didn't open")
+            }
+            return
+        }
+        if (taskGone) return
+        val task = tasks.firstOrNull { it.taskId == taskId }
+        if (task?.displayId == displayId) return
+        taskGone = true
+        val reason = if (task != null) DisplayWire.GONE_MOVED else DisplayWire.GONE_EXITED
+        Log.d("display session $id: task $taskId ${if (task != null) "moved to display ${task.displayId}" else "ended"}")
+        ctl?.send(DisplayWire.TASK_GONE, byteArrayOf(reason.toByte()))
+    }
+
+    private fun sendTask() {
+        val pkg = Hidden.rootTasks().firstOrNull { it.taskId == taskId }?.packageName ?: ""
+        ctl?.send(DisplayWire.TASK, ByteBuffer.allocate(4).putInt(taskId).array() + pkg.toByteArray())
+    }
+
+    // MARK: - Video
+
+    private fun newEncoder(): Surface {
+        val format = MediaFormat.createVideoFormat(MediaFormat.MIMETYPE_VIDEO_HEVC, w, h).apply {
+            setInteger(MediaFormat.KEY_COLOR_FORMAT, MediaCodecInfo.CodecCapabilities.COLOR_FormatSurface)
+            setInteger(MediaFormat.KEY_BIT_RATE, kbps * 1000)
+            setInteger(MediaFormat.KEY_BITRATE_MODE, MediaCodecInfo.EncoderCapabilities.BITRATE_MODE_CBR)
+            setInteger(MediaFormat.KEY_FRAME_RATE, fps)
+            setFloat(MediaFormat.KEY_I_FRAME_INTERVAL, 10f)
+            setLong(MediaFormat.KEY_REPEAT_PREVIOUS_FRAME_AFTER, 100_000)
+            setInteger(MediaFormat.KEY_PRIORITY, 0)
+            setInteger(MediaFormat.KEY_MAX_B_FRAMES, 0)
+            setInteger(MediaFormat.KEY_PREPEND_HEADER_TO_SYNC_FRAMES, 1)
+            setInteger(MediaFormat.KEY_COLOR_STANDARD, MediaFormat.COLOR_STANDARD_BT709)
+            setInteger(MediaFormat.KEY_COLOR_RANGE, MediaFormat.COLOR_RANGE_LIMITED)
+            setFloat("max-fps-to-encoder", fps.toFloat())
+        }
+        val c = MediaCodec.createEncoderByType(MediaFormat.MIMETYPE_VIDEO_HEVC)
+        c.configure(format, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
+        val surface = c.createInputSurface()
+        c.start()
+        gen++
+        codec = c
+        return surface
+    }
+
+    private fun encodeLoop() {
+        val info = MediaCodec.BufferInfo()
+        while (!closed) {
+            val c = codec ?: break
+            val myGen = gen
+            // A resize swaps the codec under us; the old one then throws, which is fine.
+            val data = try {
+                val index = c.dequeueOutputBuffer(info, 50_000)
+                if (index < 0) continue
+                val buf = c.getOutputBuffer(index) ?: continue
+                ByteArray(info.size).also { buf.get(it); c.releaseOutputBuffer(index, false) }
+            } catch (e: IllegalStateException) {
+                continue
+            }
+            if (info.flags and MediaCodec.BUFFER_FLAG_CODEC_CONFIG != 0) {
+                val config = ByteBuffer.allocate(8 + data.size).putInt(myGen).putShort(w.toShort())
+                    .putShort(h.toShort()).put(data).array()
+                lastConfig = config
+                video?.send(DisplayWire.CONFIG, config)
+                continue
+            }
+            val key = info.flags and MediaCodec.BUFFER_FLAG_KEY_FRAME != 0
+            val frame = ByteBuffer.allocate(21 + data.size).putInt(myGen).putLong(info.presentationTimeUs)
+                .putLong(System.nanoTime() / 1000).put(if (key) 1 else 0).put(data).array()
+            video?.send(DisplayWire.FRAME, frame)
+        }
+    }
+
+    private fun requestKeyframe() {
+        runCatching { codec?.setParameters(Bundle().apply { putInt(MediaCodec.PARAMETER_KEY_REQUEST_SYNC_FRAME, 0) }) }
+    }
+
+    /** Hidden or minimised on the Mac: stop encoding, but leave the app running (it isn't told). */
+    private fun setVisible(visible: Boolean) {
+        runCatching {
+            codec?.setParameters(Bundle().apply { putInt(MediaCodec.PARAMETER_KEY_SUSPEND, if (visible) 0 else 1) })
+        }
+        if (visible) requestKeyframe()
+    }
+
+    @Synchronized
+    private fun resize(nw: Int, nh: Int, ndpi: Int) {
+        if (closed || nw < 64 || nh < 64 || nw > 4096 || nh > 4096 || ndpi !in 72..640) return
+        if (nw == w && nh == h && ndpi == dpi) return
+        val old = codec
+        w = nw and 1.inv(); h = nh and 1.inv(); dpi = ndpi
+        val surface = newEncoder()
+        display.resize(w, h, dpi)
+        display.surface = surface
+        old?.let { runCatching { it.stop() }; it.release() }
+        Log.d("display session $id: resized to ${w}x$h@$dpi")
+    }
+
+    // MARK: - Input
+
+    private fun touch(action: Int, pointer: Int, touchGen: Int, x: Float, y: Float) {
+        if (touchGen != gen) return // aimed at a frame size that's gone
+        if (action !in 0..2) return
+        val now = SystemClock.uptimeMillis()
+        if (action == MotionEvent.ACTION_DOWN) downTime = now
+        val event = MotionEvent.obtain(downTime, now, action, x.coerceIn(0f, 1f) * w, y.coerceIn(0f, 1f) * h, 0)
+        event.source = InputDevice.SOURCE_TOUCHSCREEN
+        Hidden.inject(event, displayId)
+        event.recycle()
+    }
+
+    private fun nav(which: Int) {
+        val code = when (which) {
+            DisplayWire.NAV_BACK -> KeyEvent.KEYCODE_BACK
+            else -> return
+        }
+        val now = SystemClock.uptimeMillis()
+        for (action in listOf(KeyEvent.ACTION_DOWN, KeyEvent.ACTION_UP)) {
+            Hidden.inject(KeyEvent(now, now, action, code, 0, 0, KeyCharacterMap.VIRTUAL_KEYBOARD, 0, 0,
+                InputDevice.SOURCE_KEYBOARD), displayId)
+        }
+    }
+
+    // MARK: - Closing
+
+    /**
+     * Ends the session. With [toPhone], the app moves back to the phone *under* whatever is showing
+     * there, so it waits in Recents instead of popping up (releasing the display alone would put it
+     * on top). Then the display and encoder go.
+     */
+    @Synchronized
+    fun close(toPhone: Boolean) {
+        if (closed) return
+        closed = true
+        val onOurs = Hidden.rootTasks().filter { it.displayId == displayId }
+        if (toPhone) onOurs.forEach { Hidden.moveTask(it.taskId, 0, onTop = false) }
+        runCatching { display.release() }
+        codec?.let { runCatching { it.stop() }; it.release() }
+        watcher.shutdownNow()
+        ctl?.close()
+        video?.close()
+        server.ended(this)
+        Log.d("display session $id: closed (${onOurs.size} task(s) back to the phone)")
+    }
+
+    val isClosed get() = closed
+}

@@ -86,6 +86,10 @@ public final class SyncEngine {
     private var pasteboard: PasteboardWatcher!
     private var preparing = false
     private var started = false
+    private var displayRequests: [Int: CheckedContinuation<HelperReply?, Never>] = [:]
+    private var nextDisplayRequest = 1
+    /// The phone's "Stop" on its apps-open notification: close every phone-app window.
+    public var onPhoneAppsStop: (() -> Void)?
 
     public init(apkURL: URL?) {
         self.apkURL = apkURL
@@ -179,6 +183,23 @@ public final class SyncEngine {
         }
     }
 
+    // MARK: Phone-app requests (see PhoneApps.swift)
+
+    func nextDisplayRequestID() -> Int {
+        defer { nextDisplayRequest += 1 }
+        return nextDisplayRequest
+    }
+
+    func registerDisplayRequest(_ req: Int, _ continuation: CheckedContinuation<HelperReply?, Never>) {
+        displayRequests[req] = continuation
+    }
+
+    func finishDisplayRequest(_ req: Int, with value: HelperReply?) {
+        displayRequests.removeValue(forKey: req)?.resume(returning: value)
+    }
+
+    func sendToHelper(_ message: [String: Any]) { link.send(message) }
+
     // MARK: Messages
 
     private func handle(_ message: [String: Any]) {
@@ -199,6 +220,12 @@ public final class SyncEngine {
             receiveFile(message)
         case "app":
             appLinked = message["linked"] as? Bool ?? false
+        case "display-ticket", "display-apps":
+            if let req = message["req"] as? Int, let waiting = displayRequests.removeValue(forKey: req) {
+                waiting.resume(returning: HelperReply(message))
+            }
+        case "apps-stop":
+            onPhoneAppsStop?()
         case "clip":
             guard state == .connected, let text = message["text"] as? String, !text.isEmpty else { return }
             pasteboard.write(text)

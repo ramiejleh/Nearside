@@ -70,6 +70,11 @@
             </intent-filter>
         </receiver>
 
+        <!-- "Stop" on the apps-open-on-your-Mac notification. -->
+        <receiver
+            android:name=".phone.InUseNotification$StopReceiver"
+            android:exported="false" />
+
         <!-- Thaws the app so queued helper calls run; see link/WakeReceiver. -->
         <receiver
             android:name=".link.WakeReceiver"
