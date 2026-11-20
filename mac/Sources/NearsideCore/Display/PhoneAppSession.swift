@@ -58,6 +58,7 @@ public final class PhoneAppSession: @unchecked Sendable {
     public func start() {
         decoder.onFrame = { [weak self] frame in
             guard let self else { return }
+            Trace.log("decoded \(frame.ptsMicros)")
             if lock.withLock({ state }) != .showing { set(.showing) }
             onFrame?(frame)
         }
@@ -165,6 +166,7 @@ public final class PhoneAppSession: @unchecked Sendable {
                         if let onVideoSize { Task { @MainActor in onVideoSize(size) } }
                     }
                 case let .frame(gen, pts, _, _, data):
+                    Trace.log("recv \(pts)")
                     decoder.decode(annexB: data, gen: gen, ptsMicros: pts, receivedMicros: now)
                 default: break
                 }
@@ -210,6 +212,7 @@ public final class PhoneAppSession: @unchecked Sendable {
     /// x/y normalised (0…1) within the video.
     public func touch(_ action: DisplayWire.TouchAction, x: Float, y: Float) {
         let gen = lock.withLock { self.gen }
+        Trace.log("touch \(action) \(x) \(y) gen \(gen) control \(lock.withLock { control } != nil)")
         send(DisplayWire.touch(action, pointer: 0, gen: gen, x: x, y: y))
     }
 

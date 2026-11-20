@@ -10,7 +10,7 @@ final class AppWindowController: NSObject, NSWindowDelegate {
     let window: NSWindow
     private let session: PhoneAppSession
     private let stream: StreamView
-    private let overlay = NSHostingView(rootView: AppWindowOverlay(state: .opening, label: ""))
+    private let overlay = OverlayHostingView(rootView: AppWindowOverlay(state: .opening, label: ""))
     private var state: PhoneAppSession.State = .opening
     private var resizeWork: DispatchWorkItem?
     private let onClosed: (AppWindowController) -> Void
@@ -81,11 +81,27 @@ final class AppWindowController: NSObject, NSWindowDelegate {
     /// Test hook: NEARSIDE_TEST_INPUT=1 taps the middle, then drags up, through the same path
     /// as the mouse (StreamView.onTouch → session), so input can be checked without a person.
     private func testInputIfAsked() {
-        guard ProcessInfo.processInfo.environment["NEARSIDE_TEST_INPUT"] == "1" else { return }
+        guard let mode = ProcessInfo.processInfo.environment["NEARSIDE_TEST_INPUT"] else { return }
         Task { @MainActor [weak self] in
             try? await Task.sleep(for: .seconds(2))
-            guard let touch = self?.stream.onTouch else { return }
+            guard let self, let touch = stream.onTouch else { return }
+            if mode == "click" {
+                // Real AppKit mouse events through the window, like a person's click.
+                let point = stream.convert(NSPoint(x: stream.bounds.midX, y: stream.bounds.height * 0.25), to: nil)
+                for type in [NSEvent.EventType.leftMouseDown, .leftMouseUp] {
+                    if let event = NSEvent.mouseEvent(with: type, location: point, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+                                                      windowNumber: window.windowNumber, context: nil, eventNumber: 0,
+                                                      clickCount: 1, pressure: type == .leftMouseDown ? 1 : 0) {
+                        window.sendEvent(event)
+                    }
+                    try? await Task.sleep(for: .milliseconds(90))
+                }
+                Trace.log("test click sent; overlay hidden \(overlay.isHidden), state \(state), hit view: \(String(describing: window.contentView?.hitTest(point)))")
+                return
+            }
             touch(.down, 0.5, 0.75); try? await Task.sleep(for: .milliseconds(80)); touch(.up, 0.5, 0.75)
+            NSLog("Nearside: test tap sent")
+            if mode == "tap" { return }
             try? await Task.sleep(for: .seconds(1))
             touch(.down, 0.5, 0.8)
             for i in 1...20 {
@@ -164,6 +180,12 @@ extension AppWindowController: NSToolbarDelegate {
         item.action = #selector(goBack)
         return item
     }
+}
+
+/// SwiftUI's hosting view keeps claiming mouse hits while hidden, which sent clicks meant for the
+/// app to the invisible overlay; hidden, it lets them through.
+final class OverlayHostingView<Content: View>: NSHostingView<Content> {
+    override func hitTest(_ point: NSPoint) -> NSView? { isHidden ? nil : super.hitTest(point) }
 }
 
 /// What the window shows when it isn't showing the app.

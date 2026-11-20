@@ -60,7 +60,7 @@ object DisplayProbe {
             setLong(MediaFormat.KEY_REPEAT_PREVIOUS_FRAME_AFTER, 100_000)
             setInteger(MediaFormat.KEY_PRIORITY, 0)
             setInteger(MediaFormat.KEY_MAX_B_FRAMES, 0)
-            setFloat("max-fps-to-encoder", fps.toFloat())
+            if (args.getOrNull(7) != "nomaxfps") setFloat("max-fps-to-encoder", fps.toFloat())
         }
         val codec = MediaCodec.createEncoderByType(MediaFormat.MIMETYPE_VIDEO_HEVC)
         val caps = codec.codecInfo.getCapabilitiesForType(MediaFormat.MIMETYPE_VIDEO_HEVC)

@@ -1,5 +1,6 @@
 import NearsideCore
 import AppKit
+import CoreImage
 import CoreVideo
 import Metal
 import QuartzCore
@@ -70,9 +71,30 @@ final class MetalRenderer: @unchecked Sendable {
         encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 3)
         encoder.endEncoding()
         buffer.present(drawable)
+        let pts = frame.ptsMicros
+        drawable.addPresentedHandler { d in Trace.log("presented \(pts) at \(Int64(d.presentedTime * 1000))") }
+        Trace.log("drawn \(pts)")
+        if Trace.enabled { saveSnapshotSoon(frame) }
         let textures = TextureHold(luma: luma, chroma: chroma)
         buffer.addCompletedHandler { _ in _ = textures } // live until the GPU is done
         buffer.commit()
+    }
+
+    private var snapshotWork: DispatchWorkItem?
+
+    /// Trace mode: the last frame shown, as <trace>.png, a second after the picture settles.
+    private func saveSnapshotSoon(_ frame: VideoDecoder.Frame) {
+        snapshotWork?.cancel()
+        let work = DispatchWorkItem {
+            guard let path = Trace.path else { return }
+            let image = CIImage(cvPixelBuffer: frame.image)
+            let context = CIContext()
+            try? context.writePNGRepresentation(of: image, to: URL(fileURLWithPath: path + ".png"),
+                                                format: .RGBA8, colorSpace: CGColorSpace(name: CGColorSpace.sRGB)!)
+            Trace.log("snapshot \(frame.ptsMicros)")
+        }
+        snapshotWork = work
+        DispatchQueue.global().asyncAfter(deadline: .now() + 1, execute: work)
     }
 
     /// NV12 (BT.709, limited range) → RGB. Built from source at runtime: `swift build` doesn't
@@ -145,9 +167,9 @@ final class StreamView: NSView {
 
     override var acceptsFirstResponder: Bool { true }
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
-    override func mouseDown(with event: NSEvent) { touch(.down, event) }
-    override func mouseDragged(with event: NSEvent) { touch(.move, event) }
-    override func mouseUp(with event: NSEvent) { touch(.up, event) }
+    override func mouseDown(with event: NSEvent) { Trace.log("mouseDown"); touch(.down, event) }
+    override func mouseDragged(with event: NSEvent) { Trace.log("mouseDragged"); touch(.move, event) }
+    override func mouseUp(with event: NSEvent) { Trace.log("mouseUp"); touch(.up, event) }
 
     private func touch(_ action: DisplayWire.TouchAction, _ event: NSEvent) {
         let p = convert(event.locationInWindow, from: nil)
