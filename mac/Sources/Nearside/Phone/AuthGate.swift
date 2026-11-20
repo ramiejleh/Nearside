@@ -50,9 +50,9 @@ final class AuthGate {
     var isLocked: Bool { Self.mode != .never && !unlocked }
 
     private func lock() {
-        guard unlocked else { return }
         unlocked = false
-        onLock()
+        // Cover open windows whatever the last state was (the setting may have been raised since).
+        if Self.mode != .never { onLock() }
     }
 
     /// Asks if needed; true once the person has proven it's them (or nothing is asked).

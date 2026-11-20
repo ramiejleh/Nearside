@@ -424,7 +424,7 @@ struct AppWindowOverlay: View {
 
     var body: some View {
         ZStack {
-            Rectangle().fill(.background.opacity(state == .reconnecting ? 0.55 : 1))
+            Rectangle().fill(.background.opacity(state == .reconnecting && !locked ? 0.55 : 1))
                 .background(.ultraThinMaterial)
             VStack(spacing: 14) {
                 if locked {

@@ -26,6 +26,7 @@ final class PhoneWindowManager {
         library = PhoneAppLibrary(engine: engine)
         Self.shared = self
         library.onChange = { apps in PhoneSpotlight.index(apps, icon: { [weak self] in self?.library.iconPNG($0) }) }
+        launcher.isLocked = { [weak self] in self?.auth.isLocked ?? true }
         auth.onLock = { [weak self] in self?.windows.forEach { $0.setLocked(true) } }
         // Option-Command-P from anywhere.
         hotKey = HotKey(keyCode: kVK_ANSI_P, modifiers: cmdKey | optionKey) { [weak self] in self?.toggleLauncher() }

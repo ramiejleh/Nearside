@@ -13,6 +13,10 @@ final class PhoneLauncher: NSObject, NSWindowDelegate {
     private(set) var panel: LauncherPanel?
     private let model = LauncherModel()
 
+    /// Whether phone apps are locked behind Touch ID right now: Recents (what you've been using)
+    /// stay hidden until then.
+    var isLocked: () -> Bool = { false }
+
     init(library: PhoneAppLibrary, engine: SyncEngine, open: @escaping (PhoneApp) -> Void) {
         self.library = library
         self.engine = engine
@@ -28,6 +32,7 @@ final class PhoneLauncher: NSObject, NSWindowDelegate {
         model.query = ""
         model.selection = 0
         model.focusToken += 1
+        model.hideRecents = isLocked()
         library.refresh()
         // Where Spotlight sits: centred, a little above the middle, on the screen in use.
         if let screen = NSScreen.main?.visibleFrame {
@@ -90,7 +95,7 @@ final class PhoneLauncher: NSObject, NSWindowDelegate {
         try? await Task.sleep(for: .seconds(6)) // the list and icons arrive
         model.query = query
         try? await Task.sleep(for: .milliseconds(300))
-        let sections = query.isEmpty ? [library.recents(LauncherView.columns).count, library.favouriteApps().count, library.apps.count]
+        let sections = query.isEmpty ? [model.hideRecents ? 0 : library.recents(LauncherView.columns).count, library.favouriteApps().count, library.apps.count]
             : [library.search(query).count]
         let grid = LauncherGrid(sections: sections.filter { $0 > 0 }, columns: LauncherView.columns)
         for move in moves { model.selection = grid.moving(model.selection, move) }
@@ -114,6 +119,7 @@ final class LauncherPanel: NSPanel {
 final class LauncherModel {
     var query = ""
     var selection = 0
+    var hideRecents = false
     /// Bumped on every show, so the search field takes focus again.
     var focusToken = 0
 }
@@ -138,7 +144,7 @@ struct LauncherView: View {
             return [Section(id: "results", title: "", apps: library.search(model.query))]
         }
         let all = Section(id: "all", title: "All Apps", apps: library.apps)
-        return [Section(id: "recents", title: "Recents", apps: library.recents(Self.columns)),
+        return [Section(id: "recents", title: "Recents", apps: model.hideRecents ? [] : library.recents(Self.columns)),
                 Section(id: "favourites", title: "Favourites", apps: library.favouriteApps()),
                 all].filter { !$0.apps.isEmpty }
     }
