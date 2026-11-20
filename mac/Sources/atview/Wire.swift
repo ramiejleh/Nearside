@@ -16,13 +16,18 @@ enum Wire {
 
     /// Splits a byte stream into packets; keeps partial data for the next call.
     struct Reader {
+        /// Largest packet accepted (a 4K keyframe is well under this).
+        static let maxPacket = 16 * 1024 * 1024
         private var buffer = Data()
+        private(set) var overflowed = false
         mutating func feed(_ data: Data) -> [(UInt8, Data)] {
+            guard !overflowed else { return [] }
             buffer.append(data)
             var out: [(UInt8, Data)] = []
             var offset = buffer.startIndex
             while buffer.endIndex - offset >= 5 {
                 let length = Int(buffer.readBE(UInt32.self, at: offset + 1))
+                guard length <= Self.maxPacket else { overflowed = true; buffer = Data(); return out }
                 guard buffer.endIndex - offset >= 5 + length else { break }
                 out.append((buffer[offset], buffer.subdata(in: offset + 5..<offset + 5 + length)))
                 offset += 5 + length

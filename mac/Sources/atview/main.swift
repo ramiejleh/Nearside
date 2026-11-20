@@ -83,7 +83,7 @@ if args.dropFirst().first == "--ping" {
         try s.write(Wire.packet(Wire.ping, body))
         var got = false
         while !got, let d = try s.read() {
-            for (type, p) in reader.feed(d) where type == Wire.pong {
+            for (type, p) in reader.feed(d) where type == Wire.pong && p.count >= 8 {
                 rtts.append(Double(macMicros() - Int64(p.readBE(UInt64.self, at: p.startIndex))) / 1000)
                 got = true
             }
@@ -168,18 +168,19 @@ final class Session: NSObject, NSWindowDelegate {
     private func readLoop() {
         var reader = Wire.Reader()
         while let data = try? stream.read() {
+            if reader.overflowed { print("\(name): oversized packet; closing"); stream.close(); break }
             bytes.add(data.count)
             let now = macMicros()
             for (type, p) in reader.feed(data) {
                 let s = p.startIndex
                 switch type {
-                case Wire.config:
+                case Wire.config where p.count >= 8:
                     let w = Int(p.readBE(UInt16.self, at: s)), h = Int(p.readBE(UInt16.self, at: s + 2))
                     let gen = p.readBE(UInt32.self, at: s + 4)
                     decoder.configure(annexB: p.subdata(in: s + 8..<p.endIndex), gen: gen)
                     statsLock.withLock { videoGen = gen }
                     DispatchQueue.main.async { self.view.videoSize = CGSize(width: w, height: h) }
-                case Wire.frame:
+                case Wire.frame where p.count >= 21:
                     let gen = p.readBE(UInt32.self, at: s)
                     let pts = Int64(p.readBE(UInt64.self, at: s + 4))
                     let encoded = Int64(p.readBE(UInt64.self, at: s + 12))
@@ -190,7 +191,7 @@ final class Session: NSObject, NSWindowDelegate {
                         }
                     }
                     decoder.decode(annexB: p.subdata(in: s + 21..<p.endIndex), ptsUs: pts, gen: gen, receivedUs: now)
-                case Wire.pong:
+                case Wire.pong where p.count >= 16:
                     clock.add(t0: Int64(p.readBE(UInt64.self, at: s)), phone: Int64(p.readBE(UInt64.self, at: s + 8)), t1: now)
                 default: break
                 }
