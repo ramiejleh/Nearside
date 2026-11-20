@@ -97,6 +97,11 @@ object Main {
             }
             latch.await(500, java.util.concurrent.TimeUnit.MILLISECONDS)
         }
+        // Phone-app windows have their own clipboard (the virtual device's, readable while locked):
+        // what's copied there goes to the Mac like a phone copy, and the Mac's clips land there too.
+        dev.nearside.helper.display.PhoneDevice.onCopied = { text ->
+            send(JSONObject().put("t", "clip").put("text", text).put("ts", System.currentTimeMillis()))
+        }
         dev.nearside.helper.display.PhoneClipboard.get = {
             clipboard.primaryClip?.takeIf { it.itemCount > 0 }?.getItemAt(0)?.text?.toString()
         }
@@ -198,6 +203,7 @@ object Main {
                     main.post {
                         lastSetByMac = text
                         clipboard.setPrimaryClip(ClipData.newPlainText("Nearside", text))
+                        dev.nearside.helper.display.PhoneDevice.setClip(text)
                     }
                 }
             }

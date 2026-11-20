@@ -62,11 +62,15 @@ class DisplaySession(
     private val watcher = Executors.newSingleThreadScheduledExecutor { Thread(it, "display-$id-tasks") }
     private var awake: android.os.PowerManager.WakeLock? = null
     private var keyboard: Keyboard? = null
+    private var onDevice = false
 
     fun start() {
         val surface = newEncoder()
-        display = Hidden.displayManager.createVirtualDisplay("nearside-$id", w, h, dpi, surface, FLAGS)
-        Log.d("display session $id: display $displayId ${w}x$h@$dpi for $target")
+        // On the virtual device (own clipboard and keyboard, works locked), else a plain display.
+        onDevice = PhoneDevice.acquire()
+        display = (if (onDevice) PhoneDevice.createDisplay("nearside-$id", w, h, dpi, surface, FLAGS) else null)
+            ?: Hidden.displayManager.createVirtualDisplay("nearside-$id", w, h, dpi, surface, FLAGS)
+        Log.d("display session $id: display $displayId ${w}x$h@$dpi for $target${if (onDevice) " (virtual device ${PhoneDevice.deviceId})" else ""}")
         awake = Hidden.keepAwake(displayId, "Nearside:display-$id")
         keyboard = Keyboard(displayId, id).also { it.create() }
         Thread(::encodeLoop, "display-$id-video").start()
@@ -502,6 +506,7 @@ class DisplaySession(
         runCatching { awake?.release() }
         runCatching { keyboard?.close() }
         runCatching { display.release() }
+        if (onDevice) PhoneDevice.release()
         codec?.let { runCatching { it.stop() }; it.release() }
         watcher.shutdownNow()
         ctl?.close()

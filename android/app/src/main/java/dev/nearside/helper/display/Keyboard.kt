@@ -2,12 +2,13 @@
 //
 // The Mac decides *what* is typed (its own layout, dead keys and input methods, so what appears is
 // what the Mac would type) and sends text; keys that aren't text (arrows, Return, shortcuts) come
-// as key codes. Here the text is turned into the key presses that produce it, pressed on a UHID
-// keyboard tied to this display (so it counts as that display's hardware keyboard, not the
-// phone's) with the Android layout matching the Mac's. Mac layouts and Android's PC-style
+// as key codes. Here the text is turned into the key presses that produce it, pressed on a keyboard
+// tied to this display (so it counts as that display's hardware keyboard, not the phone's) with
+// the Android layout matching the Mac's: the virtual device's VirtualKeyboard, or, without a
+// virtual device, a UHID keyboard. Mac layouts and Android's PC-style
 // layouts put symbols on different keys (Danish: @ { } [ ]), which is why positions aren't sent.
 // What the layout can't produce directly is composed from its dead keys (é = ´ then e); the rest
-// (emoji, CJK) is pasted through the clipboard, which is put back afterwards.
+// (emoji, CJK) is pasted through the virtual device's clipboard, which is put back afterwards.
 // UHID setup adapted from scrcpy (Apache-2.0, Genymobile): server/.../control/UhidManager.java.
 package dev.nearside.helper.display
 
@@ -65,6 +66,8 @@ class Keyboard(private val displayId: Int, sessionId: String) {
     private val name = "Nearside Keyboard ${sessionId.take(8)}"
     private val port = "nearside:${sessionId.take(16)}"
     private var fd: FileDescriptor? = null
+    /** The virtual device's keyboard; null: UHID ([fd]). */
+    @Volatile private var virtualKeyboard: Any? = null
     @Volatile private var device: InputDevice? = null
     @Volatile private var kcm: KeyCharacterMap = KeyCharacterMap.load(KeyCharacterMap.VIRTUAL_KEYBOARD)
     @Volatile private var deadKeys: Map<Int, Pair<Int, Int>> = emptyMap()
@@ -75,6 +78,11 @@ class Keyboard(private val displayId: Int, sessionId: String) {
     /** Call before the app opens, so it starts with the keyboard already there (no config change). */
     fun create() {
         Hidden.hideImeOn(displayId)
+        virtualKeyboard = PhoneDevice.createKeyboard(name, displayId)
+        if (virtualKeyboard != null) {
+            Thread({ awaitDevice() }, "keyboard-$displayId").start()
+            return
+        }
         val uniqueId = Hidden.displayUniqueId(displayId) ?: return Log.d("keyboard: display $displayId has no unique id")
         if (!Hidden.associateInputPort(port, uniqueId)) return
         try {
@@ -165,7 +173,33 @@ class Keyboard(private val displayId: Int, sessionId: String) {
     /** A key that isn't text (or a shortcut): pressed and released. */
     fun press(keyCode: Int, meta: Int) {
         if (keyCode !in 1..KeyEvent.getMaxKeyCode()) return
-        if (!hidPress(keyCode, meta)) injectPress(keyCode, meta)
+        if (!virtualPress(keyCode, meta) && !hidPress(keyCode, meta)) injectPress(keyCode, meta)
+    }
+
+    /** On the virtual keyboard: the modifiers' keys around the key, as a person presses them. */
+    private fun virtualPress(keyCode: Int, meta: Int): Boolean {
+        val k = virtualKeyboard ?: return false
+        if (device == null) return false // Android doesn't have it yet
+        val modifiers = modifierKeys(meta)
+        return runCatching {
+            synchronized(reportLock) {
+                modifiers.forEach { PhoneDevice.sendKey(k, it, true) }
+                PhoneDevice.sendKey(k, keyCode, true)
+                PhoneDevice.sendKey(k, keyCode, false)
+                modifiers.asReversed().forEach { PhoneDevice.sendKey(k, it, false) }
+            }
+            true
+        }.onFailure { Log.d("keyboard: virtual key $keyCode failed: ${it.cause ?: it}") }.getOrDefault(false)
+    }
+
+    private fun modifierKeys(meta: Int): List<Int> = buildList {
+        if (meta and KeyEvent.META_CTRL_RIGHT_ON != 0) add(KeyEvent.KEYCODE_CTRL_RIGHT)
+        else if (meta and KeyEvent.META_CTRL_ON != 0) add(KeyEvent.KEYCODE_CTRL_LEFT)
+        if (meta and KeyEvent.META_SHIFT_RIGHT_ON != 0) add(KeyEvent.KEYCODE_SHIFT_RIGHT)
+        else if (meta and KeyEvent.META_SHIFT_ON != 0) add(KeyEvent.KEYCODE_SHIFT_LEFT)
+        if (meta and KeyEvent.META_ALT_RIGHT_ON != 0) add(KeyEvent.KEYCODE_ALT_RIGHT)
+        else if (meta and KeyEvent.META_ALT_ON != 0) add(KeyEvent.KEYCODE_ALT_LEFT)
+        if (meta and KeyEvent.META_META_ON != 0) add(KeyEvent.KEYCODE_META_LEFT)
     }
 
     private fun hidPress(keyCode: Int, meta: Int): Boolean {
@@ -206,11 +240,10 @@ class Keyboard(private val displayId: Int, sessionId: String) {
     }
 
     /**
-     * Types [text]. Each character, in order of preference: this keyboard's layout (pressed as HID
-     * reports); its dead keys (é = ´ then e, ~ = ~ then space); the virtual keyboard's US map
-     * (injected: any ASCII the layout puts on keys a real keyboard can't press, like Danish < >);
-     * and last, while the phone is unlocked, the clipboard (emoji, CJK). Locked, Android refuses
-     * every clipboard read, so those characters can't be delivered and are dropped.
+     * Types [text]. Each character, in order of preference: this keyboard's layout (its key
+     * presses); its dead keys (é = ´ then e, ~ = ~ then space); the virtual US map (injected: any
+     * ASCII the layout puts on keys a keyboard can't press); and last the clipboard (emoji, CJK).
+     * Only without a virtual device, with the phone locked, are those last ones dropped.
      */
     fun type(text: String) {
         val leftover = StringBuilder()
@@ -230,7 +263,7 @@ class Keyboard(private val displayId: Int, sessionId: String) {
 
     private fun flushLeftover(leftover: StringBuilder) {
         if (leftover.isEmpty()) return
-        if (phoneLocked()) Log.d("keyboard: ${leftover.codePointCount(0, leftover.length)} character(s) can't be typed while the phone is locked")
+        if (!PhoneDevice.hasClipboard && phoneLocked()) Log.d("keyboard: ${leftover.codePointCount(0, leftover.length)} character(s) can't be typed while the phone is locked")
         else paste(leftover.toString(), restore = true)
         leftover.clear()
     }
@@ -267,6 +300,8 @@ class Keyboard(private val displayId: Int, sessionId: String) {
         events.filter { it.action == KeyEvent.ACTION_DOWN && !KeyEvent.isModifierKey(it.keyCode) }
 
     /** Every key of it exists on our keyboard (and Android has the keyboard). */
+    /** Every key of it is one a real keyboard has (Danish puts < > \ on PLUS, which none has: a
+     *  virtual keyboard's PLUS types +), and Android has our keyboard. */
     private fun pressable(events: Array<KeyEvent>) = device != null && keyDowns(events).all { HID_USAGES.containsKey(it.keyCode) }
 
     /** getEvents() wraps each key in its modifiers' presses; the key's own DOWN carries the meta. */
@@ -286,11 +321,22 @@ class Keyboard(private val displayId: Int, sessionId: String) {
     }.getOrDefault(true)
 
     /**
-     * ⌘V and characters no key types: [text] goes on the phone's clipboard and Ctrl+V pastes it
-     * (set first, then pasted, so it can't paste a stale clip); [restore] puts the previous clip
-     * back after. While the phone is locked Android refuses clipboard reads, so ⌘V types the text.
+     * ⌘V and characters no key types: [text] goes on the clipboard and Ctrl+V pastes it (set first,
+     * then pasted, so it can't paste a stale clip); [restore] puts the previous clip back after.
+     * The virtual device's clipboard works while the phone is locked; without one, the phone's
+     * clipboard is used, which Android refuses while locked, so ⌘V types the text then.
      */
     fun paste(text: String?, restore: Boolean) {
+        if (PhoneDevice.hasClipboard) {
+            val previous = if (restore) PhoneDevice.getClip() else null
+            if (text != null) PhoneDevice.setClip(text)
+            press(KeyEvent.KEYCODE_V, CTRL)
+            if (previous != null) Thread({
+                Thread.sleep(800) // the app reads the clip as it handles the paste
+                PhoneDevice.setClip(previous)
+            }, "clip-restore").start()
+            return
+        }
         if (phoneLocked()) {
             if (text != null && !restore) type(text)
             return
@@ -299,7 +345,7 @@ class Keyboard(private val displayId: Int, sessionId: String) {
         if (text != null) PhoneClipboard.set?.invoke(text)
         press(KeyEvent.KEYCODE_V, CTRL)
         if (restore && previous != null) Thread({
-            Thread.sleep(800) // the app reads the clip as it handles the paste
+            Thread.sleep(800)
             PhoneClipboard.set?.invoke(previous)
         }, "clip-restore").start()
     }
@@ -313,6 +359,7 @@ class Keyboard(private val displayId: Int, sessionId: String) {
 
     fun close() {
         closed = true
+        virtualKeyboard?.let { PhoneDevice.closeInput(it); virtualKeyboard = null; return }
         fd?.let { f ->
             runCatching {
                 Os.write(f, ByteBuffer.allocate(EVENT_SIZE).order(ByteOrder.nativeOrder()).putInt(UHID_DESTROY).array(), 0, EVENT_SIZE)
