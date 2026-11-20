@@ -31,7 +31,7 @@ object PhoneClipboard {
     @Volatile var get: (() -> String?)? = null
 }
 
-class Keyboard(private val displayId: Int, sessionId: String) {
+class Keyboard(private val displayId: Int, sessionId: String, private val phone: PhoneDevice?) {
     private companion object {
         const val EVENT_SIZE = 4380 // sizeof(struct uhid_event)
         const val UHID_CREATE2 = 11
@@ -78,7 +78,7 @@ class Keyboard(private val displayId: Int, sessionId: String) {
     /** Call before the app opens, so it starts with the keyboard already there (no config change). */
     fun create() {
         Hidden.hideImeOn(displayId)
-        virtualKeyboard = PhoneDevice.createKeyboard(name, displayId)
+        virtualKeyboard = phone?.createKeyboard(name, displayId)
         if (virtualKeyboard != null) {
             Thread({ awaitDevice() }, "keyboard-$displayId").start()
             return
@@ -263,7 +263,7 @@ class Keyboard(private val displayId: Int, sessionId: String) {
 
     private fun flushLeftover(leftover: StringBuilder) {
         if (leftover.isEmpty()) return
-        if (!PhoneDevice.hasClipboard && phoneLocked()) Log.d("keyboard: ${leftover.codePointCount(0, leftover.length)} character(s) can't be typed while the phone is locked")
+        if (phone?.hasClipboard != true && phoneLocked()) Log.d("keyboard: ${leftover.codePointCount(0, leftover.length)} character(s) can't be typed while the phone is locked")
         else paste(leftover.toString(), restore = true)
         leftover.clear()
     }
@@ -327,13 +327,14 @@ class Keyboard(private val displayId: Int, sessionId: String) {
      * clipboard is used, which Android refuses while locked, so ⌘V types the text then.
      */
     fun paste(text: String?, restore: Boolean) {
-        if (PhoneDevice.hasClipboard) {
-            val previous = if (restore) PhoneDevice.getClip() else null
-            if (text != null) PhoneDevice.setClip(text)
+        val phone = phone
+        if (phone != null && phone.hasClipboard) {
+            val previous = if (restore) phone.getClip() else null
+            if (text != null) phone.setClip(text)
             press(KeyEvent.KEYCODE_V, CTRL)
             if (previous != null) Thread({
                 Thread.sleep(800) // the app reads the clip as it handles the paste
-                PhoneDevice.setClip(previous)
+                phone.setClip(previous)
             }, "clip-restore").start()
             return
         }

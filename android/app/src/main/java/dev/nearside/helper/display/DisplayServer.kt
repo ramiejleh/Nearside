@@ -28,8 +28,10 @@ object DisplayWire {
     const val TASK = 0x20; const val TASK_GONE = 0x21; const val PONG = 0x22; const val ERROR = 0x23
     // phone → Mac (video stream)
     const val CONFIG = 0x30; const val FRAME = 0x31
+    // phone → Mac (audio stream): AUDIO_CONFIG u32 rate, u8 channels; AUDIO u64 pts µs, Opus packet
+    const val AUDIO_CONFIG = 0x32; const val AUDIO = 0x33
 
-    const val ROLE_CONTROL = 1; const val ROLE_VIDEO = 2
+    const val ROLE_CONTROL = 1; const val ROLE_VIDEO = 2; const val ROLE_AUDIO = 3
     const val NAV_BACK = 1
     const val MOUSE_HOVER = 0; const val MOUSE_EXIT = 1; const val MOUSE_SECONDARY_DOWN = 2; const val MOUSE_SECONDARY_UP = 3
     const val GONE_EXITED = 0; const val GONE_MOVED = 1
@@ -169,13 +171,13 @@ class DisplayServer(
             conn.send(DisplayWire.HELLO, hmac("nearside-display-server:$role:$sid:$ticket"))
             when (role) {
                 DisplayWire.ROLE_CONTROL -> control(conn, sid)
-                DisplayWire.ROLE_VIDEO -> {
+                DisplayWire.ROLE_VIDEO, DisplayWire.ROLE_AUDIO -> {
                     // The control stream's OPEN may still be starting the session.
                     var session = sessions[sid]
                     for (i in 0 until 30) { if (session != null) break; Thread.sleep(100); session = sessions[sid] }
                     if (session == null) return conn.close()
                     conn.setTimeout(0)
-                    session.attachVideo(conn)
+                    if (role == DisplayWire.ROLE_VIDEO) session.attachVideo(conn) else session.attachAudio(conn)
                 }
                 else -> conn.close()
             }

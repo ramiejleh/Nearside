@@ -62,19 +62,27 @@ class DisplaySession(
     private val watcher = Executors.newSingleThreadScheduledExecutor { Thread(it, "display-$id-tasks") }
     private var awake: android.os.PowerManager.WakeLock? = null
     private var keyboard: Keyboard? = null
-    private var onDevice = false
+    /** This window's virtual device (null: a plain display, no Mac sound or locked clipboard). */
+    private var device: PhoneDevice? = null
     private var touchscreen: Any? = null
+    /** The window's sound (started with the display, if on the virtual device). */
+    private val audio = AudioStreamer("display-$id")
+    private var hasAudio = false
 
     fun start() {
         val surface = newEncoder()
         // On the virtual device (own clipboard and keyboard, works locked), else a plain display.
-        onDevice = PhoneDevice.acquire()
-        display = (if (onDevice) PhoneDevice.createDisplay("nearside-$id", w, h, dpi, surface, FLAGS) else null)
+        device = PhoneDevice.create("Nearside ${id.take(8)}")
+        display = device?.createDisplay("nearside-$id", w, h, dpi, surface, FLAGS)
+            ?: run { device?.close(); device = null; null }
             ?: Hidden.displayManager.createVirtualDisplay("nearside-$id", w, h, dpi, surface, FLAGS)
-        Log.d("display session $id: display $displayId ${w}x$h@$dpi for $target${if (onDevice) " (virtual device ${PhoneDevice.deviceId})" else ""}")
+        Log.d("display session $id: display $displayId ${w}x$h@$dpi for $target${device?.let { " (virtual device ${it.deviceId})" } ?: ""}")
         awake = Hidden.keepAwake(displayId, "Nearside:display-$id")
-        keyboard = Keyboard(displayId, id).also { it.create() }
-        touchscreen = PhoneDevice.createTouchscreen("Nearside Touch ${id.take(8)}", displayId, w, h)
+        keyboard = Keyboard(displayId, id, device).also { it.create() }
+        touchscreen = device?.createTouchscreen("Nearside Touch ${id.take(8)}", displayId, w, h)
+        // Before the launch, so the app's sound never starts on the phone's speaker.
+        hasAudio = device?.let { audio.start(it, display) } ?: false
+        if (device == null) audio.stop()
         Thread(::encodeLoop, "display-$id-video").start()
         launch()
         watcher.scheduleWithFixedDelay({ runCatching { watchTasks() } }, 300, 500, TimeUnit.MILLISECONDS)
@@ -95,6 +103,10 @@ class DisplaySession(
         video = conn
         lastConfig?.let { conn.send(DisplayWire.CONFIG, it) }
         requestKeyframe()
+    }
+
+    fun attachAudio(conn: DisplayWire.Conn) {
+        audio.attach(conn)
     }
 
     private fun controlLoop(conn: DisplayWire.Conn) {
@@ -311,7 +323,7 @@ class DisplaySession(
         display.resize(w, h, dpi)
         touchscreen?.let { // made for a size: a new one for the new size
             PhoneDevice.closeInput(it)
-            touchscreen = PhoneDevice.createTouchscreen("Nearside Touch ${id.take(8)}", displayId, w, h)
+            touchscreen = device?.createTouchscreen("Nearside Touch ${id.take(8)}", displayId, w, h)
         }
         display.surface = surface
         old?.let { runCatching { it.stop() }; it.release() }
@@ -508,12 +520,17 @@ class DisplaySession(
         if (closed) return
         closed = true
         val onOurs = Hidden.rootTasks().filter { it.displayId == displayId }
+        // Pause what's playing first: once the capture stops, the rest would come out of the
+        // phone's speaker (measured: 0.6 s of it), and an app going back to the phone shouldn't
+        // start making noise there.
+        if (hasAudio && Media.pause(onOurs.mapNotNull { it.packageName }.toSet())) Thread.sleep(150)
+        audio.stop()
         if (toPhone) onOurs.forEach { Hidden.moveTask(it.taskId, 0, onTop = false) }
         runCatching { awake?.release() }
         runCatching { keyboard?.close() }
         touchscreen?.let { PhoneDevice.closeInput(it) }
         runCatching { display.release() }
-        if (onDevice) PhoneDevice.release()
+        device?.close()
         codec?.let { runCatching { it.stop() }; it.release() }
         watcher.shutdownNow()
         ctl?.close()

@@ -16,8 +16,9 @@ public enum DisplayWire {
     // phone → Mac
     static let task: UInt8 = 0x20, taskGone: UInt8 = 0x21, pong: UInt8 = 0x22, error: UInt8 = 0x23
     static let config: UInt8 = 0x30, frame: UInt8 = 0x31
+    static let audioConfig: UInt8 = 0x32, audio: UInt8 = 0x33
 
-    public enum Role: UInt8, Sendable { case control = 1, video = 2 }
+    public enum Role: UInt8, Sendable { case control = 1, video = 2, audio = 3 }
     static let version: UInt16 = 1
     /// A 4K keyframe is far below this.
     public static let maxPacket = 16 * 1024 * 1024
@@ -37,6 +38,10 @@ public enum DisplayWire {
         case error(code: UInt8, message: String)
         case config(gen: UInt32, width: Int, height: Int, parameterSets: Data)
         case frame(gen: UInt32, ptsMicros: Int64, encodedMicros: Int64, keyframe: Bool, data: Data)
+        /// The audio stream's format (Opus).
+        case audioConfig(sampleRate: Int, channels: Int)
+        /// One Opus packet (20 ms).
+        case audio(ptsMicros: Int64, data: Data)
     }
 
     // MARK: Encoding
@@ -175,6 +180,12 @@ public enum DisplayWire {
             return .frame(gen: p.readBE(UInt32.self, at: s), ptsMicros: Int64(bitPattern: p.readBE(UInt64.self, at: s + 4)),
                           encodedMicros: Int64(bitPattern: p.readBE(UInt64.self, at: s + 12)),
                           keyframe: p[s + 20] != 0, data: p.subdata(in: s + 21..<p.endIndex))
+        case audioConfig where p.count >= 5:
+            let rate = Int(p.readBE(UInt32.self, at: s)), channels = Int(p[s + 4])
+            guard (8000...96000).contains(rate), (1...2).contains(channels) else { return nil }
+            return .audioConfig(sampleRate: rate, channels: channels)
+        case audio where p.count > 8:
+            return .audio(ptsMicros: Int64(bitPattern: p.readBE(UInt64.self, at: s)), data: p.subdata(in: s + 8..<p.endIndex))
         default:
             return nil
         }

@@ -28,7 +28,10 @@ class KeyTestActivity : Activity() {
         if (intent.hasExtra("tone")) playTone(intent.getIntExtra("tone", 8))
     }
 
-    /** A 440 Hz media tone for [seconds] (audio-capture tests). */
+    /**
+     * A 440 Hz media tone for [seconds] (audio-capture tests), with a media session that says it's
+     * playing and stops the tone on pause (tests that closing a window pauses its sound).
+     */
     private fun playTone(seconds: Int) = Thread {
         val rate = 48000
         val pcm = ShortArray(rate * seconds) { (Math.sin(2 * Math.PI * 440 * it / rate) * 12000).toInt().toShort() }
@@ -39,9 +42,23 @@ class KeyTestActivity : Activity() {
                 .setChannelMask(android.media.AudioFormat.CHANNEL_OUT_MONO).build())
             .setTransferMode(android.media.AudioTrack.MODE_STATIC).setBufferSizeInBytes(pcm.size * 2).build()
         track.write(pcm, 0, pcm.size)
+        val session = android.media.session.MediaSession(this, "KeyTestTone")
+        val done = java.util.concurrent.CountDownLatch(1)
+        session.setCallback(object : android.media.session.MediaSession.Callback() {
+            override fun onPause() {
+                android.util.Log.i("KeyTest", "tone paused by media session")
+                track.pause()
+                done.countDown()
+            }
+        }, android.os.Handler(android.os.Looper.getMainLooper()))
+        session.setPlaybackState(android.media.session.PlaybackState.Builder()
+            .setActions(android.media.session.PlaybackState.ACTION_PAUSE)
+            .setState(android.media.session.PlaybackState.STATE_PLAYING, 0, 1f).build())
+        session.isActive = true
         track.play()
         android.util.Log.i("KeyTest", "tone playing (session ${track.audioSessionId})")
-        Thread.sleep(seconds * 1000L + 200)
+        done.await(seconds * 1000L + 200, java.util.concurrent.TimeUnit.MILLISECONDS)
+        session.release()
         track.release()
     }.start()
 }

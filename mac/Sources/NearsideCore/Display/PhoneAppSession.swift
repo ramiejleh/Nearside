@@ -30,6 +30,8 @@ public final class PhoneAppSession: @unchecked Sendable {
     private let lock = NSLock()
     private var control: AdbStream?
     private var video: AdbStream?
+    private var audio: AdbStream?
+    private let player = AudioPlayer()
     private var state: State = .opening
     private var gen: UInt32 = 0
     private var closing = false
@@ -117,6 +119,7 @@ public final class PhoneAppSession: @unchecked Sendable {
             DispatchQueue.main.async { [self] in startPinging() }
             Thread { [self] in readControl(ctl, ctlStart) }.start()
             Thread { [self] in readVideo(vid, vidStart) }.start()
+            Thread { [self] in openAudio(adb, ticket) }.start()
             return true
         } catch {
             return false
@@ -198,12 +201,45 @@ public final class PhoneAppSession: @unchecked Sendable {
         streamEnded(stream)
     }
 
+    /// The sound: optional (a phone without the virtual device keeps it on its speaker and closes
+    /// this stream), so it never holds up or ends the session.
+    private func openAudio(_ adb: AdbConnection, _ ticket: Data) {
+        guard let stream = try? adb.open(Self.socket, window: 256 * 1024) else { return NSLog("Nearside: \(target): no audio stream") }
+        guard (try? stream.write(DisplayWire.hello(role: .audio, session: id, ticket: ticket, token: token))) != nil,
+              let start = awaitServer(stream, role: .audio, ticket: ticket) else {
+            NSLog("Nearside: \(target): audio stream refused (the phone keeps the sound)")
+            return stream.close()
+        }
+        let (late, previous) = lock.withLock { () -> (Bool, AdbStream?) in
+            if closing { return (true, nil) }
+            defer { audio = stream }
+            return (false, audio)
+        }
+        previous?.close()
+        if late { stream.close(); return }
+        var (reader, pending) = start
+        while true {
+            for message in pending {
+                switch message {
+                case let .audioConfig(rate, channels):
+                    NSLog("Nearside: phone app \(target): sound \(rate) Hz × \(channels)")
+                    player.configure(sampleRate: rate, channels: channels)
+                case let .audio(pts, data):
+                    player.play(data, ptsMicros: pts, receivedMicros: monotonicMicros())
+                default: break
+                }
+            }
+            guard !reader.failed, let data = try? stream.read() else { break }
+            pending = reader.feed(data)
+        }
+    }
+
     /// A stream dropped without us closing it: try to resume for a while, then give up.
     private func streamEnded(_ stream: AdbStream) {
         let resume = lock.withLock { () -> Bool in
             guard control === stream || video === stream, !closing else { return false }
-            control?.close(); video?.close()
-            control = nil; video = nil
+            control?.close(); video?.close(); audio?.close()
+            control = nil; video = nil; audio = nil
             switch state {
             case .gone, .failed, .closed: return false
             default: return true
@@ -316,8 +352,10 @@ public final class PhoneAppSession: @unchecked Sendable {
         let streams = lock.withLock { () -> (AdbStream?, AdbStream?) in
             closing = true
             state = .closed
+            audio?.close()
             return (control, video)
         }
+        player.stop()
         writer.async {
             try? streams.0?.write(DisplayWire.packet(DisplayWire.close))
             Thread.sleep(forTimeInterval: 0.2) // let it arrive before the stream closes

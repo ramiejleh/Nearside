@@ -203,7 +203,7 @@ object Main {
                     main.post {
                         lastSetByMac = text
                         clipboard.setPrimaryClip(ClipData.newPlainText("Nearside", text))
-                        dev.nearside.helper.display.PhoneDevice.setClip(text)
+                        dev.nearside.helper.display.PhoneDevice.setClipEverywhere(text)
                     }
                 }
             }

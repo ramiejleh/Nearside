@@ -238,6 +238,12 @@ final class AppWindowController: NSObject, NSWindowDelegate {
                 Trace.log("test size \(spec)")
                 return
             }
+            if mode == "close" {
+                let wait = Double(ProcessInfo.processInfo.environment["NEARSIDE_TEST_CLOSE_AFTER"] ?? "") ?? 0
+                try? await Task.sleep(for: .seconds(wait))
+                window.close() // as ⌘W: the app goes back to the phone (paused if it was playing)
+                return
+            }
             if mode == "resize" {
                 var frame = window.frame
                 frame.size.width = (frame.size.height * 0.9).rounded()
