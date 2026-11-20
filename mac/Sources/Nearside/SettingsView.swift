@@ -9,6 +9,8 @@ struct SettingsView: View {
     let openSetup: () -> Void
 
     @AppStorage("showArrivalToast") private var showArrivalToast = true
+    @State private var phoneAppsAuth = AuthGate.mode
+    @AppStorage(PhoneSpotlight.enabledKey) private var phoneAppsInSpotlight = true
     @State private var launchAtLogin = SMAppService.mainApp.status == .enabled
     @State private var confirmReset = false
 
@@ -31,6 +33,27 @@ struct SettingsView: View {
                         Text("Read and send SMS")
                         Text("In the Messages window (the bubble in the header). RCS chats stay in Google Messages.")
                     }
+                }
+
+                Section("Phone apps") {
+                    Picker(selection: Binding(get: { phoneAppsAuth }, set: { mode in
+                        Task { @MainActor in
+                            if await PhoneWindowManager.shared?.changeAuthMode(to: mode) == true { phoneAppsAuth = mode }
+                        }
+                    })) {
+                        ForEach(AuthGate.Mode.allCases, id: \.self) { Text($0.title).tag($0) }
+                    } label: {
+                        Text("Ask for Touch ID")
+                        Text("Phone apps work while your phone is locked, so your Mac asks before showing them.")
+                    }
+                    Toggle(isOn: $phoneAppsInSpotlight) {
+                        Text("Show in Spotlight")
+                        Text("Find your phone's apps in Spotlight and open them here.")
+                    }
+                    .onChange(of: phoneAppsInSpotlight) { _, on in
+                        if on { PhoneWindowManager.shared?.library.refresh() } else { PhoneSpotlight.remove() }
+                    }
+                    LabeledContent("Open the launcher", value: "⌥⌘P")
                 }
 
                 Section("History") {

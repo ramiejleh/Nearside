@@ -220,7 +220,7 @@ public final class SyncEngine {
             receiveFile(message)
         case "app":
             appLinked = message["linked"] as? Bool ?? false
-        case "display-ticket", "display-apps":
+        case "display-ticket", "display-apps", "display-icons":
             if let req = message["req"] as? Int, let waiting = displayRequests.removeValue(forKey: req) {
                 waiting.resume(returning: HelperReply(message))
             }

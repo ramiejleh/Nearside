@@ -35,6 +35,7 @@ final class HelperLink {
         isConnected = true
         verified = false
         buffer.removeAll()
+        scanned = 0
         // Mutual challenge-response (see helper/Main.kt `serve`). Nothing else is sent or
         // delivered until the helper has proven it knows the token.
         ourNonce = Self.randomHex()
@@ -119,13 +120,19 @@ final class HelperLink {
         return data
     }
 
+    /// Where the newline search resumes: long lines (icons) arrive in many chunks, and searching
+    /// from the start each time was quadratic.
+    private var scanned = 0
+
     private func drainLines() {
-        while let newline = buffer.firstIndex(of: 0x0A) {
+        while let newline = buffer[(buffer.startIndex + scanned)...].firstIndex(of: 0x0A) {
             let line = buffer[buffer.startIndex..<newline]
             buffer.removeSubrange(buffer.startIndex...newline)
+            scanned = 0
             guard let object = try? JSONSerialization.jsonObject(with: line) as? [String: Any] else { continue }
             if verified { onMessage?(object) } else { handshake(object) }
         }
+        scanned = buffer.count
     }
 
     private func reset() {
@@ -134,6 +141,7 @@ final class HelperLink {
         verified = false
         stream = nil
         buffer.removeAll()
+        scanned = 0
         if wasConnected { onDisconnect?() }
     }
 }

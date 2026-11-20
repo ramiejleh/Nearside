@@ -1,36 +1,84 @@
 import NearsideCore
 import AppKit
-import SwiftUI
+import Carbon
+@preconcurrency import CoreSpotlight
+import CryptoKit
+import UniformTypeIdentifiers
 
-/// Owns the phone-app windows. While any is open Nearside is a regular app (Dock icon, ⌘-Tab),
-/// as phone apps should feel like Mac apps; with none it goes back to living in the menu bar.
+/// Owns the phone-app windows. While any is open Nearside is a regular app (Dock icon, ⌘-Tab,
+/// menus), as phone apps should feel like Mac apps; with none it goes back to the menu bar.
+/// Also the ways in: the launcher (⌥⌘P), the Dock menu and Spotlight, all behind the AuthGate.
 @MainActor
 final class PhoneWindowManager {
     /// For window-level actions ("Reopen") that need to open a new window.
     private(set) static weak var shared: PhoneWindowManager?
 
     private let engine: SyncEngine
-    private var windows: [AppWindowController] = []
-    private var picker: NSWindow?
+    let library: PhoneAppLibrary
+    private(set) var windows: [AppWindowController] = []
+    private(set) lazy var launcher = PhoneLauncher(library: library, engine: engine) { [weak self] app in self?.open(app) }
+    private let auth = AuthGate()
+    private var hotKey: HotKey?
+    private var opening: Set<String> = []
 
     init(engine: SyncEngine) {
         self.engine = engine
+        library = PhoneAppLibrary(engine: engine)
         Self.shared = self
+        library.onChange = { apps in PhoneSpotlight.index(apps, icon: { [weak self] in self?.library.iconPNG($0) }) }
+        auth.onLock = { [weak self] in self?.windows.forEach { $0.setLocked(true) } }
+        // Option-Command-P from anywhere.
+        hotKey = HotKey(keyCode: kVK_ANSI_P, modifiers: cmdKey | optionKey) { [weak self] in self?.toggleLauncher() }
     }
+
+    func toggleLauncher() { launcher.toggle() }
+
+    func showLauncher() { launcher.show() }
 
     func open(_ app: PhoneApp) {
         // One window per app: a second open brings the existing one forward.
         if let existing = windows.first(where: { $0.app.package == app.package }) {
-            existing.show()
+            Task { if await auth.authenticate(opening: false) { unlockWindows(); existing.show() } }
             return
         }
-        guard let renderer = MetalRenderer(),
-              let controller = AppWindowController(app: app, engine: engine, renderer: renderer,
-                                                   onClosed: { [weak self] in self?.closed($0) }) else { return }
-        windows.append(controller)
-        updateActivationPolicy()
-        controller.show()
+        guard !opening.contains(app.package) else { return }
+        opening.insert(app.package)
+        Task { [weak self] in
+            guard let self else { return }
+            defer { opening.remove(app.package) }
+            guard await auth.authenticate(opening: true) else { return }
+            unlockWindows()
+            guard let renderer = MetalRenderer(),
+                  let controller = AppWindowController(app: app, engine: engine, renderer: renderer, icon: library.icons[app.id],
+                                                       onClosed: { [weak self] in self?.closed($0) }) else { return }
+            library.markUsed(app)
+            windows.append(controller)
+            updateActivationPolicy()
+            controller.show()
+        }
     }
+
+    /// From Spotlight: the app's `pkg/activity`.
+    func open(id: String) {
+        if let app = library.app(id: id) { return open(app) }
+        let parts = id.split(separator: "/", maxSplits: 1).map(String.init)
+        guard parts.count == 2 else { return }
+        open(PhoneApp(package: parts[0], activity: parts[1], label: parts[0]))
+    }
+
+    /// A covered window's "Unlock" button.
+    func unlock() {
+        Task { if await auth.authenticate(opening: false) { unlockWindows() } }
+    }
+
+    /// Settings: lowering when Touch ID is asked needs Touch ID.
+    func changeAuthMode(to mode: AuthGate.Mode) async -> Bool {
+        if mode < AuthGate.mode, !(await auth.confirm("change when Nearside asks before showing your phone's apps")) { return false }
+        UserDefaults.standard.set(mode.rawValue, forKey: AuthGate.modeKey)
+        return true
+    }
+
+    private func unlockWindows() { windows.forEach { $0.setLocked(false) } }
 
     /// The phone's "Stop" button: every window closes (its app is already back on the phone).
     func closeAll() {
@@ -50,81 +98,67 @@ final class PhoneWindowManager {
         if wanted == .regular { NSApp.activate() } // otherwise the menu bar may not switch over
     }
 
-    // MARK: - Picker (a plain list for now; the designed launcher replaces it)
-
-    func showPicker() {
-        if let picker {
-            picker.makeKeyAndOrderFront(nil)
-            NSApp.activate()
-            return
+    /// The Dock icon's menu: the open phone apps, then "Open Phone App…".
+    func dockMenu() -> NSMenu {
+        let menu = NSMenu()
+        for controller in windows {
+            let item = NSMenuItem(title: controller.app.label, action: #selector(AppWindowController.bringForward(_:)), keyEquivalent: "")
+            item.target = controller
+            item.image = library.icons[controller.app.id].map(Self.menuIcon)
+            menu.addItem(item)
         }
-        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 340, height: 460),
-                              styleMask: [.titled, .closable], backing: .buffered, defer: false)
-        window.title = "Open a Phone App"
-        window.isReleasedWhenClosed = false
-        window.contentView = NSHostingView(rootView: AppPickerView(engine: engine) { [weak self, weak window] app in
-            window?.close()
-            self?.open(app)
-        })
-        window.center()
-        window.makeKeyAndOrderFront(nil)
-        NSApp.activate()
-        picker = window
+        if !windows.isEmpty { menu.addItem(.separator()) }
+        let open = NSMenuItem(title: "Open Phone App…", action: #selector(AppDelegate.showPhoneLauncher(_:)), keyEquivalent: "")
+        menu.addItem(open)
+        return menu
+    }
+
+    static func menuIcon(_ image: NSImage) -> NSImage {
+        let small = image.copy() as! NSImage
+        small.size = NSSize(width: 16, height: 16)
+        return small
     }
 }
 
-struct AppPickerView: View {
-    let engine: SyncEngine
-    let open: (PhoneApp) -> Void
-    @State private var apps: [PhoneApp]?
-    @State private var failed = false
-    @State private var query = ""
-    @State private var selection: PhoneApp.ID?
+/// Phone apps in the Mac's Spotlight: "Instagram — Phone app" opens it in a window here.
+enum PhoneSpotlight {
+    static let domain = "phone-apps"
+    static let enabledKey = "PhoneApps.spotlight"
 
-    private var filtered: [PhoneApp] {
-        guard let apps else { return [] }
-        let q = query.trimmingCharacters(in: .whitespaces)
-        return q.isEmpty ? apps : apps.filter { $0.label.localizedCaseInsensitiveContains(q) }
-    }
+    static var enabled: Bool { UserDefaults.standard.object(forKey: enabledKey) as? Bool ?? true }
 
-    var body: some View {
-        VStack(spacing: 0) {
-            TextField("Search", text: $query)
-                .textFieldStyle(.roundedBorder)
-                .padding(12)
-                .onSubmit { if let first = filtered.first { open(first) } }
-            Divider()
-            if failed {
-                VStack(spacing: 10) {
-                    Text("Couldn't get your phone's apps").font(.headline)
-                    Text("Check that your phone is connected.").font(.subheadline).foregroundStyle(.secondary)
-                    Button("Try Again") { Task { await load() } }
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else if apps == nil {
-                ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else {
-                List(filtered, selection: $selection) { app in
-                    Text(app.label)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .contentShape(Rectangle())
-                        .onTapGesture(count: 2) { open(app) }
-                        .tag(app.id)
-                }
-                .onKeyPress(.return) {
-                    guard let id = selection, let app = filtered.first(where: { $0.id == id }) else { return .ignored }
-                    open(app)
-                    return .handled
-                }
+    @MainActor
+    static func index(_ apps: [PhoneApp], icon: (PhoneApp) -> Data?) {
+        let index = CSSearchableIndex.default()
+        guard enabled else {
+            index.deleteSearchableItems(withDomainIdentifiers: [domain]) { _ in }
+            return
+        }
+        // Re-index only when the list or its icons changed.
+        let signature = apps.map { "\($0.id)|\($0.label)|\($0.version)|\(icon($0) != nil)" }.joined(separator: "\n")
+        let key = "PhoneApps.spotlightSignature"
+        let hash = SHA256.hash(data: Data(signature.utf8)).map { String(format: "%02x", $0) }.joined()
+        guard UserDefaults.standard.string(forKey: key) != hash else { return }
+        let items = apps.map { app in
+            let attributes = CSSearchableItemAttributeSet(contentType: .application)
+            attributes.title = app.label
+            attributes.displayName = app.label
+            attributes.contentDescription = "Phone app · opens in a window on this Mac"
+            attributes.keywords = ["phone", "android", app.package]
+            attributes.thumbnailData = icon(app)
+            return CSSearchableItem(uniqueIdentifier: app.id, domainIdentifier: domain, attributeSet: attributes)
+        }
+        index.deleteSearchableItems(withDomainIdentifiers: [domain]) { _ in
+            index.indexSearchableItems(items) { error in
+                if let error { NSLog("Nearside: Spotlight indexing failed: \(error)") }
+                else { NSLog("Nearside: \(items.count) phone apps in Spotlight") }
             }
         }
-        .task { await load() }
+        UserDefaults.standard.set(hash, forKey: key)
     }
 
-    private func load() async {
-        failed = false
-        apps = nil
-        apps = await engine.phoneApps()
-        failed = apps == nil
+    static func remove() {
+        CSSearchableIndex.default().deleteSearchableItems(withDomainIdentifiers: [domain]) { _ in }
+        UserDefaults.standard.removeObject(forKey: "PhoneApps.spotlightSignature")
     }
 }

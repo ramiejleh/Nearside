@@ -16,15 +16,15 @@ final class AppWindowController: NSObject, NSWindowDelegate {
     private var resizeWork: DispatchWorkItem?
     private let onClosed: (AppWindowController) -> Void
     private var cropPixels = 0
+    /// Covered after the Mac slept or locked, until Touch ID (AuthGate).
+    private var locked = false
 
     /// Apps that leave the phone's status-bar height empty at the top of any window. A per-app
     /// default ("PhoneApp.hideTopBand.<package>") overrides the list either way.
     static let topBandApps: Set<String> = ["com.instagram.android"]
 
     private var topBandDp: Int {
-        let key = "PhoneApp.hideTopBand.\(app.package)"
-        let hide = UserDefaults.standard.object(forKey: key) as? Bool ?? Self.topBandApps.contains(app.package)
-        return hide ? PhoneInfo.statusBarDp : 0
+        hidesTopBand ? PhoneInfo.statusBarDp : 0
     }
 
     private func displaySize() -> (width: Int, height: Int, dpi: Int, cropPixels: Int) {
@@ -33,7 +33,8 @@ final class AppWindowController: NSObject, NSWindowDelegate {
 
     /// 75 % of the screen's height (at most 900 pt), a little wider than a phone, unless this app has
     /// a saved size.
-    init?(app: PhoneApp, engine: SyncEngine, renderer: MetalRenderer, onClosed: @escaping (AppWindowController) -> Void) {
+    init?(app: PhoneApp, engine: SyncEngine, renderer: MetalRenderer, icon: NSImage?,
+          onClosed: @escaping (AppWindowController) -> Void) {
         self.app = app
         self.onClosed = onClosed
         let screen = NSScreen.main?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
@@ -50,6 +51,12 @@ final class AppWindowController: NSObject, NSWindowDelegate {
         window.collectionBehavior.insert(.fullScreenPrimary)
         window.setFrameAutosaveName("PhoneApp-\(app.package)")
         if !window.setFrameUsingName("PhoneApp-\(app.package)") { window.center() }
+        if let icon {
+            // The app's icon in the title bar (as a document's) and on the minimised window.
+            window.representedURL = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent(app.label)
+            window.standardWindowButton(.documentIconButton)?.image = icon
+            window.miniwindowImage = icon
+        }
 
         stream = StreamView(renderer: renderer)
         let container = NSView()
@@ -102,9 +109,21 @@ final class AppWindowController: NSObject, NSWindowDelegate {
         Trace.log("window shows \(new)")
         if new == .showing, state != .showing { testInputIfAsked() }
         state = new
-        overlay.rootView = AppWindowOverlay(state: new, label: app.label, reopen: { [weak self] in self?.reopen() },
-                                            close: { [weak self] in self?.window.close() })
-        overlay.isHidden = new == .showing
+        overlay.rootView = AppWindowOverlay(state: new, label: app.label, locked: locked,
+                                            reopen: { [weak self] in self?.reopen() },
+                                            close: { [weak self] in self?.window.close() },
+                                            unlock: { PhoneWindowManager.shared?.unlock() })
+        overlay.isHidden = new == .showing && !locked
+    }
+
+    /// Covers the app (and stops its video) while the Mac is locked to phone apps.
+    func setLocked(_ locked: Bool) {
+        guard locked != self.locked else { return }
+        self.locked = locked
+        if locked { stream.cancelInput() }
+        stream.session = locked ? nil : session // no keys reach the app either
+        session.setVisible(!locked && window.occlusionState.contains(.visible))
+        render(state)
     }
 
     /// Test hook: NEARSIDE_TEST_INPUT=1 taps the middle, then drags up, through the same path
@@ -224,7 +243,7 @@ final class AppWindowController: NSObject, NSWindowDelegate {
                 frame.size.width = (frame.size.height * 0.9).rounded()
                 window.setFrame(frame, display: true) // not a live resize, like zoom or tiling
                 try? await Task.sleep(for: .seconds(3))
-                goBack() // then Back on the app's first screen
+                goBack(nil) // then Back on the app's first screen
                 return
             }
             if mode == "click" {
@@ -274,7 +293,24 @@ final class AppWindowController: NSObject, NSWindowDelegate {
         window.toolbarStyle = .unifiedCompact
     }
 
-    @objc private func goBack() { session.back() }
+    @objc func goBack(_ sender: Any?) { if !locked { session.back() } }
+
+    /// Dock menu: this window to the front.
+    @objc func bringForward(_ sender: Any?) {
+        if window.isMiniaturized { window.deminiaturize(nil) }
+        show()
+    }
+
+    private var hidesTopBand: Bool {
+        UserDefaults.standard.object(forKey: "PhoneApp.hideTopBand.\(app.package)") as? Bool ?? Self.topBandApps.contains(app.package)
+    }
+
+    /// View → Hide Top Bar: crop (or stop cropping) the empty band some apps keep at the top.
+    @objc func toggleTopBar(_ sender: Any?) {
+        UserDefaults.standard.set(!hidesTopBand, forKey: "PhoneApp.hideTopBand.\(app.package)")
+        resizeWork?.cancel()
+        applySize()
+    }
 
     // MARK: - Window events
 
@@ -288,15 +324,16 @@ final class AppWindowController: NSObject, NSWindowDelegate {
     /// Let the hand settle, then give the phone the window's new size.
     private func scheduleResize() {
         resizeWork?.cancel()
-        let work = DispatchWorkItem { [weak self] in
-            guard let self else { return }
-            let size = displaySize()
-            cropPixels = size.cropPixels
-            stream.renderer.cropPixels = size.cropPixels
-            session.resize(width: size.width, height: size.height, dpi: size.dpi, cropPixels: size.cropPixels)
-        }
+        let work = DispatchWorkItem { [weak self] in self?.applySize() }
         resizeWork = work
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.25, execute: work)
+    }
+
+    private func applySize() {
+        let size = displaySize()
+        cropPixels = size.cropPixels
+        stream.renderer.cropPixels = size.cropPixels
+        session.resize(width: size.width, height: size.height, dpi: size.dpi, cropPixels: size.cropPixels)
     }
 
     func windowDidChangeBackingProperties(_ notification: Notification) {
@@ -324,13 +361,29 @@ final class AppWindowController: NSObject, NSWindowDelegate {
     @objc private func occlusionChanged() {
         let visible = window.occlusionState.contains(.visible)
         NSLog("Nearside: phone app window \(app.package) \(visible ? "visible" : "hidden")")
-        session.setVisible(visible)
+        session.setVisible(visible && !locked)
     }
+
+    // The title-bar icon is only an icon: no path menu, no dragging a file.
+    func window(_ window: NSWindow, shouldPopUpDocumentPathMenu menu: NSMenu) -> Bool { false }
+    func window(_ window: NSWindow, shouldDragDocumentWith event: NSEvent, from dragImageLocation: NSPoint,
+                with pasteboard: NSPasteboard) -> Bool { false }
 
     func windowWillClose(_ notification: Notification) {
         session.close() // the app goes back to the phone, under what's showing there
         NotificationCenter.default.removeObserver(self)
         onClosed(self)
+    }
+}
+
+extension AppWindowController: NSMenuItemValidation {
+    func validateMenuItem(_ item: NSMenuItem) -> Bool {
+        if item.action == #selector(toggleTopBar(_:)) {
+            item.state = hidesTopBand ? .on : .off
+            return PhoneInfo.statusBarDp > 0 && !locked
+        }
+        if item.action == #selector(goBack(_:)) { return !locked && state == .showing }
+        return true
     }
 }
 
@@ -349,7 +402,7 @@ extension AppWindowController: NSToolbarDelegate {
         item.image = NSImage(systemSymbolName: "chevron.backward", accessibilityDescription: "Back")
         item.isBordered = true
         item.target = self
-        item.action = #selector(goBack)
+        item.action = #selector(goBack(_:))
         return item
     }
 }
@@ -364,14 +417,24 @@ final class OverlayHostingView<Content: View>: NSHostingView<Content> {
 struct AppWindowOverlay: View {
     let state: PhoneAppSession.State
     let label: String
+    var locked = false
     var reopen: () -> Void = {}
     var close: () -> Void = {}
+    var unlock: () -> Void = {}
 
     var body: some View {
         ZStack {
             Rectangle().fill(.background.opacity(state == .reconnecting ? 0.55 : 1))
                 .background(.ultraThinMaterial)
             VStack(spacing: 14) {
+                if locked {
+                    Image(systemName: "lock.fill")
+                        .font(.system(size: 30, weight: .light)).foregroundStyle(.secondary)
+                    Text("\(label) is locked").font(.headline)
+                    Text("Your Mac was locked. Unlock to keep using your phone's apps.")
+                        .font(.subheadline).foregroundStyle(.secondary).multilineTextAlignment(.center)
+                    Button("Unlock", action: unlock).keyboardShortcut(.defaultAction)
+                } else {
                 switch state {
                 case .opening, .showing, .closed:
                     ProgressView().controlSize(.regular)
@@ -397,6 +460,7 @@ struct AppWindowOverlay: View {
                         Button("Try Again", action: reopen).keyboardShortcut(.defaultAction)
                         Button("Close Window", action: close)
                     }
+                }
                 }
             }
             .padding(24)

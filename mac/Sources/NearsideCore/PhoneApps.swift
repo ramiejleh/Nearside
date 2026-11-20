@@ -8,31 +8,73 @@ struct HelperReply: @unchecked Sendable {
 }
 
 /// An app on the phone that can open in a Mac window.
-public struct PhoneApp: Identifiable, Hashable, Sendable {
+public struct PhoneApp: Identifiable, Hashable, Sendable, Codable {
     public let package: String
     public let activity: String
     public let label: String
+    /// The package's last update on the phone (ms): its icon is cached per version.
+    public var version: Int64
+    /// When it was last in the foreground (on the phone or a Mac window), if in the last 30 days.
+    public var lastUsed: Date?
     public var id: String { "\(package)/\(activity)" }
 
-    public init(package: String, activity: String, label: String) {
+    public init(package: String, activity: String, label: String, version: Int64 = 0, lastUsed: Date? = nil) {
         self.package = package
         self.activity = activity
         self.label = label
+        self.version = version
+        self.lastUsed = lastUsed
+    }
+}
+
+/// An app's icon as the phone drew it: a square PNG. Adaptive icons are full-bleed and unmasked
+/// (the Mac shapes them); others keep their own shape on transparency.
+public struct PhoneAppIcon: Sendable {
+    public let png: Data
+    public let adaptive: Bool
+}
+
+/// Icons on disk, one file per app and version (Application Support/Nearside/PhoneAppIcons).
+public enum PhoneIconCache {
+    static let directory = Paths.support.appendingPathComponent("PhoneAppIcons")
+
+    /// "pkg~activity@version", plus ".a" for adaptive icons.
+    static func name(id: String, version: Int64, adaptive: Bool) -> String {
+        "\(id.replacingOccurrences(of: "/", with: "~"))@\(version)\(adaptive ? ".a" : "").png"
+    }
+
+    public static func cached(_ app: PhoneApp) -> PhoneAppIcon? {
+        for adaptive in [true, false] {
+            let url = directory.appendingPathComponent(name(id: app.id, version: app.version, adaptive: adaptive))
+            if let png = try? Data(contentsOf: url) { return PhoneAppIcon(png: png, adaptive: adaptive) }
+        }
+        return nil
+    }
+
+    static func store(id: String, version: Int64, _ icon: PhoneAppIcon) {
+        let fm = FileManager.default
+        try? fm.createDirectory(at: directory, withIntermediateDirectories: true)
+        // Older versions of this app's icon go.
+        let prefix = id.replacingOccurrences(of: "/", with: "~") + "@"
+        for old in (try? fm.contentsOfDirectory(atPath: directory.path)) ?? [] where old.hasPrefix(prefix) {
+            try? fm.removeItem(at: directory.appendingPathComponent(old))
+        }
+        try? icon.png.write(to: directory.appendingPathComponent(name(id: id, version: version, adaptive: icon.adaptive)))
     }
 }
 
 extension SyncEngine {
     /// Asks the helper something on the control link and waits (5 s by default) for its answer.
-    private func displayRequest(_ type: String, timeout: Duration = .seconds(5)) async -> [String: Any]? {
-        await displayReply(type, timeout: timeout)?.message
+    private func displayRequest(_ type: String, _ fields: [String: Any] = [:], timeout: Duration = .seconds(5)) async -> [String: Any]? {
+        await displayReply(type, fields: HelperReply(fields), timeout: timeout)?.message
     }
 
-    private func displayReply(_ type: String, timeout: Duration) async -> HelperReply? {
+    private func displayReply(_ type: String, fields: HelperReply, timeout: Duration) async -> HelperReply? {
         guard state == .connected else { return nil }
         let req = nextDisplayRequestID()
         return await withCheckedContinuation { continuation in
             registerDisplayRequest(req, continuation)
-            sendToHelper(["t": type, "req": req])
+            sendToHelper(fields.message.merging(["t": type, "req": req]) { $1 })
             Task { @MainActor in
                 try? await Task.sleep(for: timeout)
                 self.finishDisplayRequest(req, with: nil)
@@ -57,7 +99,35 @@ extension SyncEngine {
         guard let list = reply?["apps"] as? [[String: Any]] else { return nil }
         return list.compactMap { entry in
             guard let pkg = entry["pkg"] as? String, let activity = entry["activity"] as? String else { return nil }
-            return PhoneApp(package: pkg, activity: activity, label: entry["label"] as? String ?? pkg)
+            let used = (entry["used"] as? NSNumber)?.doubleValue ?? 0
+            return PhoneApp(package: pkg, activity: activity, label: entry["label"] as? String ?? pkg,
+                            version: (entry["ver"] as? NSNumber)?.int64Value ?? 0,
+                            lastUsed: used > 0 ? Date(timeIntervalSince1970: used / 1000) : nil)
+        }
+    }
+
+    /// Icons for `apps`: from the disk cache, the rest from the phone (a dozen per request, as each
+    /// is ~30 KB of base64), cached as they come. Apps the phone couldn't draw are left out.
+    public func phoneAppIcons(for apps: [PhoneApp], onBatch: @MainActor ([String: PhoneAppIcon]) -> Void) async {
+        var missing: [PhoneApp] = []
+        var cached: [String: PhoneAppIcon] = [:]
+        for app in apps {
+            if let icon = PhoneIconCache.cached(app) { cached[app.id] = icon } else { missing.append(app) }
+        }
+        if !cached.isEmpty { onBatch(cached) }
+        for start in stride(from: 0, to: missing.count, by: 12) {
+            let batch = Array(missing[start..<min(start + 12, missing.count)])
+            guard let reply = await displayRequest("display-icons", ["ids": batch.map(\.id)], timeout: .seconds(20)),
+                  let list = reply["icons"] as? [[String: Any]] else { return }
+            var icons: [String: PhoneAppIcon] = [:]
+            for entry in list {
+                guard let id = entry["id"] as? String, let b64 = entry["png"] as? String,
+                      let png = Data(base64Encoded: b64) else { continue }
+                let icon = PhoneAppIcon(png: png, adaptive: entry["adaptive"] as? Bool ?? false)
+                PhoneIconCache.store(id: id, version: (entry["ver"] as? NSNumber)?.int64Value ?? 0, icon)
+                icons[id] = icon
+            }
+            onBatch(icons)
         }
     }
 

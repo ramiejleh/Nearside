@@ -1,4 +1,5 @@
 import NearsideCore
+import CoreSpotlight
 import SwiftUI
 
 /// Plain AppKit entry point. A SwiftUI `App` must declare a scene, and the only invisible-ish
@@ -14,26 +15,61 @@ enum NearsideMain {
         app.run()
     }
 
-    /// Never visible for a menu-bar app, but its key equivalents are what give the panel's
-    /// text fields ⌘X/⌘C/⌘V/⌘A/⌘Z, and ⌘Q quits.
+    /// Shown while phone-app windows are open (Nearside is then a regular app). In the menu-bar
+    /// mode it's never visible, but its key equivalents still give the panel's text fields
+    /// ⌘X/⌘C/⌘V/⌘A/⌘Z, and ⌘Q quits.
     @MainActor private static func makeMainMenu() -> NSMenu {
         let main = NSMenu()
-        let appItem = NSMenuItem()
-        appItem.submenu = NSMenu()
-        appItem.submenu?.addItem(withTitle: "Quit Nearside", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
-        main.addItem(appItem)
+        func submenu(_ title: String, _ items: [NSMenuItem]) -> NSMenu {
+            let menu = NSMenu(title: title)
+            items.forEach(menu.addItem)
+            let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")
+            item.submenu = menu
+            main.addItem(item)
+            return menu
+        }
+        func item(_ title: String, _ action: Selector?, _ key: String = "", _ modifiers: NSEvent.ModifierFlags = .command) -> NSMenuItem {
+            let item = NSMenuItem(title: title, action: action, keyEquivalent: key)
+            item.keyEquivalentModifierMask = modifiers
+            return item
+        }
 
-        let editItem = NSMenuItem()
-        let edit = NSMenu(title: "Edit")
-        edit.addItem(withTitle: "Undo", action: Selector(("undo:")), keyEquivalent: "z")
-        edit.addItem(withTitle: "Redo", action: Selector(("redo:")), keyEquivalent: "Z")
-        edit.addItem(.separator())
-        edit.addItem(withTitle: "Cut", action: #selector(NSText.cut(_:)), keyEquivalent: "x")
-        edit.addItem(withTitle: "Copy", action: #selector(NSText.copy(_:)), keyEquivalent: "c")
-        edit.addItem(withTitle: "Paste", action: #selector(NSText.paste(_:)), keyEquivalent: "v")
-        edit.addItem(withTitle: "Select All", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
-        editItem.submenu = edit
-        main.addItem(editItem)
+        _ = submenu("Nearside", [
+            item("About Nearside", #selector(NSApplication.orderFrontStandardAboutPanel(_:))),
+            .separator(),
+            item("Hide Nearside", #selector(NSApplication.hide(_:)), "h"),
+            item("Hide Others", #selector(NSApplication.hideOtherApplications(_:)), "h", [.command, .option]),
+            item("Show All", #selector(NSApplication.unhideAllApplications(_:))),
+            .separator(),
+            item("Quit Nearside", #selector(NSApplication.terminate(_:)), "q"),
+        ])
+        _ = submenu("File", [
+            item("Open Phone App…", #selector(AppDelegate.showPhoneLauncher(_:)), "p", [.command, .option]),
+            .separator(),
+            item("Close Window", #selector(NSWindow.performClose(_:)), "w"),
+        ])
+        _ = submenu("Edit", [
+            item("Undo", Selector(("undo:")), "z"),
+            item("Redo", Selector(("redo:")), "Z"),
+            .separator(),
+            item("Cut", #selector(NSText.cut(_:)), "x"),
+            item("Copy", #selector(NSText.copy(_:)), "c"),
+            item("Paste", #selector(NSText.paste(_:)), "v"),
+            item("Select All", #selector(NSText.selectAll(_:)), "a"),
+        ])
+        _ = submenu("View", [
+            item("Back", #selector(AppWindowController.goBack(_:)), "["),
+            item("Hide Top Bar", #selector(AppWindowController.toggleTopBar(_:))),
+            .separator(),
+            item("Enter Full Screen", #selector(NSWindow.toggleFullScreen(_:)), "f", [.command, .control]),
+        ])
+        let window = submenu("Window", [
+            item("Minimize", #selector(NSWindow.performMiniaturize(_:)), "m"),
+            item("Zoom", #selector(NSWindow.performZoom(_:))),
+            .separator(),
+            item("Bring All to Front", #selector(NSApplication.arrangeInFront(_:))),
+        ])
+        NSApplication.shared.windowsMenu = window
         return main
     }
 }
@@ -54,6 +90,35 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         self.engine = engine
         statusItem = StatusItemController(engine: engine)
         openAppForTesting(engine)
+        snapshotLauncherForTesting(engine)
+    }
+
+    @objc func showPhoneLauncher(_ sender: Any?) { statusItem?.phoneApps.showLauncher() }
+
+    func applicationDockMenu(_ sender: NSApplication) -> NSMenu? { statusItem?.phoneApps.dockMenu() }
+
+    /// A phone app picked in Spotlight.
+    func application(_ application: NSApplication, continue userActivity: NSUserActivity,
+                     restorationHandler: @escaping ([any NSUserActivityRestoring]) -> Void) -> Bool {
+        guard userActivity.activityType == CSSearchableItemActionType,
+              let id = userActivity.userInfo?[CSSearchableItemActivityIdentifier] as? String else { return false }
+        statusItem?.phoneApps.open(id: id)
+        return true
+    }
+
+    /// Test hook: NEARSIDE_TEST_LAUNCHER=<png> shows the launcher once connected and saves its
+    /// picture (NEARSIDE_TEST_QUERY types a search; NEARSIDE_TEST_MOVES="down,right" moves).
+    private func snapshotLauncherForTesting(_ engine: SyncEngine) {
+        let env = ProcessInfo.processInfo.environment
+        guard let path = env["NEARSIDE_TEST_LAUNCHER"] else { return }
+        Task { @MainActor in
+            while engine.state != .connected { try? await Task.sleep(for: .milliseconds(300)) }
+            let moves: [LauncherGrid.Move] = (env["NEARSIDE_TEST_MOVES"] ?? "").split(separator: ",").compactMap {
+                switch $0 { case "up": .up; case "down": .down; case "left": .left; case "right": .right; default: nil }
+            }
+            await statusItem?.phoneApps.launcher.snapshotForTesting(to: URL(fileURLWithPath: path),
+                                                                    query: env["NEARSIDE_TEST_QUERY"] ?? "", moves: moves)
+        }
     }
 
     /// Test hook: NEARSIDE_OPEN_APP=<package> opens that phone app once the phone is connected.
@@ -86,7 +151,7 @@ final class StatusItemController: NSObject {
     private var shelf: DropShelfController?
     private lazy var messagesWindow = MessagesWindowController(engine: engine)
     private lazy var setupWindow = SetupWindowController(engine: engine)
-    private lazy var phoneApps = PhoneWindowManager(engine: engine)
+    private(set) lazy var phoneApps = PhoneWindowManager(engine: engine)
 
     init(engine: SyncEngine) {
         self.engine = engine
@@ -101,7 +166,7 @@ final class StatusItemController: NSObject {
             self?.setupWindow.show()
         }, openApps: { [weak self] in
             self?.popover.performClose(nil)
-            self?.phoneApps.showPicker()
+            self?.phoneApps.showLauncher()
         }))
         popover.contentSize = NSSize(width: 380, height: 540)
 
@@ -130,6 +195,7 @@ final class StatusItemController: NSObject {
 
         updateIcon()
         engine.onPhoneAppsStop = { [weak self] in self?.phoneApps.closeAll() }
+        _ = phoneApps // its hot key (⌥⌘P) works from launch
 
         // First run (or re-pairing needed): open the setup wizard straight away.
         if engine.state == .needsSetup {

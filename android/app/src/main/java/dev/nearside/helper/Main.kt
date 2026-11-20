@@ -110,7 +110,7 @@ object Main {
         // show that: no app link (no notification) means no new sessions, and a relink re-posts it.
         displays = DisplayServer(token, canNotify = { AppLink.isLinked }) { open ->
             AppLink.deliver(JSONObject().put("t", "display-state").put("open", open))
-        }.also { it.start(); it.warmUp() }
+        }.also { it.start(); dev.nearside.helper.display.AppCatalog.warmUp() }
         AppLink.stopApps = { displays.closeAll() }
         AppLink.onUnlinked = {
             // Without the app, the phone shows nothing about apps open on the Mac: if it doesn't
@@ -225,11 +225,17 @@ object Main {
                 .put("ticket", displays.issueTicket() ?: JSONObject.NULL))
             "display-apps" -> Thread {
                 val started = System.currentTimeMillis()
-                val reply = runCatching { displays.apps() }.getOrElse {
+                val reply = runCatching { dev.nearside.helper.display.AppCatalog.apps() }.getOrElse {
                     Log.d("display-apps failed: $it")
                     JSONObject().put("t", "display-apps").put("error", it.toString())
                 }
                 Log.d("display-apps: ${reply.optJSONArray("apps")?.length() ?: 0} apps in ${System.currentTimeMillis() - started} ms")
+                send(reply.put("req", msg.opt("req")))
+            }.start()
+            "display-icons" -> Thread {
+                val ids = msg.optJSONArray("ids")?.let { a -> List(a.length()) { a.optString(it) } }.orEmpty().take(24)
+                val reply = runCatching { dev.nearside.helper.display.AppCatalog.icons(ids) }
+                    .getOrElse { JSONObject().put("t", "display-icons").put("error", it.toString()) }
                 send(reply.put("req", msg.opt("req")))
             }.start()
             "display-stop-all" -> displays.closeAll()
