@@ -22,19 +22,19 @@ public struct PhoneApp: Identifiable, Hashable, Sendable {
 }
 
 extension SyncEngine {
-    /// Asks the helper something on the control link and waits (up to 5 s) for its answer.
-    private func displayRequest(_ type: String) async -> [String: Any]? {
-        await displayReply(type)?.message
+    /// Asks the helper something on the control link and waits (5 s by default) for its answer.
+    private func displayRequest(_ type: String, timeout: Duration = .seconds(5)) async -> [String: Any]? {
+        await displayReply(type, timeout: timeout)?.message
     }
 
-    private func displayReply(_ type: String) async -> HelperReply? {
+    private func displayReply(_ type: String, timeout: Duration) async -> HelperReply? {
         guard state == .connected else { return nil }
         let req = nextDisplayRequestID()
         return await withCheckedContinuation { continuation in
             registerDisplayRequest(req, continuation)
             sendToHelper(["t": type, "req": req])
             Task { @MainActor in
-                try? await Task.sleep(for: .seconds(5))
+                try? await Task.sleep(for: timeout)
                 self.finishDisplayRequest(req, with: nil)
             }
         }
@@ -47,12 +47,13 @@ extension SyncEngine {
         return ticket
     }
 
-    /// The phone's launchable apps, by name.
-    public func phoneApps() async -> [PhoneApp] {
-        let reply = await displayRequest("display-apps")
+    /// The phone's launchable apps, by name; nil if the phone didn't answer. Usually instant (the
+    /// helper keeps the names), but a freshly started helper may need seconds to read them all.
+    public func phoneApps() async -> [PhoneApp]? {
+        let reply = await displayRequest("display-apps", timeout: .seconds(20))
         if reply == nil { NSLog("Nearside: no answer to display-apps") }
         if let error = reply?["error"] { NSLog("Nearside: display-apps failed: \(error)") }
-        let list = reply?["apps"] as? [[String: Any]] ?? []
+        guard let list = reply?["apps"] as? [[String: Any]] else { return nil }
         return list.compactMap { entry in
             guard let pkg = entry["pkg"] as? String, let activity = entry["activity"] as? String else { return nil }
             return PhoneApp(package: pkg, activity: activity, label: entry["label"] as? String ?? pkg)

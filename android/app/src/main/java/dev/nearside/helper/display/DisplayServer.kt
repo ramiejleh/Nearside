@@ -231,11 +231,21 @@ class DisplayServer(
     fun closeAll() = sessions.values.toList().forEach { it.close(toPhone = true) }
 
     /** The apps that can be opened: launcher entries, by label. */
+    /**
+     * The launchable apps. Reading an app's name loads its resources, which took up to 5.6 s for
+     * all 154 on a busy phone, so names are kept (keyed by the package's last update) and only new
+     * or updated apps are read again. [warmUp] fills them in when the helper starts.
+     */
+    @Synchronized
     fun apps(): JSONObject {
         val pm = FakeContext.instance.packageManager
         val list = pm.queryIntentActivities(Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER), 0)
             .filter { it.activityInfo.packageName != "dev.nearside" }
-            .map { it to it.loadLabel(pm).toString() }
+            .map { info ->
+                val key = "${info.activityInfo.packageName}/${info.activityInfo.name}@${info.activityInfo.applicationInfo.let { a ->
+                    runCatching { pm.getPackageInfo(a.packageName, 0).lastUpdateTime }.getOrDefault(0L) }}"
+                info to labels.getOrPut(key) { info.loadLabel(pm).toString() }
+            }
             .sortedBy { it.second.lowercase() }
         val apps = JSONArray()
         for ((info, label) in list) {
@@ -243,6 +253,16 @@ class DisplayServer(
                 .put("activity", info.activityInfo.name))
         }
         return JSONObject().put("t", "display-apps").put("apps", apps)
+    }
+
+    private val labels = HashMap<String, String>()
+
+    fun warmUp() {
+        Thread({
+            val started = System.currentTimeMillis()
+            val n = runCatching { apps().optJSONArray("apps")?.length() }.getOrNull()
+            Log.d("app list ready: $n apps in ${System.currentTimeMillis() - started} ms")
+        }, "apps-warm-up").start()
     }
 
     private fun hmac(message: String): ByteArray =

@@ -77,6 +77,7 @@ struct AppPickerView: View {
     let engine: SyncEngine
     let open: (PhoneApp) -> Void
     @State private var apps: [PhoneApp]?
+    @State private var failed = false
     @State private var query = ""
     @State private var selection: PhoneApp.ID?
 
@@ -93,7 +94,14 @@ struct AppPickerView: View {
                 .padding(12)
                 .onSubmit { if let first = filtered.first { open(first) } }
             Divider()
-            if apps == nil {
+            if failed {
+                VStack(spacing: 10) {
+                    Text("Couldn't get your phone's apps").font(.headline)
+                    Text("Check that your phone is connected.").font(.subheadline).foregroundStyle(.secondary)
+                    Button("Try Again") { Task { await load() } }
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if apps == nil {
                 ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 List(filtered, selection: $selection) { app in
@@ -110,6 +118,13 @@ struct AppPickerView: View {
                 }
             }
         }
-        .task { apps = await engine.phoneApps() }
+        .task { await load() }
+    }
+
+    private func load() async {
+        failed = false
+        apps = nil
+        apps = await engine.phoneApps()
+        failed = apps == nil
     }
 }
