@@ -147,7 +147,7 @@ final class AppWindowController: NSObject, NSWindowDelegate {
             let touch = { [stream] (action: DisplayWire.TouchAction, x: CGFloat, y: CGFloat) in
                 stream.button(action, at: CGPoint(x: x * size.width, y: y * size.height), time: now())
             }
-            if mode == "keys" {
+            if mode == "keys" || mode == "copy" {
                 // Real key events through the app, as the keyboard sends them: "ab", ⌘A, ⌫ (empties
                 // the field), "ok cool", ⌥⌫ (deletes the word) → "ok ".
                 @MainActor func key(_ code: UInt16, _ chars: String, _ flags: NSEvent.ModifierFlags = []) async {
@@ -170,6 +170,7 @@ final class AppWindowController: NSObject, NSWindowDelegate {
                     await key(UInt16(code), c)
                 }
                 await key(0x33, "\u{7f}", .option)
+                if mode == "copy" { await key(0x00, "a", .command); await key(0x08, "c", .command) }
                 Trace.log("test keys sent")
                 return
             }
