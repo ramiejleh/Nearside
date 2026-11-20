@@ -35,6 +35,9 @@ object AppLink {
     /** Message types the helper owns; the app may not send these to the Mac. */
     /** Ends every app window (set by Main). */
     var stopApps: () -> Unit = {}
+    /** Called each time the app (re)links, e.g. to re-post the apps-in-use notification. */
+    var onLinked: () -> Unit = {}
+    var onUnlinked: () -> Unit = {}
     private val RESERVED = setOf("clip", "hello", "challenge", "auth", "hello-mac", "app", "file-ready")
     /** Shared files wait here (shell-owned) until the Mac has pulled them over adb. */
     private val STAGING = File("/data/local/tmp/nearside-out")
@@ -194,6 +197,7 @@ object AppLink {
                 if (app === callback) {
                     app = null
                     Log.d("app died; re-linking")
+                    onUnlinked()
                     toMac(JSONObject().put("t", "app").put("linked", false))
                     scheduler.schedule(::attach, 3, TimeUnit.SECONDS)
                 }
@@ -203,6 +207,7 @@ object AppLink {
             keepUnfrozen()
             toMac(JSONObject().put("t", "app").put("linked", true))
             callback.onMacConnectionChanged(macConnected())
+            onLinked()
             return true
         } finally {
             // Don't keep a reference that would pin the app process in memory.

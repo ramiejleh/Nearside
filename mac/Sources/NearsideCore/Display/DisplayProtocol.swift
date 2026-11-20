@@ -24,6 +24,8 @@ public enum DisplayWire {
 
     /// What the phone sends.
     public enum Message: Equatable, Sendable {
+        /// The helper's proof that it holds the token (first packet on every stream).
+        case serverHello(proof: Data)
         case task(id: Int32, package: String)
         case taskGone(GoneReason)
         case pong(t0: UInt64, phoneMicros: UInt64)
@@ -54,6 +56,12 @@ public enum DisplayWire {
         body.append(ticket)
         body.append(contentsOf: proof)
         return packet(hello, body)
+    }
+
+    /// What the helper must answer to HELLO: the same values under a server label.
+    static func serverProof(role: Role, session: Data, ticket: Data, token: String) -> Data {
+        let message = "nearside-display-server:\(role.rawValue):\(session.hexString):\(ticket.hexString)"
+        return Data(HMAC<SHA256>.authenticationCode(for: Data(message.utf8), using: SymmetricKey(data: Data(token.utf8))))
     }
 
     static func open(width: Int, height: Int, dpi: Int, fps: Int, kbps: Int, target: String) -> Data {
@@ -115,6 +123,8 @@ public enum DisplayWire {
     static func parse(type: UInt8, _ p: Data) -> Message? {
         let s = p.startIndex
         switch type {
+        case hello where p.count == 32:
+            return .serverHello(proof: p)
         case task where p.count >= 4:
             return .task(id: Int32(bitPattern: p.readBE(UInt32.self, at: s)),
                          package: String(decoding: p.suffix(from: s + 4), as: UTF8.self))

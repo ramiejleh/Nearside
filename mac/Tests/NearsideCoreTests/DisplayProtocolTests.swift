@@ -55,6 +55,16 @@ struct DisplayProtocolTests {
         #expect(body.suffix(32) == Data(proof))
     }
 
+    @Test func serverHelloCarriesTheHelpersProof() {
+        let session = Data(repeating: 7, count: 16), ticket = Data(repeating: 9, count: 32)
+        let proof = DisplayWire.serverProof(role: .control, session: session, ticket: ticket, token: "secret")
+        var reader = DisplayWire.Reader()
+        #expect(reader.feed(DisplayWire.packet(DisplayWire.hello, proof)) == [.serverHello(proof: proof)])
+        // It differs from the Mac's own proof, so a captured Mac hello can't be echoed back.
+        let mac = DisplayWire.hello(role: .control, session: session, ticket: ticket, token: "secret").suffix(32)
+        #expect(Data(mac) != proof)
+    }
+
     @Test func touchEncodesNormalisedCoordinates() {
         let p = DisplayWire.touch(.move, pointer: 0, gen: 7, x: 0.5, y: 0.25)
         #expect(p.prefix(2) == Data([DisplayWire.touch, 0]))

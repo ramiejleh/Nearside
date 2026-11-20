@@ -104,19 +104,27 @@ object DisplayWire {
  * already-authenticated control link, plus an HMAC with the shared token, so nothing else on the
  * phone can open a stream or capture an app.
  */
-class DisplayServer(private val token: String, private val onSessionsChanged: (Int) -> Unit) {
+class DisplayServer(
+    private val token: String,
+    private val canNotify: () -> Boolean,
+    private val onSessionsChanged: (Int) -> Unit,
+) {
     private class Ticket(val expires: Long, val usedRoles: MutableSet<Int> = mutableSetOf())
 
     private val tickets = ConcurrentHashMap<String, Ticket>()
     private val sessions = ConcurrentHashMap<String, DisplaySession>()
     private val random = SecureRandom()
+    /** False if our socket name was taken (by something else): then no tickets are issued. */
+    @Volatile private var listening = false
+    val openCount get() = sessions.size
 
     fun start() {
         val server = try {
             LocalServerSocket(SOCKET)
         } catch (e: IOException) {
-            Log.d("display socket unavailable: $e"); return
+            Log.d("display socket unavailable ($e); phone apps disabled"); return
         }
+        listening = true
         Thread({
             while (true) {
                 val socket = try { server.accept() } catch (e: IOException) { continue }
@@ -129,7 +137,8 @@ class DisplayServer(private val token: String, private val onSessionsChanged: (I
     }
 
     /** A ticket for the Mac's next display streams: random, single use per role, 10 seconds. */
-    fun issueTicket(): String {
+    fun issueTicket(): String? {
+        if (!listening) return null
         val now = System.currentTimeMillis()
         tickets.entries.removeIf { it.value.expires < now }
         val ticket = ByteArray(32).also(random::nextBytes).toHex()
@@ -157,6 +166,9 @@ class DisplayServer(private val token: String, private val onSessionsChanged: (I
                 Log.d("display stream refused (bad or used ticket)")
                 return conn.close()
             }
+            // Prove we're the real helper (not something squatting our socket name) before the
+            // Mac sends input or trusts any video: HMAC over the same values, server-labelled.
+            conn.send(DisplayWire.HELLO, hmac("nearside-display-server:$role:$sid:$ticket"))
             when (role) {
                 DisplayWire.ROLE_CONTROL -> control(conn, sid)
                 DisplayWire.ROLE_VIDEO -> {
@@ -183,6 +195,11 @@ class DisplayServer(private val token: String, private val onSessionsChanged: (I
             type == DisplayWire.RESUME && existing != null && !existing.isClosed -> existing.attachControl(conn)
             type == DisplayWire.OPEN && existing == null -> {
                 val open = DisplayWire.Open.parse(body) ?: return conn.close()
+                if (!canNotify()) {
+                    conn.send(DisplayWire.ERROR, byteArrayOf(DisplayWire.ERR_LAUNCH.toByte()) +
+                        "Nearside on your phone isn't running. Open it once, then try again.".toByteArray())
+                    return conn.close()
+                }
                 val session = DisplaySession(sid, this, open)
                 sessions[sid] = session
                 try {

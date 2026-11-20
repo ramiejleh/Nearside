@@ -81,6 +81,9 @@ public final class PhoneAppSession: @unchecked Sendable {
         do {
             let ctl = try adb.open(Self.socket, window: 256 * 1024)
             try ctl.write(DisplayWire.hello(role: .control, session: id, ticket: ticket, token: token))
+            // Nothing goes out (no app name, no input) and nothing is shown until the other end
+            // proves it's our helper, not something squatting the socket name.
+            guard let ctlStart = awaitServer(ctl, role: .control, ticket: ticket) else { ctl.close(); return false }
             if resume {
                 try ctl.write(DisplayWire.packet(DisplayWire.resume))
             } else {
@@ -89,6 +92,9 @@ public final class PhoneAppSession: @unchecked Sendable {
             }
             let vid = try adb.open(Self.socket, window: 2 * 1024 * 1024)
             try vid.write(DisplayWire.hello(role: .video, session: id, ticket: ticket, token: token))
+            guard let vidStart = awaitServer(vid, role: .video, ticket: ticket) else {
+                ctl.close(); vid.close(); return false
+            }
             let stale = lock.withLock { () -> Bool in
                 if closing { return true }
                 control = ctl
@@ -96,34 +102,60 @@ public final class PhoneAppSession: @unchecked Sendable {
                 return false
             }
             if stale { ctl.close(); vid.close(); return true }
-            Thread { [self] in readControl(ctl) }.start()
-            Thread { [self] in readVideo(vid) }.start()
+            Thread { [self] in readControl(ctl, ctlStart) }.start()
+            Thread { [self] in readVideo(vid, vidStart) }.start()
             return true
         } catch {
             return false
         }
     }
 
-    private func readControl(_ stream: AdbStream) {
+    /// Reads until the helper's HELLO and checks its proof; returns the reader (it may already
+    /// hold messages that followed in the same chunk) and those messages.
+    private func awaitServer(_ stream: AdbStream, role: DisplayWire.Role, ticket: Data) -> (DisplayWire.Reader, [DisplayWire.Message])? {
         var reader = DisplayWire.Reader()
-        while let data = try? stream.read() {
-            for message in reader.feed(data) {
-                switch message {
-                case .taskGone(let reason): set(.gone(reason))
-                case .error(_, let text): fail(text.isEmpty ? "The app couldn't be opened." : text)
-                default: break
-                }
+        let expected = DisplayWire.serverProof(role: role, session: id, ticket: ticket, token: token)
+        let deadline = Date().addingTimeInterval(5)
+        while Date() < deadline {
+            guard let data = try? stream.read(timeout: deadline.timeIntervalSinceNow) else { return nil }
+            var messages = reader.feed(data)
+            guard !reader.failed else { return nil }
+            guard let first = messages.first else { continue }
+            guard case .serverHello(let proof) = first, proof == expected else { return nil }
+            messages.removeFirst()
+            return (reader, messages)
+        }
+        return nil
+    }
+
+    private func readControl(_ stream: AdbStream, _ start: (DisplayWire.Reader, [DisplayWire.Message])) {
+        var (reader, pending) = start
+        func handle(_ message: DisplayWire.Message) {
+            switch message {
+            case .taskGone(let reason): set(.gone(reason))
+            case .error(_, let text): fail(text.isEmpty ? "The app couldn't be opened." : text)
+            default: break
             }
+        }
+        pending.forEach(handle)
+        while let data = try? stream.read() {
+            reader.feed(data).forEach(handle)
             if reader.failed { break }
         }
         streamEnded(stream)
     }
 
-    private func readVideo(_ stream: AdbStream) {
-        var reader = DisplayWire.Reader()
-        while let data = try? stream.read() {
+    private func readVideo(_ stream: AdbStream, _ start: (DisplayWire.Reader, [DisplayWire.Message])) {
+        var (reader, pending) = start
+        while true {
+            if pending.isEmpty {
+                guard let data = try? stream.read() else { break }
+                pending = reader.feed(data)
+            }
             let now = monotonicMicros()
-            for message in reader.feed(data) {
+            let batch = pending
+            pending = []
+            for message in batch {
                 switch message {
                 case let .config(gen, width, height, sets):
                     if decoder.configure(parameterSets: sets, gen: gen) {

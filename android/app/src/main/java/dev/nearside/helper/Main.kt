@@ -85,10 +85,26 @@ object Main {
             send(JSONObject().put("t", "clip").put("text", text).put("ts", System.currentTimeMillis()))
         }
 
-        displays = DisplayServer(token) { open ->
+        // Phone apps can be used from the Mac while the phone is locked, so the phone must always
+        // show that: no app link (no notification) means no new sessions, and a relink re-posts it.
+        displays = DisplayServer(token, canNotify = { AppLink.isLinked }) { open ->
             AppLink.deliver(JSONObject().put("t", "display-state").put("open", open))
         }.also { it.start() }
         AppLink.stopApps = { displays.closeAll() }
+        AppLink.onUnlinked = {
+            // Without the app, the phone shows nothing about apps open on the Mac: if it doesn't
+            // come back soon (e.g. force-stopped), end the sessions.
+            Thread {
+                Thread.sleep(10_000)
+                if (!AppLink.isLinked && displays.openCount > 0) {
+                    Log.d("app still unlinked; closing phone-app sessions")
+                    displays.closeAll()
+                }
+            }.start()
+        }
+        AppLink.onLinked = {
+            AppLink.deliver(JSONObject().put("t", "display-state").put("open", displays.openCount))
+        }
 
         AppLink.toMac = { msg -> client != null && send(msg) }
         AppLink.macConnected = { client != null }
@@ -184,7 +200,7 @@ object Main {
     private fun handleDisplay(msg: JSONObject) {
         when (msg.optString("t")) {
             "display-ticket" -> send(JSONObject().put("t", "display-ticket").put("req", msg.opt("req"))
-                .put("ticket", displays.issueTicket()))
+                .put("ticket", displays.issueTicket() ?: JSONObject.NULL))
             "display-apps" -> Thread {
                 val started = System.currentTimeMillis()
                 val reply = runCatching { displays.apps() }.getOrElse {
