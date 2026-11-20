@@ -92,6 +92,17 @@ object DisplayProbe {
             codec.setParameters(android.os.Bundle().apply { putInt(MediaCodec.PARAMETER_KEY_VIDEO_BITRATE, 2_000_000) })
             println("bitrate -> 2 Mbps")
         }.start()
+        if (args.getOrNull(7) == "suspend") Thread {
+            Thread.sleep(seconds * 333)
+            codec.setParameters(android.os.Bundle().apply { putInt(MediaCodec.PARAMETER_KEY_SUSPEND, 1) })
+            println("suspended")
+            Thread.sleep(seconds * 333)
+            codec.setParameters(android.os.Bundle().apply {
+                putInt(MediaCodec.PARAMETER_KEY_SUSPEND, 0)
+                putInt(MediaCodec.PARAMETER_KEY_REQUEST_SYNC_FRAME, 0)
+            })
+            println("resumed")
+        }.start()
         while (System.nanoTime() - start < seconds * 1_000_000_000) {
             val index = codec.dequeueOutputBuffer(info, 100_000)
             if (index < 0) continue

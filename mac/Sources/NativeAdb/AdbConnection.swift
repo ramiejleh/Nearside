@@ -43,8 +43,11 @@ struct Packet {
 public final class AdbConnection: @unchecked Sendable {
     static let version: UInt32 = 0x0100_0001
     static let maxPayload = 1024 * 1024
-    /// What we implement, as adb's "features" (no delayed_ack: we use simple per-write acks).
-    static let features = "shell_v2,cmd,stat_v2,ls_v2,fixed_push_mkdir,abb_exec"
+    /// What we implement, as adb's "features". With `delayed_ack` (adbd on Android 14+) each
+    /// stream gets a byte window, so several writes are in flight instead of one per round trip.
+    static let features = "shell_v2,cmd,stat_v2,ls_v2,fixed_push_mkdir,abb_exec,delayed_ack"
+    /// Default receive window per stream (what the phone may send before we've read it).
+    public static let defaultWindow = 256 * 1024
 
     /// e.g. "device::ro.product.name=caiman;ro.product.model=Pixel 9 Pro;…;features=…"
     public let banner: String
@@ -52,6 +55,8 @@ public final class AdbConnection: @unchecked Sendable {
     public let peerKeySHA256: Data
     let channel: Channel
     let peerMaxPayload: Int
+    /// Both sides speak delayed_ack: windows in A_OPEN/OKAY instead of one OKAY per write.
+    let delayedAck: Bool
 
     private let lock = NSLock()
     private var streams: [UInt32: AdbStream] = [:]
@@ -92,6 +97,9 @@ public final class AdbConnection: @unchecked Sendable {
         self.banner = banner
         self.peerMaxPayload = min(max(peerMaxPayload, 4096), Self.maxPayload)
         self.peerKeySHA256 = peerKeySHA256
+        let features = banner.split(separator: ";").first { $0.hasPrefix("features=") }?
+            .dropFirst("features=".count).split(separator: ",") ?? []
+        self.delayedAck = features.contains("delayed_ack")
     }
 
     /// A property from the banner, e.g. "ro.product.model".
@@ -110,16 +118,20 @@ public final class AdbConnection: @unchecked Sendable {
     }
 
     /// Opens a stream to a service on the phone ("shell,v2,raw:ls", "localabstract:name", …).
-    public func open(_ service: String, timeout: TimeInterval = 10) throws -> AdbStream {
+    /// `window` bounds how much the phone may send before we read it (latency-sensitive streams
+    /// keep it small: a big window only hides queueing).
+    public func open(_ service: String, window: Int = AdbConnection.defaultWindow,
+                     timeout: TimeInterval = 10) throws -> AdbStream {
         let stream: AdbStream = try lock.withLock {
             guard !dead else { throw AdbError.closed }
-            let stream = AdbStream(connection: self, localID: nextID)
+            let stream = AdbStream(connection: self, localID: nextID, delayedAck: delayedAck)
             streams[nextID] = stream
             nextID &+= 1
             if nextID == 0 { nextID = 1 }
             return stream
         }
-        try send(Packet(command: Packet.open, arg0: stream.localID, arg1: 0, payload: Data((service + "\0").utf8)))
+        try send(Packet(command: Packet.open, arg0: stream.localID, arg1: delayedAck ? UInt32(window) : 0,
+                        payload: Data((service + "\0").utf8)))
         try stream.waitOpened(timeout: timeout, service: service)
         return stream
     }
@@ -138,11 +150,11 @@ public final class AdbConnection: @unchecked Sendable {
                 guard let packet = try? Packet.read(from: channel, maxPayload: Self.maxPayload) else { break }
                 let stream = lock.withLock { streams[packet.arg1] }
                 switch packet.command {
-                case Packet.okay: stream?.received(okayFrom: packet.arg0)
+                case Packet.okay: stream?.received(okayFrom: packet.arg0, payload: packet.payload)
                 case Packet.wrte:
-                    guard let stream else { continue }
-                    stream.received(data: packet.payload)
-                    try? send(Packet(command: Packet.okay, arg0: stream.localID, arg1: packet.arg0, payload: Data()))
+                    // Acknowledged once the reader has taken the data (see AdbStream.read), so a
+                    // slow consumer slows the phone down instead of growing our buffer.
+                    stream?.received(data: packet.payload)
                 case Packet.clse: stream?.receivedClose()
                 default: break
                 }
@@ -159,20 +171,27 @@ public final class AdbConnection: @unchecked Sendable {
     }
 }
 
-/// One adb stream. Writes wait for the phone's OKAY (adb's flow control); reads block.
+/// One adb stream. Flow control both ways: with delayed_ack, writes go out while the phone's
+/// byte window allows and we return bytes to it as we read; without it, one write in flight
+/// (each waits for OKAY) and each received write is acknowledged when it's read.
 public final class AdbStream: @unchecked Sendable {
     let localID: UInt32
     private unowned let connection: AdbConnection
+    private let delayedAck: Bool
     private let condition = NSCondition()
     private var remoteID: UInt32 = 0
     private var opened = false
     private var closed = false
-    private var awaitingOkay = false
+    private var awaitingOkay = false // legacy mode
+    private var sendWindow = 0 // delayed_ack: bytes the phone will still accept
     private var inbound = Data()
+    private var unackedWrites = 0 // legacy mode: received writes not yet acknowledged
+    private var unackedBytes = 0 // delayed_ack: received bytes not yet returned to the phone
 
-    init(connection: AdbConnection, localID: UInt32) {
+    init(connection: AdbConnection, localID: UInt32, delayedAck: Bool) {
         self.connection = connection
         self.localID = localID
+        self.delayedAck = delayedAck
     }
 
     func waitOpened(timeout: TimeInterval, service: String) throws {
@@ -185,11 +204,18 @@ public final class AdbStream: @unchecked Sendable {
         if !opened { throw AdbError.refused(service) }
     }
 
-    func received(okayFrom remote: UInt32) {
+    func received(okayFrom remote: UInt32, payload: Data) {
+        // delayed_ack: the first OKAY carries the phone's window, later ones bytes it consumed
+        // (int32 LE; it may be negative).
+        let bytes = payload.count == 4
+            ? Int(Int32(littleEndian: payload.withUnsafeBytes { $0.loadUnaligned(as: Int32.self) })) : 0
         condition.lock()
         if !opened {
             opened = true
             remoteID = remote
+            sendWindow = bytes
+        } else if delayedAck {
+            sendWindow += bytes
         } else {
             awaitingOkay = false
         }
@@ -200,6 +226,7 @@ public final class AdbStream: @unchecked Sendable {
     func received(data: Data) {
         condition.lock()
         inbound.append(data)
+        if delayedAck { unackedBytes += data.count } else { unackedWrites += 1 }
         condition.broadcast()
         condition.unlock()
     }
@@ -212,11 +239,27 @@ public final class AdbStream: @unchecked Sendable {
         connection.forget(self)
     }
 
-    /// Sends bytes, in chunks the phone accepts, each acknowledged before the next.
+    /// Sends bytes in chunks the phone accepts, as fast as its flow control allows.
     public func write(_ data: Data, timeout: TimeInterval = 30) throws {
         var offset = 0
         while offset < data.count {
             let chunk = data.subdata(in: offset..<min(offset + connection.peerMaxPayload, data.count))
+            if delayedAck {
+                let remote: UInt32 = try {
+                    condition.lock()
+                    defer { condition.unlock() }
+                    let deadline = Date().addingTimeInterval(timeout)
+                    while sendWindow <= 0 && !closed {
+                        if !condition.wait(until: deadline) { throw AdbError.timeout }
+                    }
+                    if closed { throw AdbError.closed }
+                    sendWindow -= chunk.count
+                    return remoteID
+                }()
+                try connection.send(Packet(command: Packet.wrte, arg0: localID, arg1: remote, payload: chunk))
+                offset += chunk.count
+                continue
+            }
             let remote: UInt32 = try {
                 condition.lock()
                 defer { condition.unlock() }
@@ -253,8 +296,24 @@ public final class AdbStream: @unchecked Sendable {
             }
         }
         if inbound.isEmpty { return nil }
-        defer { inbound.removeAll(keepingCapacity: true) }
-        return inbound
+        let data = inbound
+        inbound.removeAll(keepingCapacity: true)
+        let (writes, bytes, remote) = (unackedWrites, unackedBytes, remoteID)
+        unackedWrites = 0
+        unackedBytes = 0
+        // Tell the phone we've taken it (without holding the lock while sending).
+        condition.unlock()
+        if delayedAck {
+            var count = Int32(bytes).littleEndian
+            try? connection.send(Packet(command: Packet.okay, arg0: localID, arg1: remote,
+                                        payload: Data(bytes: &count, count: 4)))
+        } else {
+            for _ in 0..<writes {
+                try? connection.send(Packet(command: Packet.okay, arg0: localID, arg1: remote, payload: Data()))
+            }
+        }
+        condition.lock()
+        return data
     }
 
     public func close() {

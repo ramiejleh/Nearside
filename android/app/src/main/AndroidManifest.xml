@@ -37,6 +37,16 @@
         </activity>
 
         <!-- "Send to Mac" in the share sheet. -->
+        <!-- Home screen of the Mac's phone window; only the shell (our helper) holds this permission. -->
+        <activity
+            android:name=".phone.HomeActivity"
+            android:exported="true"
+            android:permission="android.permission.INTERACT_ACROSS_USERS_FULL"
+            android:excludeFromRecents="true"
+            android:taskAffinity="dev.nearside.phonehome"
+            android:resizeableActivity="true"
+            android:theme="@android:style/Theme.DeviceDefault.NoActionBar" />
+
         <activity
             android:name=".ShareActivity"
             android:exported="true"
