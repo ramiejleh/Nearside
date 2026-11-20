@@ -25,5 +25,23 @@ class KeyTestActivity : Activity() {
         })
         setContentView(field)
         field.requestFocus()
+        if (intent.hasExtra("tone")) playTone(intent.getIntExtra("tone", 8))
     }
+
+    /** A 440 Hz media tone for [seconds] (audio-capture tests). */
+    private fun playTone(seconds: Int) = Thread {
+        val rate = 48000
+        val pcm = ShortArray(rate * seconds) { (Math.sin(2 * Math.PI * 440 * it / rate) * 12000).toInt().toShort() }
+        val track = android.media.AudioTrack.Builder()
+            .setAudioAttributes(android.media.AudioAttributes.Builder().setUsage(android.media.AudioAttributes.USAGE_MEDIA)
+                .setContentType(android.media.AudioAttributes.CONTENT_TYPE_MUSIC).build())
+            .setAudioFormat(android.media.AudioFormat.Builder().setSampleRate(rate).setEncoding(android.media.AudioFormat.ENCODING_PCM_16BIT)
+                .setChannelMask(android.media.AudioFormat.CHANNEL_OUT_MONO).build())
+            .setTransferMode(android.media.AudioTrack.MODE_STATIC).setBufferSizeInBytes(pcm.size * 2).build()
+        track.write(pcm, 0, pcm.size)
+        track.play()
+        android.util.Log.i("KeyTest", "tone playing (session ${track.audioSessionId})")
+        Thread.sleep(seconds * 1000L + 200)
+        track.release()
+    }.start()
 }
