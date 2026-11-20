@@ -192,6 +192,13 @@ final class AppWindowController: NSObject, NSWindowDelegate {
                 Trace.log("test type sent")
                 return
             }
+            if mode == "size", let spec = ProcessInfo.processInfo.environment["NEARSIDE_TEST_SIZE"] {
+                // "WxH" in points: the window's content size (e.g. phone-shaped "400x880").
+                let parts = spec.split(separator: "x").compactMap { Double($0) }
+                if parts.count == 2 { window.setContentSize(NSSize(width: parts[0], height: parts[1])) }
+                Trace.log("test size \(spec)")
+                return
+            }
             if mode == "resize" {
                 var frame = window.frame
                 frame.size.width = (frame.size.height * 0.9).rounded()
