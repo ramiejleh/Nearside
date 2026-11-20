@@ -17,6 +17,13 @@ final class MetalRenderer: @unchecked Sendable {
     private var textureCache: CVMetalTextureCache?
     private let lock = NSLock()
     private var latest: VideoDecoder.Frame?
+    private var crop = 0
+
+    /// Top rows of each frame not to show (an app's empty band; see PhoneDisplaySize).
+    var cropPixels: Int {
+        get { lock.withLock { crop } }
+        set { lock.withLock { crop = newValue }; redraw() }
+    }
 
     init?() {
         guard let device = MTLCreateSystemDefaultDevice(), let queue = device.makeCommandQueue(),
@@ -51,6 +58,8 @@ final class MetalRenderer: @unchecked Sendable {
         guard let cache = textureCache, let drawable = layer.nextDrawable() else { return }
         let image = frame.image
         let w = CVPixelBufferGetWidth(image), h = CVPixelBufferGetHeight(image)
+        let cropRows = min(max(crop, 0), h / 2)
+        var top = Float(cropRows) / Float(h) // the shown part of the texture starts here
         var luma: CVMetalTexture?, chroma: CVMetalTexture?
         CVMetalTextureCacheCreateTextureFromImage(nil, cache, image, nil, .r8Unorm, w, h, 0, &luma)
         CVMetalTextureCacheCreateTextureFromImage(nil, cache, image, nil, .rg8Unorm, w / 2, h / 2, 1, &chroma)
@@ -62,19 +71,21 @@ final class MetalRenderer: @unchecked Sendable {
         pass.colorAttachments[0].storeAction = .store
         guard let encoder = buffer.makeRenderCommandEncoder(descriptor: pass) else { return }
         let dw = Double(drawable.texture.width), dh = Double(drawable.texture.height)
-        let scale = min(dw / Double(w), dh / Double(h))
-        let vw = Double(w) * scale, vh = Double(h) * scale
+        let shownH = h - cropRows
+        let scale = min(dw / Double(w), dh / Double(shownH))
+        let vw = Double(w) * scale, vh = Double(shownH) * scale
         encoder.setViewport(MTLViewport(originX: (dw - vw) / 2, originY: (dh - vh) / 2, width: vw, height: vh, znear: 0, zfar: 1))
         encoder.setRenderPipelineState(pipeline)
         encoder.setFragmentTexture(CVMetalTextureGetTexture(luma), index: 0)
         encoder.setFragmentTexture(CVMetalTextureGetTexture(chroma), index: 1)
+        encoder.setFragmentBytes(&top, length: MemoryLayout<Float>.size, index: 0)
         encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 3)
         encoder.endEncoding()
         buffer.present(drawable)
         let pts = frame.ptsMicros
         drawable.addPresentedHandler { d in Trace.log("presented \(pts) at \(Int64(d.presentedTime * 1000))") }
         Trace.log("drawn \(pts)")
-        if Trace.enabled { saveSnapshotSoon(frame) }
+        if Trace.enabled { saveSnapshotSoon(frame, cropRows: cropRows) }
         let textures = TextureHold(luma: luma, chroma: chroma)
         buffer.addCompletedHandler { _ in _ = textures } // live until the GPU is done
         buffer.commit()
@@ -84,13 +95,15 @@ final class MetalRenderer: @unchecked Sendable {
 
     /// Trace mode: the latest frame shown, as <trace>.png, at most once a second (a blinking caret
     /// never lets the picture settle).
-    private func saveSnapshotSoon(_ frame: VideoDecoder.Frame) {
+    private func saveSnapshotSoon(_ frame: VideoDecoder.Frame, cropRows: Int) {
         guard !snapshotPending else { return }
         snapshotPending = true
         let work = DispatchWorkItem { [self] in
             guard let path = Trace.path, let frame = lastFrame else { return }
             lock.withLock { snapshotPending = false }
-            let image = CIImage(cvPixelBuffer: frame.image)
+            // As shown: without the cropped top rows (CIImage's origin is bottom-left).
+            let full = CIImage(cvPixelBuffer: frame.image)
+            let image = full.cropped(to: CGRect(x: 0, y: 0, width: full.extent.width, height: full.extent.height - CGFloat(cropRows)))
             let context = CIContext()
             try? context.writePNGRepresentation(of: image, to: URL(fileURLWithPath: path + ".png"),
                                                 format: .RGBA8, colorSpace: CGColorSpace(name: CGColorSpace.sRGB)!)
@@ -110,10 +123,12 @@ final class MetalRenderer: @unchecked Sendable {
             float2 p = float2((id << 1) & 2, id & 2);
             V v; v.position = float4(p * 2.0 - 1.0, 0, 1); v.uv = float2(p.x, 1.0 - p.y); return v;
         }
-        fragment float4 fmain(V in [[stage_in]], texture2d<float> y [[texture(0)]], texture2d<float> c [[texture(1)]]) {
+        fragment float4 fmain(V in [[stage_in]], texture2d<float> y [[texture(0)]], texture2d<float> c [[texture(1)]],
+                              constant float &top [[buffer(0)]]) {
             constexpr sampler s(filter::linear);
-            float Y = (y.sample(s, in.uv).r - 16.0 / 255.0) * (255.0 / 219.0);
-            float2 C = (c.sample(s, in.uv).rg - 128.0 / 255.0) * (255.0 / 224.0);
+            float2 uv = float2(in.uv.x, top + in.uv.y * (1.0 - top));
+            float Y = (y.sample(s, uv).r - 16.0 / 255.0) * (255.0 / 219.0);
+            float2 C = (c.sample(s, uv).rg - 128.0 / 255.0) * (255.0 / 224.0);
             float3 rgb = float3(Y + 1.5748 * C.y, Y - 0.1873 * C.x - 0.4681 * C.y, Y + 1.8556 * C.x);
             return float4(saturate(rgb), 1);
         }

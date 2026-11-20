@@ -15,6 +15,21 @@ final class AppWindowController: NSObject, NSWindowDelegate {
     private var state: PhoneAppSession.State = .opening
     private var resizeWork: DispatchWorkItem?
     private let onClosed: (AppWindowController) -> Void
+    private var cropPixels = 0
+
+    /// Apps that leave the phone's status-bar height empty at the top of any window. A per-app
+    /// default ("PhoneApp.hideTopBand.<package>") overrides the list either way.
+    static let topBandApps: Set<String> = ["com.instagram.android"]
+
+    private var topBandDp: Int {
+        let key = "PhoneApp.hideTopBand.\(app.package)"
+        let hide = UserDefaults.standard.object(forKey: key) as? Bool ?? Self.topBandApps.contains(app.package)
+        return hide ? PhoneInfo.statusBarDp : 0
+    }
+
+    private func displaySize() -> (width: Int, height: Int, dpi: Int, cropPixels: Int) {
+        PhoneDisplaySize.forWindow(window.contentLayoutRect.size, scale: window.backingScaleFactor, cropTopDp: topBandDp)
+    }
 
     /// 75 % of the screen's height (at most 900 pt), a little wider than a phone, unless this app has
     /// a saved size.
@@ -54,13 +69,18 @@ final class AppWindowController: NSObject, NSWindowDelegate {
         super.init()
         installToolbar()
         window.delegate = self
-        let size = PhoneDisplaySize.forWindow(window.contentLayoutRect.size, scale: window.backingScaleFactor)
-        session = engine.makePhoneAppSession(app, width: size.width, height: size.height, dpi: size.dpi)
+        let size = displaySize()
+        cropPixels = size.cropPixels
+        renderer.cropPixels = size.cropPixels
+        session = engine.makePhoneAppSession(app, width: size.width, height: size.height, dpi: size.dpi, cropPixels: size.cropPixels)
         render(.opening)
 
         session.onFrame = { [renderer] frame in renderer.show(frame) }
         session.onState = { [weak self] state in self?.render(state) }
-        session.onVideoSize = { [weak self] size in self?.stream.videoSize = size }
+        session.onVideoSize = { [weak self] size in
+            guard let self else { return }
+            stream.videoSize = CGSize(width: size.width, height: size.height - CGFloat(cropPixels)) // what's shown
+        }
         stream.session = session
         window.initialFirstResponder = stream
         session.setKeyboardLayout(Self.keyboardLayout())
@@ -221,7 +241,10 @@ final class AppWindowController: NSObject, NSWindowDelegate {
                 Trace.log("test click sent; overlay hidden \(overlay.isHidden), state \(state), hit view: \(String(describing: window.contentView?.hitTest(point)))")
                 return
             }
-            touch(.down, 0.5, 0.75); try? await Task.sleep(for: .milliseconds(80)); touch(.up, 0.5, 0.75)
+            // NEARSIDE_TEST_TAP="x,y" (0…1 of what the window shows) picks the spot.
+            let at = (ProcessInfo.processInfo.environment["NEARSIDE_TEST_TAP"] ?? "0.5,0.75").split(separator: ",").compactMap { Double($0) }
+            let (tx, ty) = at.count == 2 ? (CGFloat(at[0]), CGFloat(at[1])) : (0.5, 0.75)
+            touch(.down, tx, ty); try? await Task.sleep(for: .milliseconds(80)); touch(.up, tx, ty)
             NSLog("Nearside: test tap sent")
             if mode == "tap" { return }
             try? await Task.sleep(for: .seconds(1))
@@ -267,8 +290,10 @@ final class AppWindowController: NSObject, NSWindowDelegate {
         resizeWork?.cancel()
         let work = DispatchWorkItem { [weak self] in
             guard let self else { return }
-            let size = PhoneDisplaySize.forWindow(window.contentLayoutRect.size, scale: window.backingScaleFactor)
-            session.resize(width: size.width, height: size.height, dpi: size.dpi)
+            let size = displaySize()
+            cropPixels = size.cropPixels
+            stream.renderer.cropPixels = size.cropPixels
+            session.resize(width: size.width, height: size.height, dpi: size.dpi, cropPixels: size.cropPixels)
         }
         resizeWork = work
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.25, execute: work)

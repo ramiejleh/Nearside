@@ -252,10 +252,33 @@ class DisplayServer(
             apps.put(JSONObject().put("pkg", info.activityInfo.packageName).put("label", label)
                 .put("activity", info.activityInfo.name))
         }
-        return JSONObject().put("t", "display-apps").put("apps", apps)
+        return JSONObject().put("t", "display-apps").put("apps", apps).put("statusBarDp", statusBar)
     }
 
     private val labels = HashMap<String, String>()
+
+    /**
+     * The phone's status-bar height in dp. Some apps (Instagram) leave that much empty at the top
+     * of any window, status bar or not; the Mac crops it off for them.
+     */
+    private val statusBar by lazy { statusBarDp() }
+
+    private fun statusBarDp(): Int {
+        val density = android.content.res.Resources.getSystem().displayMetrics.density
+        // The real bar, as the window manager has it on the phone's screen (Pixels size it to the
+        // camera cutout at runtime: 68 dp on a Pixel 9 Pro, where the resource still says 24).
+        val real = runCatching {
+            val p = Runtime.getRuntime().exec(arrayOf("dumpsys", "window"))
+            val text = p.inputStream.bufferedReader().readText().also { p.waitFor() }
+            Regex("type=statusBars frame=\\[\\d+,(\\d+)\\]\\[\\d+,(\\d+)\\]").find(text)
+                ?.groupValues?.let { (it[2].toInt() - it[1].toInt()) / density }
+        }.getOrNull()
+        val resource = runCatching {
+            val res = android.content.res.Resources.getSystem()
+            res.getDimensionPixelSize(res.getIdentifier("status_bar_height", "dimen", "android")) / density
+        }.getOrNull()
+        return Math.round(real?.takeIf { it > 0 } ?: resource ?: 0f).also { Log.d("status bar: $it dp (window manager $real, resource $resource)") }
+    }
 
     fun warmUp() {
         Thread({

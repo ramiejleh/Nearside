@@ -63,6 +63,7 @@ class DisplaySession(
     private var awake: android.os.PowerManager.WakeLock? = null
     private var keyboard: Keyboard? = null
     private var onDevice = false
+    private var touchscreen: Any? = null
 
     fun start() {
         val surface = newEncoder()
@@ -73,6 +74,7 @@ class DisplaySession(
         Log.d("display session $id: display $displayId ${w}x$h@$dpi for $target${if (onDevice) " (virtual device ${PhoneDevice.deviceId})" else ""}")
         awake = Hidden.keepAwake(displayId, "Nearside:display-$id")
         keyboard = Keyboard(displayId, id).also { it.create() }
+        touchscreen = PhoneDevice.createTouchscreen("Nearside Touch ${id.take(8)}", displayId, w, h)
         Thread(::encodeLoop, "display-$id-video").start()
         launch()
         watcher.scheduleWithFixedDelay({ runCatching { watchTasks() } }, 300, 500, TimeUnit.MILLISECONDS)
@@ -307,6 +309,10 @@ class DisplaySession(
         w = nw and 1.inv(); h = nh and 1.inv(); dpi = ndpi
         val surface = newEncoder()
         display.resize(w, h, dpi)
+        touchscreen?.let { // made for a size: a new one for the new size
+            PhoneDevice.closeInput(it)
+            touchscreen = PhoneDevice.createTouchscreen("Nearside Touch ${id.take(8)}", displayId, w, h)
+        }
         display.surface = surface
         old?.let { runCatching { it.stop() }; it.release() }
         Log.d("display session $id: resized to ${w}x$h@$dpi")
@@ -505,6 +511,7 @@ class DisplaySession(
         if (toPhone) onOurs.forEach { Hidden.moveTask(it.taskId, 0, onTop = false) }
         runCatching { awake?.release() }
         runCatching { keyboard?.close() }
+        touchscreen?.let { PhoneDevice.closeInput(it) }
         runCatching { display.release() }
         if (onDevice) PhoneDevice.release()
         codec?.let { runCatching { it.stop() }; it.release() }

@@ -34,6 +34,8 @@ public final class PhoneAppSession: @unchecked Sendable {
     private var gen: UInt32 = 0
     private var closing = false
     private var size: (width: Int, height: Int, dpi: Int)
+    /// Top rows of the display the window doesn't show (see PhoneDisplaySize); input maps past them.
+    private var cropPixels = 0
     private let fps: Int
     private let kbps: Int
     private let writer = DispatchQueue(label: "phone-app-control")
@@ -46,10 +48,11 @@ public final class PhoneAppSession: @unchecked Sendable {
     static let socket = "localabstract:nearside-display"
     static let graceSeconds: TimeInterval = 30
 
-    init(target: String, width: Int, height: Int, dpi: Int, fps: Int = 60, kbps: Int = 12_000,
+    init(target: String, width: Int, height: Int, dpi: Int, cropPixels: Int = 0, fps: Int = 60, kbps: Int = 12_000,
          token: String, requestTicket: @escaping @Sendable () async -> Data?) {
         self.target = target
         self.size = (width & ~1, height & ~1, dpi)
+        self.cropPixels = cropPixels
         self.fps = fps
         self.kbps = kbps
         self.token = token
@@ -232,6 +235,7 @@ public final class PhoneAppSession: @unchecked Sendable {
     public func touch(_ action: DisplayWire.TouchAction, pointer: UInt8 = 0, x: Float, y: Float,
                       time: TimeInterval = ProcessInfo.processInfo.systemUptime) {
         let gen = lock.withLock { self.gen }
+        let y = displayY(y)
         Trace.log("touch \(action) p\(pointer) \(x) \(y) gen \(gen)")
         send(DisplayWire.touch(action, pointer: pointer, gen: gen, x: x, y: y, micros: UInt64(max(0, time) * 1_000_000)))
     }
@@ -242,12 +246,12 @@ public final class PhoneAppSession: @unchecked Sendable {
 
     /// A mouse wheel at x/y (normalised); h/v in notches, + = right/up.
     public func scroll(x: Float, y: Float, h: Float, v: Float) {
-        send(DisplayWire.scroll(gen: lock.withLock { gen }, x: x, y: y, h: h, v: v))
+        send(DisplayWire.scroll(gen: lock.withLock { gen }, x: x, y: displayY(y), h: h, v: v))
     }
 
     /// The mouse pointer itself: hover, and the right button.
     public func mouse(_ action: DisplayWire.MouseAction, x: Float, y: Float) {
-        send(DisplayWire.mouse(action, gen: lock.withLock { gen }, x: x, y: y))
+        send(DisplayWire.mouse(action, gen: lock.withLock { gen }, x: x, y: displayY(y)))
     }
 
     public func back() { send(DisplayWire.packet(DisplayWire.nav, Data([1]))) }
@@ -271,9 +275,14 @@ public final class PhoneAppSession: @unchecked Sendable {
 
     private var layoutHint: String?
 
+    private func displayY(_ y: Float) -> Float {
+        let (crop, height) = lock.withLock { (cropPixels, size.height) }
+        return PhoneDisplaySize.displayY(y, cropPixels: crop, height: height)
+    }
+
     /// The window's new pixel size; the phone re-lays the app out for it.
-    public func resize(width: Int, height: Int, dpi: Int) {
-        lock.withLock { size = (width & ~1, height & ~1, dpi) }
+    public func resize(width: Int, height: Int, dpi: Int, cropPixels: Int = 0) {
+        lock.withLock { size = (width & ~1, height & ~1, dpi); self.cropPixels = cropPixels }
         send(DisplayWire.resize(width: width & ~1, height: height & ~1, dpi: dpi))
     }
 

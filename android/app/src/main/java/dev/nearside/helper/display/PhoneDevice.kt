@@ -120,6 +120,24 @@ object PhoneDevice {
         }.onFailure { Log.d("virtual keyboard failed: ${it.cause ?: it}") }.getOrNull()
     }
 
+    /**
+     * A touchscreen on [displayId]. Touches are still injected; it's there so the display reports
+     * a touchscreen (`finger`): without one it said `-touch` and apps may lay out for a mouse.
+     */
+    @Synchronized
+    fun createTouchscreen(name: String, displayId: Int, w: Int, h: Int): Any? {
+        val d = device ?: return null
+        return runCatching {
+            val builder = Class.forName("android.hardware.input.VirtualTouchscreenConfig\$Builder")
+                .getConstructor(Int::class.java, Int::class.java).newInstance(w, h)
+            call(builder, "setInputDeviceName", name)
+            call(builder, "setVendorId", 0x18d1)
+            call(builder, "setProductId", 0x4155)
+            call(builder, "setAssociatedDisplayId", displayId)
+            call(d, "createVirtualTouchscreen", call(builder, "build"))
+        }.onFailure { Log.d("virtual touchscreen failed: ${it.cause ?: it}") }.getOrNull()
+    }
+
     private val keyEventClass by lazy { Class.forName("android.hardware.input.VirtualKeyEvent") }
     private val keyDown by lazy { keyEventClass.getField("ACTION_DOWN").get(null) }
     private val keyUp by lazy { keyEventClass.getField("ACTION_UP").get(null) }

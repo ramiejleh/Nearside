@@ -53,6 +53,7 @@ extension SyncEngine {
         let reply = await displayRequest("display-apps", timeout: .seconds(20))
         if reply == nil { NSLog("Nearside: no answer to display-apps") }
         if let error = reply?["error"] { NSLog("Nearside: display-apps failed: \(error)") }
+        if let dp = reply?["statusBarDp"] as? Int, dp > 0 { PhoneInfo.statusBarDp = dp }
         guard let list = reply?["apps"] as? [[String: Any]] else { return nil }
         return list.compactMap { entry in
             guard let pkg = entry["pkg"] as? String, let activity = entry["activity"] as? String else { return nil }
@@ -61,8 +62,8 @@ extension SyncEngine {
     }
 
     /// A session showing `app` in a window of `width`×`height` pixels (start it to connect).
-    public func makePhoneAppSession(_ app: PhoneApp, width: Int, height: Int, dpi: Int) -> PhoneAppSession {
-        PhoneAppSession(target: app.id, width: width, height: height, dpi: dpi, token: Token.value) { [weak self] in
+    public func makePhoneAppSession(_ app: PhoneApp, width: Int, height: Int, dpi: Int, cropPixels: Int = 0) -> PhoneAppSession {
+        PhoneAppSession(target: app.id, width: width, height: height, dpi: dpi, cropPixels: cropPixels, token: Token.value) { [weak self] in
             await self?.displayTicket()
         }
     }
@@ -78,5 +79,32 @@ public enum PhoneDisplaySize {
         w *= shrink
         h *= shrink
         return (Int(w) & ~1, Int(h) & ~1, max(Int((160 * scale * shrink).rounded()), 72))
+    }
+
+    /// The same, for an app that leaves `cropTopDp` empty at the top (Instagram keeps the phone's
+    /// status-bar height free in any window): the display is that much taller and its top
+    /// `cropPixels` rows aren't shown, so the app's real content fills the window.
+    public static func forWindow(_ points: CGSize, scale: CGFloat, cropTopDp: Int)
+        -> (width: Int, height: Int, dpi: Int, cropPixels: Int) {
+        let s = forWindow(CGSize(width: points.width, height: points.height + CGFloat(max(cropTopDp, 0))), scale: scale)
+        let crop = min(Int((Double(max(cropTopDp, 0)) * Double(s.dpi) / 160).rounded()), s.height / 2)
+        return (s.width, s.height, s.dpi, crop)
+    }
+
+    /// A y (0…1) in the shown part → y (0…1) in the whole display.
+    public static func displayY(_ y: Float, cropPixels: Int, height: Int) -> Float {
+        guard cropPixels > 0, height > cropPixels else { return y }
+        return (Float(cropPixels) + y * Float(height - cropPixels)) / Float(height)
+    }
+}
+
+/// What the phone told us about itself (from the app-list reply).
+public enum PhoneInfo {
+    private static let lock = NSLock()
+    nonisolated(unsafe) private static var _statusBarDp = 0
+    /// The phone's status-bar height in dp (0 until the app list has been fetched).
+    public static var statusBarDp: Int {
+        get { lock.withLock { _statusBarDp } }
+        set { lock.withLock { _statusBarDp = newValue } }
     }
 }
