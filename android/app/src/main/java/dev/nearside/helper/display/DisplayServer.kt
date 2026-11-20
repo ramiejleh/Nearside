@@ -26,7 +26,7 @@ object DisplayWire {
     // Mac → phone (control stream)
     const val OPEN = 0x10; const val RESUME = 0x11; const val TOUCH = 0x12; const val RESIZE = 0x13
     const val NAV = 0x14; const val PING = 0x15; const val VISIBILITY = 0x16; const val CLOSE = 0x17
-    const val SYNC = 0x18
+    const val SYNC = 0x18; const val SCROLL = 0x19; const val MOUSE = 0x1A
     // phone → Mac (control stream)
     const val TASK = 0x20; const val TASK_GONE = 0x21; const val PONG = 0x22; const val ERROR = 0x23
     // phone → Mac (video stream)
@@ -34,6 +34,7 @@ object DisplayWire {
 
     const val ROLE_CONTROL = 1; const val ROLE_VIDEO = 2
     const val NAV_BACK = 1
+    const val MOUSE_HOVER = 0; const val MOUSE_EXIT = 1; const val MOUSE_SECONDARY_DOWN = 2; const val MOUSE_SECONDARY_UP = 3
     const val GONE_EXITED = 0; const val GONE_MOVED = 1
     const val ERR_NOT_FOUND = 1; const val ERR_LAUNCH = 2; const val ERR_NO_SESSION = 3
     const val VERSION = 1

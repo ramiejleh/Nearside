@@ -227,11 +227,26 @@ public final class PhoneAppSession: @unchecked Sendable {
         writer.async { try? stream.write(packet) }
     }
 
-    /// x/y normalised (0…1) within the video.
-    public func touch(_ action: DisplayWire.TouchAction, x: Float, y: Float) {
+    /// x/y normalised (0…1) within the video; `time` is the Mac event's (NSEvent.timestamp, s).
+    public func touch(_ action: DisplayWire.TouchAction, pointer: UInt8 = 0, x: Float, y: Float,
+                      time: TimeInterval = ProcessInfo.processInfo.systemUptime) {
         let gen = lock.withLock { self.gen }
-        Trace.log("touch \(action) \(x) \(y) gen \(gen) control \(lock.withLock { control } != nil)")
-        send(DisplayWire.touch(action, pointer: 0, gen: gen, x: x, y: y))
+        Trace.log("touch \(action) p\(pointer) \(x) \(y) gen \(gen)")
+        send(DisplayWire.touch(action, pointer: pointer, gen: gen, x: x, y: y, micros: UInt64(max(0, time) * 1_000_000)))
+    }
+
+    public func touches(_ touches: [PointerGestures.Touch], time: TimeInterval) {
+        for t in touches { touch(t.action, pointer: t.pointer, x: t.x, y: t.y, time: time) }
+    }
+
+    /// A mouse wheel at x/y (normalised); h/v in notches, + = right/up.
+    public func scroll(x: Float, y: Float, h: Float, v: Float) {
+        send(DisplayWire.scroll(gen: lock.withLock { gen }, x: x, y: y, h: h, v: v))
+    }
+
+    /// The mouse pointer itself: hover, and the right button.
+    public func mouse(_ action: DisplayWire.MouseAction, x: Float, y: Float) {
+        send(DisplayWire.mouse(action, gen: lock.withLock { gen }, x: x, y: y))
     }
 
     public func back() { send(DisplayWire.packet(DisplayWire.nav, Data([1]))) }

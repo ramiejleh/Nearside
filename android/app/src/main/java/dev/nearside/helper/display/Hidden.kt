@@ -10,6 +10,7 @@ import android.hardware.display.DisplayManager
 import android.os.Bundle
 import android.os.IBinder
 import android.view.InputEvent
+import android.view.MotionEvent
 import dev.nearside.helper.FakeContext
 import dev.nearside.helper.Log
 
@@ -42,6 +43,13 @@ object Hidden {
         setDisplayIdMethod.invoke(event, displayId)
         return injectMethod.invoke(inputManager, event, 0) as Boolean // INJECT_INPUT_EVENT_MODE_ASYNC
     }
+
+    private val setActionButtonMethod by lazy { MotionEvent::class.java.getMethod("setActionButton", Int::class.java) }
+
+    /** BUTTON_PRESS/RELEASE events need their button set, which only a hidden setter does. */
+    fun setActionButton(event: MotionEvent, button: Int): Boolean = runCatching {
+        setActionButtonMethod.invoke(event, button); true
+    }.onFailure { Log.d("MotionEvent.setActionButton failed: ${it.cause ?: it}") }.getOrDefault(false)
 
     /** Starts an activity as the shell, with options (e.g. a launch display). */
     fun startActivity(intent: Intent, options: Bundle): Boolean {

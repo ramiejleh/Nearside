@@ -66,13 +66,14 @@ struct DisplayProtocolTests {
     }
 
     @Test func touchEncodesNormalisedCoordinates() {
-        let p = DisplayWire.touch(.move, pointer: 0, gen: 7, x: 0.5, y: 0.25)
+        let p = DisplayWire.touch(.move, pointer: 0, gen: 7, x: 0.5, y: 0.25, micros: 123_456)
         #expect(p.prefix(2) == Data([DisplayWire.touch, 0]))
-        #expect(p.readBE(UInt32.self, at: 2) == 14)
+        #expect(p.readBE(UInt32.self, at: 2) == 22)
         #expect(p[6] == DisplayWire.TouchAction.move.rawValue)
         #expect(p.readBE(UInt32.self, at: 8) == 7)
         #expect(Float(bitPattern: p.readBE(UInt32.self, at: 12)) == 0.5)
         #expect(Float(bitPattern: p.readBE(UInt32.self, at: 16)) == 0.25)
+        #expect(p.readBE(UInt64.self, at: 20) == 123_456)
     }
 
     @Test func displaySizeKeepsOneDpPerPoint() {

@@ -60,7 +60,6 @@ class DisplaySession(
     private var hiddenPolls = 0
     private val openedAt = SystemClock.uptimeMillis()
     private val watcher = Executors.newSingleThreadScheduledExecutor { Thread(it, "display-$id-tasks") }
-    private var downTime = 0L
     private var awake: android.os.PowerManager.WakeLock? = null
 
     fun start() {
@@ -112,8 +111,10 @@ class DisplaySession(
     private fun handle(type: Int, b: ByteBuffer) {
         when (type) {
             DisplayWire.TOUCH -> if (b.remaining() >= 14) {
-                touch(b.get().toInt(), b.get().toInt(), b.int, b.float, b.float)
+                touch(b.get().toInt(), b.get().toInt(), b.int, b.float, b.float, if (b.remaining() >= 8) b.long else 0)
             }
+            DisplayWire.SCROLL -> if (b.remaining() >= 20) scroll(b.int, b.float, b.float, b.float, b.float)
+            DisplayWire.MOUSE -> if (b.remaining() >= 13) mouse(b.get().toInt(), b.int, b.float, b.float)
             DisplayWire.RESIZE -> if (b.remaining() >= 6) {
                 resize(b.short.toInt() and 0xffff, b.short.toInt() and 0xffff, b.short.toInt() and 0xffff)
             }
@@ -287,6 +288,9 @@ class DisplaySession(
     private fun resize(nw: Int, nh: Int, ndpi: Int) {
         if (closed || nw < 64 || nh < 64 || nw > 4096 || nh > 4096 || ndpi !in 72..640) return
         if (nw == w && nh == h && ndpi == dpi) return
+        // Fingers and the pointer are in the old size's pixels: end them first.
+        cancelFingers()
+        endMouse(SystemClock.uptimeMillis())
         val old = codec
         w = nw and 1.inv(); h = nh and 1.inv(); dpi = ndpi
         val surface = newEncoder()
@@ -297,43 +301,169 @@ class DisplaySession(
     }
 
     // MARK: - Input
+    //
+    // Everything here runs on the control thread. Fingers are built as scrcpy builds them
+    // (Controller.injectTouch): explicit pointer properties (TOOL_TYPE_FINGER), pressure 1 while
+    // down and 0 when lifted, and a stream that stays consistent whatever arrives: Android 17's
+    // input dispatcher rejects everything after an inconsistent event (a lost UP would wedge the
+    // app). Pointer ids: 0 the mouse button, 1 the trackpad-scroll finger, 2–3 pinch/rotate.
+    // Fingers and the mouse pointer share a device, so they never overlap: hovering ends before a
+    // finger goes down, and the mouse is ignored while one is down.
 
-    // A finger, as scrcpy builds it (Controller.injectTouch): explicit pointer properties
-    // (TOOL_TYPE_FINGER), pressure 1 while down and 0 on UP, a consistent DOWN…MOVE…UP stream.
-    // The one-line MotionEvent.obtain() leaves the tool type unknown, and the input dispatcher
-    // rejected everything after the first DOWN (Gate "first window" test, Android 17).
-    private val pointerProps = arrayOf(MotionEvent.PointerProperties().apply {
-        id = 0; toolType = MotionEvent.TOOL_TYPE_FINGER
-    })
-    private val pointerCoords = arrayOf(MotionEvent.PointerCoords().apply { size = 1f })
-    private var fingerDown = false
+    private class Finger(val id: Int, var x: Float, var y: Float)
+    private val fingers = ArrayList<Finger>() // in DOWN order (= pointer index)
+    private var downTime = 0L
+    private var lastEventTime = 0L
+    private var macBase = 0L
+    private var phoneBase = 0L
+    private var hovering = false
+    private var secondaryDown = false
+    private var mouseDownTime = 0L
     private var touchesOk = 0
     private var touchesFailed = 0
 
-    private fun touch(action: Int, pointer: Int, touchGen: Int, x: Float, y: Float) {
-        if (touchGen != gen) return // aimed at a frame size that's gone
-        if (action !in 0..2) return
-        // Keep the stream consistent whatever arrives (a lost DOWN or UP would wedge the app).
-        if (action == MotionEvent.ACTION_DOWN && fingerDown) injectTouch(MotionEvent.ACTION_UP, pointerCoords[0].x, pointerCoords[0].y)
-        if (action != MotionEvent.ACTION_DOWN && !fingerDown) return
-        injectTouch(action, x.coerceIn(0f, 1f) * w, y.coerceIn(0f, 1f) * h)
+    private fun touch(action: Int, pointer: Int, touchGen: Int, x: Float, y: Float, macMicros: Long) {
+        if (touchGen != gen || action !in 0..3 || pointer !in 0..9) return // a stale size, or junk
+        // A scroll-drag finger may go past the edges (Android keeps delivering it to its window).
+        val px = x.coerceIn(-2f, 3f) * w
+        val py = y.coerceIn(-2f, 3f) * h
+        val index = fingers.indexOfFirst { it.id == pointer }
+        when (action) {
+            0 -> { // DOWN
+                if (fingers.isEmpty()) { macBase = macMicros; phoneBase = SystemClock.uptimeMillis() }
+                val t = eventTime(macMicros)
+                if (index >= 0) lift(index, t) // its UP got lost
+                // Landing outside every window would be rejected (and wedge the stream).
+                val finger = Finger(pointer, px.coerceIn(0f, w - 1f), py.coerceIn(0f, h - 1f))
+                if (fingers.isEmpty()) {
+                    endMouse(t)
+                    downTime = t
+                    fingers.add(finger)
+                    injectFingers(MotionEvent.ACTION_DOWN, t)
+                } else {
+                    fingers.add(finger)
+                    injectFingers(MotionEvent.ACTION_POINTER_DOWN or ((fingers.size - 1) shl 8), t)
+                }
+            }
+            2 -> if (index >= 0) { // MOVE
+                fingers[index].x = px; fingers[index].y = py
+                injectFingers(MotionEvent.ACTION_MOVE, eventTime(macMicros))
+            }
+            1 -> if (index >= 0) { // UP
+                fingers[index].x = px; fingers[index].y = py
+                lift(index, eventTime(macMicros))
+            }
+            3 -> cancelFingers()
+        }
     }
 
-    private fun injectTouch(action: Int, px: Float, py: Float) {
+    private fun lift(index: Int, t: Long) {
+        if (fingers.size == 1) injectFingers(MotionEvent.ACTION_UP, t, lifted = 0)
+        else injectFingers(MotionEvent.ACTION_POINTER_UP or (index shl 8), t, lifted = index)
+        fingers.removeAt(index)
+    }
+
+    private fun cancelFingers() {
+        if (fingers.isEmpty()) return
+        injectFingers(MotionEvent.ACTION_CANCEL, eventTime(0))
+        fingers.clear()
+    }
+
+    /**
+     * The Mac's event times, mapped onto ours, so a fling's speed is the hand's, not the network's
+     * jitter. The mapping follows the fastest delivery seen in the gesture, so it's never in the
+     * future, and times never go backwards.
+     */
+    private fun eventTime(macMicros: Long): Long {
         val now = SystemClock.uptimeMillis()
-        if (action == MotionEvent.ACTION_DOWN) downTime = now
-        pointerCoords[0].x = px
-        pointerCoords[0].y = py
-        pointerCoords[0].pressure = if (action == MotionEvent.ACTION_UP) 0f else 1f
-        val event = MotionEvent.obtain(downTime, now, action, 1, pointerProps, pointerCoords, 0, 0, 1f, 1f,
-            0, 0, InputDevice.SOURCE_TOUCHSCREEN, 0)
+        var t = if (macMicros > 0 && macBase > 0) phoneBase + (macMicros - macBase) / 1000 else now
+        if (t > now) { phoneBase -= t - now; t = now }
+        t = maxOf(t, lastEventTime)
+        lastEventTime = t
+        return t
+    }
+
+    private fun injectFingers(action: Int, t: Long, lifted: Int = -1) {
+        val n = fingers.size
+        val props = Array(n) { i -> MotionEvent.PointerProperties().apply { id = fingers[i].id; toolType = MotionEvent.TOOL_TYPE_FINGER } }
+        val coords = Array(n) { i ->
+            MotionEvent.PointerCoords().apply { x = fingers[i].x; y = fingers[i].y; size = 1f; pressure = if (i == lifted) 0f else 1f }
+        }
+        val event = MotionEvent.obtain(downTime, t, action, n, props, coords, 0, 0, 1f, 1f, 0, 0, InputDevice.SOURCE_TOUCHSCREEN, 0)
         val ok = runCatching { Hidden.inject(event, displayId) }.getOrDefault(false)
         event.recycle()
-        fingerDown = action != MotionEvent.ACTION_UP
         if (ok) touchesOk++ else {
             touchesFailed++
-            Log.d("display session $id: injecting touch action $action at (${px.toInt()},${py.toInt()}) failed")
+            Log.d("display session $id: injecting touch action $action ($n pointer(s)) failed")
         }
+    }
+
+    // The mouse pointer itself: hover (web pages, tooltips) and the right button (context click).
+
+    private fun mouse(kind: Int, mouseGen: Int, x: Float, y: Float) {
+        if (mouseGen != gen || fingers.isNotEmpty()) return
+        val px = x.coerceIn(0f, 1f) * (w - 1)
+        val py = y.coerceIn(0f, 1f) * (h - 1)
+        val now = SystemClock.uptimeMillis()
+        when (kind) {
+            DisplayWire.MOUSE_HOVER -> if (!secondaryDown) {
+                injectMouse(MotionEvent.ACTION_HOVER_MOVE, now, now, px, py, 0)
+                hovering = true
+            }
+            DisplayWire.MOUSE_EXIT -> endMouse(now)
+            DisplayWire.MOUSE_SECONDARY_DOWN -> if (!secondaryDown) {
+                endMouse(now)
+                mouseDownTime = now
+                secondaryDown = true
+                injectMouse(MotionEvent.ACTION_DOWN, now, now, px, py, MotionEvent.BUTTON_SECONDARY)
+                injectMouse(MotionEvent.ACTION_BUTTON_PRESS, now, now, px, py, MotionEvent.BUTTON_SECONDARY, MotionEvent.BUTTON_SECONDARY)
+            }
+            DisplayWire.MOUSE_SECONDARY_UP -> if (secondaryDown) releaseSecondary(now, px, py)
+        }
+        lastMouse = px to py
+    }
+
+    private var lastMouse = 0f to 0f
+
+    private fun releaseSecondary(t: Long, px: Float, py: Float) {
+        injectMouse(MotionEvent.ACTION_BUTTON_RELEASE, mouseDownTime, t, px, py, 0, MotionEvent.BUTTON_SECONDARY)
+        injectMouse(MotionEvent.ACTION_UP, mouseDownTime, t, px, py, 0)
+        secondaryDown = false
+    }
+
+    /** Ends hovering or a held right button, before a finger goes down. */
+    private fun endMouse(t: Long) {
+        val (px, py) = lastMouse
+        if (secondaryDown) releaseSecondary(t, px, py)
+        if (hovering) injectMouse(MotionEvent.ACTION_HOVER_EXIT, t, t, px, py, 0)
+        hovering = false
+    }
+
+    /** A mouse wheel; h/v in notches (+ = right/up). */
+    private fun scroll(scrollGen: Int, x: Float, y: Float, hScroll: Float, vScroll: Float) {
+        if (scrollGen != gen || fingers.isNotEmpty() || secondaryDown) return
+        if (!hScroll.isFinite() || !vScroll.isFinite()) return
+        val now = SystemClock.uptimeMillis()
+        val px = x.coerceIn(0f, 1f) * (w - 1)
+        val py = y.coerceIn(0f, 1f) * (h - 1)
+        injectMouse(MotionEvent.ACTION_SCROLL, now, now, px, py, 0, axes = hScroll.coerceIn(-50f, 50f) to vScroll.coerceIn(-50f, 50f))
+        lastMouse = px to py
+    }
+
+    private val mouseProps = arrayOf(MotionEvent.PointerProperties().apply { id = 0; toolType = MotionEvent.TOOL_TYPE_MOUSE })
+
+    private fun injectMouse(action: Int, down: Long, t: Long, px: Float, py: Float, buttons: Int, actionButton: Int = 0,
+                            axes: Pair<Float, Float>? = null) {
+        val coords = arrayOf(MotionEvent.PointerCoords().apply {
+            x = px; y = py
+            pressure = if (buttons != 0) 1f else 0f
+            axes?.let { setAxisValue(MotionEvent.AXIS_HSCROLL, it.first); setAxisValue(MotionEvent.AXIS_VSCROLL, it.second) }
+        })
+        val event = MotionEvent.obtain(down, t, action, 1, mouseProps, coords, 0, buttons, 1f, 1f, 0, 0, InputDevice.SOURCE_MOUSE, 0)
+        if (actionButton != 0 && !Hidden.setActionButton(event, actionButton)) { event.recycle(); return }
+        val ok = runCatching { Hidden.inject(event, displayId) }.getOrDefault(false)
+        event.recycle()
+        if (!ok) Log.d("display session $id: injecting mouse action $action failed")
     }
 
     private fun nav(which: Int) {

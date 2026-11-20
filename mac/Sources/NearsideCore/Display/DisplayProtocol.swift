@@ -9,7 +9,7 @@ public enum DisplayWire {
     // Mac → phone (control)
     static let open: UInt8 = 0x10, resume: UInt8 = 0x11, touch: UInt8 = 0x12, resize: UInt8 = 0x13
     static let nav: UInt8 = 0x14, ping: UInt8 = 0x15, visibility: UInt8 = 0x16, close: UInt8 = 0x17
-    static let sync: UInt8 = 0x18
+    static let sync: UInt8 = 0x18, scroll: UInt8 = 0x19, mouse: UInt8 = 0x1A
     // phone → Mac
     static let task: UInt8 = 0x20, taskGone: UInt8 = 0x21, pong: UInt8 = 0x22, error: UInt8 = 0x23
     static let config: UInt8 = 0x30, frame: UInt8 = 0x31
@@ -19,7 +19,9 @@ public enum DisplayWire {
     /// A 4K keyframe is far below this.
     public static let maxPacket = 16 * 1024 * 1024
 
-    public enum TouchAction: UInt8, Sendable { case down = 0, up = 1, move = 2 }
+    public enum TouchAction: UInt8, Sendable { case down = 0, up = 1, move = 2, cancel = 3 }
+    /// A mouse pointer (not a finger): hovering, and the right button.
+    public enum MouseAction: UInt8, Sendable { case hover = 0, exit = 1, secondaryDown = 2, secondaryUp = 3 }
     public enum GoneReason: UInt8, Sendable { case exited = 0, movedToPhone = 1 }
 
     /// What the phone sends.
@@ -72,10 +74,25 @@ public enum DisplayWire {
         return packet(open, b)
     }
 
-    static func touch(_ action: TouchAction, pointer: UInt8, gen: UInt32, x: Float, y: Float) -> Data {
+    /// x/y normalised to the video (a scroll-drag finger may go past the edges); `micros` is the
+    /// Mac event time, so the phone spaces the events as they happened and flings at the right speed.
+    static func touch(_ action: TouchAction, pointer: UInt8, gen: UInt32, x: Float, y: Float, micros: UInt64) -> Data {
         var b = Data([action.rawValue, pointer])
-        b.appendBE(gen); b.appendBE(x.bitPattern); b.appendBE(y.bitPattern)
+        b.appendBE(gen); b.appendBE(x.bitPattern); b.appendBE(y.bitPattern); b.appendBE(micros)
         return packet(touch, b)
+    }
+
+    /// A mouse wheel: h/v in wheel notches (Android's AXIS_HSCROLL/AXIS_VSCROLL, + = right/up).
+    static func scroll(gen: UInt32, x: Float, y: Float, h: Float, v: Float) -> Data {
+        var b = Data()
+        b.appendBE(gen); b.appendBE(x.bitPattern); b.appendBE(y.bitPattern); b.appendBE(h.bitPattern); b.appendBE(v.bitPattern)
+        return packet(scroll, b)
+    }
+
+    static func mouse(_ action: MouseAction, gen: UInt32, x: Float, y: Float) -> Data {
+        var b = Data([action.rawValue])
+        b.appendBE(gen); b.appendBE(x.bitPattern); b.appendBE(y.bitPattern)
+        return packet(mouse, b)
     }
 
     static func resize(width: Int, height: Int, dpi: Int) -> Data {

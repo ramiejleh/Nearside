@@ -60,7 +60,7 @@ final class AppWindowController: NSObject, NSWindowDelegate {
         session.onFrame = { [renderer] frame in renderer.show(frame) }
         session.onState = { [weak self] state in self?.render(state) }
         session.onVideoSize = { [weak self] size in self?.stream.videoSize = size }
-        stream.onTouch = { [weak self] action, x, y in self?.session.touch(action, x: x, y: y) }
+        stream.session = session
         NotificationCenter.default.addObserver(self, selector: #selector(occlusionChanged),
                                                name: NSWindow.didChangeOcclusionStateNotification, object: window)
         session.start()
@@ -83,12 +83,65 @@ final class AppWindowController: NSObject, NSWindowDelegate {
     }
 
     /// Test hook: NEARSIDE_TEST_INPUT=1 taps the middle, then drags up, through the same path
-    /// as the mouse (StreamView.onTouch → session), so input can be checked without a person.
+    /// as the mouse (StreamView → session), so input can be checked without a person. `scroll` and
+    /// `pinch` drive the trackpad paths the same way.
     private func testInputIfAsked() {
         guard let mode = ProcessInfo.processInfo.environment["NEARSIDE_TEST_INPUT"] else { return }
         Task { @MainActor [weak self] in
             try? await Task.sleep(for: .seconds(2))
-            guard let self, let touch = stream.onTouch else { return }
+            guard let self else { return }
+            let size = stream.videoPointSize
+            let now = { ProcessInfo.processInfo.systemUptime }
+            if mode == "scroll" {
+                // A two-finger flick up (content moves up), as a trackpad sends it, ~120 Hz.
+                let at = CGPoint(x: size.width / 2, y: size.height * 0.7)
+                stream.scrollDrag(.began, at: at, delta: CGVector(dx: 0, dy: -4), time: now())
+                for _ in 0..<12 {
+                    try? await Task.sleep(for: .milliseconds(8))
+                    stream.scrollDrag(.changed, at: at, delta: CGVector(dx: 0, dy: -18), time: now())
+                }
+                stream.scrollDrag(.ended, at: at, delta: .zero, time: now())
+                Trace.log("test scroll sent")
+                return
+            }
+            if mode == "wheel" {
+                for _ in 0..<5 {
+                    stream.wheel(at: CGPoint(x: size.width / 2, y: size.height / 2), h: 0, v: -1)
+                    try? await Task.sleep(for: .milliseconds(60))
+                }
+                Trace.log("test wheel sent")
+                return
+            }
+            if mode == "mouse" {
+                // Hover across, right-click, then a normal tap (the finger must still work after).
+                for i in 0..<10 {
+                    session.mouse(.hover, x: 0.2 + Float(i) * 0.05, y: 0.5)
+                    try? await Task.sleep(for: .milliseconds(16))
+                }
+                session.mouse(.secondaryDown, x: 0.5, y: 0.5)
+                try? await Task.sleep(for: .milliseconds(80))
+                session.mouse(.secondaryUp, x: 0.5, y: 0.5)
+                session.mouse(.hover, x: 0.5, y: 0.5)
+                try? await Task.sleep(for: .seconds(1))
+                stream.button(.down, at: CGPoint(x: size.width / 2, y: size.height * 0.6), time: now())
+                stream.button(.up, at: CGPoint(x: size.width / 2, y: size.height * 0.6), time: now())
+                Trace.log("test mouse sent")
+                return
+            }
+            if mode == "pinch" {
+                let at = CGPoint(x: size.width / 2, y: size.height / 2)
+                stream.pinch(.began, at: at, by: 0, time: now())
+                for _ in 0..<20 {
+                    try? await Task.sleep(for: .milliseconds(16))
+                    stream.pinch(.changed, at: at, by: 0.06, time: now())
+                }
+                stream.pinch(.ended, at: at, by: 0, time: now())
+                Trace.log("test pinch sent")
+                return
+            }
+            let touch = { [stream] (action: DisplayWire.TouchAction, x: CGFloat, y: CGFloat) in
+                stream.button(action, at: CGPoint(x: x * size.width, y: y * size.height), time: now())
+            }
             if mode == "resize" {
                 var frame = window.frame
                 frame.size.width = (frame.size.height * 0.9).rounded()
@@ -118,7 +171,7 @@ final class AppWindowController: NSObject, NSWindowDelegate {
             touch(.down, 0.5, 0.8)
             for i in 1...20 {
                 try? await Task.sleep(for: .milliseconds(16))
-                touch(.move, 0.5, 0.8 - Float(i) * 0.025)
+                touch(.move, 0.5, 0.8 - CGFloat(i) * 0.025)
             }
             touch(.up, 0.5, 0.3)
             NSLog("Nearside: test input sent")
@@ -167,6 +220,8 @@ final class AppWindowController: NSObject, NSWindowDelegate {
     func windowDidChangeBackingProperties(_ notification: Notification) {
         scheduleResize() // moved to a screen with a different scale
     }
+
+    func windowDidResignKey(_ notification: Notification) { stream.cancelInput() }
 
     @objc private func occlusionChanged() {
         let visible = window.occlusionState.contains(.visible)
