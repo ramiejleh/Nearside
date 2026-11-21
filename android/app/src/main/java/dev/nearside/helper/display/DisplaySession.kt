@@ -151,11 +151,19 @@ class DisplaySession(
         audio.attach(conn)
     }
 
+    /** When the control thread started handling the packet it's on (0: waiting for one). */
+    @Volatile private var handlingSince = 0L
+
+    /** Stuck handling a packet for [ms] (the watchdog's question). */
+    fun stuckFor(ms: Long) = !closed && handlingSince != 0L && SystemClock.uptimeMillis() - handlingSince > ms
+
     private fun controlLoop(conn: DisplayWire.Conn) {
         try {
             while (!closed) {
                 val (type, body) = conn.read() ?: break
+                handlingSince = SystemClock.uptimeMillis()
                 handle(type, ByteBuffer.wrap(body))
+                handlingSince = 0
             }
         } catch (e: Exception) {
             Log.d("display session $id: control ended ($e)")
@@ -519,26 +527,36 @@ class DisplaySession(
             // A resize swaps the codec under us; the old one then throws, which is fine.
             val index = try { c.dequeueOutputBuffer(info, if (suspended) 500_000 else 50_000) } catch (e: IllegalStateException) { continue }
             if (index < 0) continue
-            try {
+            // Copied out (once, into a reused array) and the buffer given back before anything is
+            // sent: sending can wait (Wi-Fi, a closing stream), and an encoder being stopped or
+            // replaced meanwhile would wait for its buffer, under the session's lock: every
+            // window froze.
+            val size = try {
                 val buf = c.getOutputBuffer(index) ?: continue
                 buf.position(info.offset).limit(info.offset + info.size)
-                send(buf, myGen)
+                val n = buf.remaining()
+                if (frameData.size < n) frameData = ByteArray(n + n / 4)
+                buf.get(frameData, 0, n)
+                n
             } catch (e: IllegalStateException) {
                 continue
             } finally {
                 runCatching { c.releaseOutputBuffer(index, false) }
             }
+            send(frameData, size, myGen)
         }
     }
 
+    /** The encode thread's copy of the frame being sent, reused. */
+    private var frameData = ByteArray(0)
     /** Header of a FRAME packet (gen, pts, encoded time, key), reused. */
     private val frameHeader = ByteBuffer.allocate(21)
 
-    /** One output buffer of the encoder, sent straight from it (one copy, see Conn.sendFrame). */
-    private fun send(buf: ByteBuffer, myGen: Int) {
+    /** One encoded frame (or the codec config) to the Mac. */
+    private fun send(data: ByteArray, size: Int, myGen: Int) {
         if (info.flags and MediaCodec.BUFFER_FLAG_CODEC_CONFIG != 0) {
-            val config = ByteBuffer.allocate(8 + buf.remaining()).putInt(myGen).putShort(w.toShort())
-                .putShort(h.toShort()).put(buf).array()
+            val config = ByteBuffer.allocate(8 + size).putInt(myGen).putShort(w.toShort())
+                .putShort(h.toShort()).put(data, 0, size).array()
             lastConfig = config
             video?.send(DisplayWire.CONFIG, config)
             return
@@ -554,11 +572,10 @@ class DisplaySession(
         if (awaitingKey && !key) return
         awaitingKey = false
         val v = video ?: return
-        val size = buf.remaining()
         frameHeader.clear()
         frameHeader.putInt(myGen).putLong(info.presentationTimeUs).putLong(System.nanoTime() / 1000).put(if (key) 1 else 0)
         lastSentPts = info.presentationTimeUs
-        v.sendFrame(DisplayWire.FRAME, frameHeader.array(), buf)
+        v.sendFrame(DisplayWire.FRAME, frameHeader.array(), data, size)
         framesSent++
         bytesSent += 6 + 21 + size
     }
@@ -1043,12 +1060,13 @@ class DisplaySession(
         touchscreen?.let { PhoneDevice.closeInput(it) }
         if (bars != null) SystemBars.remove(displayId)
         displays.remove(displayId)
+        // The streams first: a send waiting on them fails now instead of holding anything up.
+        ctl?.close()
+        video?.close()
         runCatching { display.release() }
         device?.close()
         codec?.let { runCatching { it.stop() }; it.release() }
         watcher.shutdownNow()
-        ctl?.close()
-        video?.close()
         server.ended(this)
         Log.d("display session $id: closed (${apps.size} app(s) back to the phone)")
     }

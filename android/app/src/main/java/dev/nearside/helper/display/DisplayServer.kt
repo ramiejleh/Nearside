@@ -10,6 +10,7 @@ import java.nio.ByteBuffer
 import java.security.MessageDigest
 import java.security.SecureRandom
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.TimeUnit
 import javax.crypto.Mac
 import javax.crypto.spec.SecretKeySpec
 
@@ -96,7 +97,7 @@ object DisplayWire {
         private val input = DataInputStream(socket.inputStream.buffered())
         private val raw = socket.outputStream
         private val output = DataOutputStream(raw.buffered(256 * 1024))
-        /** For [sendFrame]: reused, so a frame costs one copy and no allocation. */
+        /** For [sendFrame]'s packet header, reused. */
         private var scratch = ByteArray(0)
         @Volatile var isClosed = false
             private set
@@ -125,25 +126,23 @@ object DisplayWire {
         }
 
         /**
-         * A packet whose body is [header] then [body] (an encoder's output buffer, read from its
-         * position to its limit): copied once into a reused array and written straight to the
-         * socket, not through the buffer.
+         * A packet whose body is [header] then [size] bytes of [body]: written straight to the
+         * socket (no copy, not through the buffer).
          */
-        fun sendFrame(type: Int, header: ByteArray, body: java.nio.ByteBuffer) {
+        fun sendFrame(type: Int, header: ByteArray, body: ByteArray, size: Int) {
             if (isClosed) return
             try {
                 synchronized(output) {
                     output.flush() // anything smaller still waiting goes first
-                    val n = body.remaining()
-                    val total = 6 + header.size + n
-                    if (scratch.size < total) scratch = ByteArray(total + total / 4)
+                    val start = 6 + header.size
+                    if (scratch.size < start) scratch = ByteArray(start)
                     val s = scratch
                     s[0] = type.toByte(); s[1] = 0
-                    val length = header.size + n
+                    val length = header.size + size
                     s[2] = (length ushr 24).toByte(); s[3] = (length ushr 16).toByte(); s[4] = (length ushr 8).toByte(); s[5] = length.toByte()
                     System.arraycopy(header, 0, s, 6, header.size)
-                    body.get(s, 6 + header.size, n)
-                    raw.write(s, 0, total)
+                    raw.write(s, 0, start)
+                    raw.write(body, 0, size)
                 }
             } catch (e: IOException) {
                 close()
@@ -179,6 +178,35 @@ class DisplayServer(
     /** False if our socket name was taken (by something else): then no tickets are issued. */
     @Volatile private var listening = false
     val openCount get() = sessions.size
+
+    /**
+     * While windows are open: if a window's control thread is stuck on one packet (input and
+     * pings stop reaching the app: the window freezes), write every thread's stack to the log,
+     * once, so the cause can be found.
+     */
+    private val watchdog = java.util.concurrent.Executors.newSingleThreadScheduledExecutor { Thread(it, "display-watchdog").apply { isDaemon = true } }
+    @Volatile private var dumped = false
+    private var watching: java.util.concurrent.ScheduledFuture<*>? = null
+
+    /** The watchdog runs only while windows are open (otherwise the helper sleeps). */
+    @Synchronized
+    private fun watchdog(on: Boolean) {
+        if (on == (watching != null)) return
+        watching = if (on) watchdog.scheduleWithFixedDelay({ runCatching { watch() } }, 10, 10, TimeUnit.SECONDS)
+            else { watching?.cancel(false); null }
+    }
+
+    private fun watch() {
+        if (dumped || sessions.isEmpty()) return
+        val stuck = sessions.values.filter { it.stuckFor(10_000) }
+        if (stuck.isEmpty()) return
+        dumped = true
+        Log.d("watchdog: control stuck for ${stuck.joinToString { it.id }}; all threads:")
+        for ((thread, stack) in Thread.getAllStackTraces()) {
+            Log.d("  \"${thread.name}\" ${thread.state}")
+            stack.take(25).forEach { Log.d("      at $it") }
+        }
+    }
 
     fun start() {
         val server = try {
@@ -283,12 +311,13 @@ class DisplayServer(
                 val session = DisplaySession(sid, this, open)
                 sessions[sid] = session
                 TaskEvents.listen(true)
+                watchdog(true)
                 try {
                     session.start()
                 } catch (t: Throwable) {
                     Log.d("display session $sid failed to start: $t")
                     sessions.remove(sid)
-                    if (sessions.isEmpty()) TaskEvents.listen(false)
+                    if (sessions.isEmpty()) { TaskEvents.listen(false); watchdog(false) }
                     val (code, text) = if (t is DisplaySession.EncoderBusy) DisplayWire.ERR_BUSY to "Your phone can't show more apps at once."
                         else DisplayWire.ERR_LAUNCH to "couldn't start: $t"
                     conn.send(DisplayWire.ERROR, byteArrayOf(code.toByte()) + text.toByteArray())
@@ -307,7 +336,7 @@ class DisplayServer(
 
     fun ended(session: DisplaySession) {
         sessions.remove(session.id)
-        if (sessions.isEmpty()) TaskEvents.listen(false)
+        if (sessions.isEmpty()) { TaskEvents.listen(false); watchdog(false) }
         onSessionsChanged(sessions.size)
         rebalance()
     }
