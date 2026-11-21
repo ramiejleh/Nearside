@@ -13,7 +13,9 @@ final class PhoneWindowController: NSObject, NSWindowDelegate {
     private let session: PhoneAppSession
     private let stream: StreamView
     private let overlay = OverlayHostingView(rootView: AppWindowOverlay(state: .opening, label: "Phone"))
-    private let recents: NSHostingView<RecentsView>
+    /// Pass-through while hidden: a hidden SwiftUI hosting view still claims mouse hits, and the
+    /// hidden Recents swallowed the phone window's clicks and drags (user report).
+    private let recents: OverlayHostingView<RecentsView>
     private let recentsModel = RecentsModel()
     private let bar = PhoneHoverBar()
     private let library: PhoneAppLibrary
@@ -53,7 +55,7 @@ final class PhoneWindowController: NSObject, NSWindowDelegate {
 
         stream = StreamView(renderer: renderer)
         stream.macShortcuts = ["1", "2", "=", "+", "-", "0", "w", "m"]
-        recents = NSHostingView(rootView: RecentsView(model: recentsModel, library: library))
+        recents = OverlayHostingView(rootView: RecentsView(model: recentsModel, library: library))
         recents.isHidden = true
 
         let container = PhoneContentView()
@@ -121,11 +123,29 @@ final class PhoneWindowController: NSObject, NSWindowDelegate {
     /// NEARSIDE_TEST_OVERLAY (png).
     private func testIfAsked() {
         let mode = ProcessInfo.processInfo.environment["NEARSIDE_TEST_PHONE"]
-        guard mode == "recents" || mode == "close" || mode == "bar" else { return }
+        guard mode == "recents" || mode == "close" || mode == "bar" || mode == "drag" else { return }
         Task { @MainActor [weak self] in
             try? await Task.sleep(for: .seconds(Double(ProcessInfo.processInfo.environment["NEARSIDE_TEST_WAIT"] ?? "") ?? 12))
             guard let self else { return }
             if mode == "close" { return window.performClose(nil) }
+            if mode == "drag" {
+                // Real AppKit mouse events through the window: press, drag up 300 pt, release.
+                let start = stream.convert(NSPoint(x: stream.bounds.midX, y: stream.bounds.height * 0.3), to: nil)
+                func send(_ type: NSEvent.EventType, _ p: NSPoint) {
+                    if let e = NSEvent.mouseEvent(with: type, location: p, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+                                                  windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 1,
+                                                  pressure: type == .leftMouseUp ? 0 : 1) { window.sendEvent(e) }
+                }
+                NSLog("Nearside: drag test: hit \(String(describing: window.contentView?.hitTest(window.contentView!.convert(start, from: nil)))), key \(window.isKeyWindow), first responder \(String(describing: window.firstResponder))")
+                send(.leftMouseDown, start)
+                for i in 1...30 {
+                    try? await Task.sleep(for: .milliseconds(16))
+                    send(.leftMouseDragged, NSPoint(x: start.x, y: start.y + CGFloat(i) * 10))
+                }
+                send(.leftMouseUp, NSPoint(x: start.x, y: start.y + 300))
+                Trace.log("test drag sent")
+                return
+            }
             if mode == "bar" {
                 bar.setShown(true)
                 try? await Task.sleep(for: .seconds(1))
