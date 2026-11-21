@@ -66,7 +66,7 @@ struct PanelView: View {
                 .font(.system(size: 14, weight: .semibold))
                 .contentTransition(.opacity)
             Spacer()
-            StatusPill(state: engine.state, phoneName: engine.phoneName, inUseOn: engine.inUseOn)
+            StatusPill(state: engine.state, phoneName: engine.phoneName, inUseOn: engine.inUseOn, overUSB: engine.overUSB)
             if engine.state == .connected && !showingSettings {
                 Button(action: openApps) {
                     Image(systemName: "apps.iphone")
@@ -176,10 +176,11 @@ struct StatusPill: View {
     let state: SyncEngine.State
     let phoneName: String
     var inUseOn: String? = nil
+    var overUSB = false
 
     var body: some View {
         let (color, text): (Color, String) = switch state {
-        case .connected: (.green, phoneName)
+        case .connected: (.green, overUSB ? "\(phoneName) · USB" : phoneName)
         case .searching where inUseOn != nil: (.secondary, "In use on \(inUseOn ?? "")")
         case .searching: (.orange, "Looking for \(phoneName)…")
         case .needsSetup: (.secondary, "Not set up")
@@ -196,7 +197,7 @@ struct StatusPill: View {
         .padding(.horizontal, 9)
         .padding(.vertical, 4)
         .background(.quaternary.opacity(0.6), in: Capsule())
-        .help(state == .searching ? "Make sure the phone is on the same Wi-Fi with Wireless debugging on." : "")
+        .help(state == .searching ? "Make sure the phone is on the same Wi-Fi with Wireless debugging on, or plug it in with a USB cable." : "")
     }
 }
 

@@ -71,12 +71,78 @@ enum Native {
         return try? key.androidPublicKey(comment: "\(NSUserName())@\(name)")
     }
 
-    /// Reuses the live connection or makes a new one to the pinned phone. Never without a pin:
-    /// keys are only pinned by `pinAfterPairing`.
+    /// Reuses the live connection or makes a new one to the pinned phone: over a USB cable when
+    /// it's plugged in (and proven to be the paired phone, see `connectUSB`), else Wi-Fi. Never
+    /// without a pin: keys are only pinned by `pinAfterPairing`.
     static func connect(pinned serial: String) -> AdbConnection? {
         if let live = current() { return live }
         guard let key = key(), let expected = pinnedKey else { return nil }
+        if let usb = connectUSB(pinned: serial, key: key, waitForApproval: 0) { return install(usb) }
+        if let wifi = connectWiFi(pinned: serial, key: key, expected: expected) { return wifi }
+        // Only on the cable, and the phone hasn't allowed this Mac's key for USB: ask it.
+        if let usb = connectUSB(pinned: serial, key: key, waitForApproval: 30) { return install(usb) }
+        return nil
+    }
 
+    /// Plugged in while connected over Wi-Fi: moves to the cable (open windows resume on it).
+    /// Returns true if it moved.
+    static func moveToUSB(pinned serial: String) -> Bool {
+        guard let live = current(), !live.overUSB, let key = key(),
+              let usb = connectUSB(pinned: serial, key: key, waitForApproval: 30) else { return false }
+        install(usb)
+        return true
+    }
+
+    /// Whether the live connection is the cable.
+    static var isOverUSB: Bool { current()?.overUSB == true }
+
+    /// The pinned phone's adb interface, if it's plugged in.
+    static func pluggedIn(_ serial: String) -> USB.Device? { USB.devices().first { $0.serial == serial } }
+
+    /// Plug-ins that didn't work (another program holds the interface, the phone isn't proven):
+    /// not tried again until plugged in again.
+    nonisolated(unsafe) private static var usbFailed: Set<UInt64> = []
+
+    /// A cable has no TLS key to pin, and a serial is easy to fake, so the phone must prove it's
+    /// the one we paired with: it holds this Mac's token in a folder only the shell user can read,
+    /// written there over the pinned Wi-Fi connection (`Adb.prepareHelper`). We read it back and
+    /// compare here; nothing secret is sent to the device before it passes.
+    private static func connectUSB(pinned serial: String, key: AdbKey, waitForApproval: TimeInterval) -> AdbConnection? {
+        guard let device = pluggedIn(serial), !lock.withLock({ usbFailed.contains(device.id) }),
+              let publicKey = publicKey(key) else { return nil }
+        let adb: AdbConnection
+        do {
+            adb = try AdbConnection.connectUSB(device, key: key, publicKey: publicKey, waitForApproval: waitForApproval)
+        } catch AdbError.needsApproval {
+            return nil // tried again with waitForApproval
+        } catch {
+            NSLog("Nearside: USB: \(error)")
+            lock.withLock { _ = usbFailed.insert(device.id) }
+            return nil
+        }
+        let proof = try? adb.shell("cat /data/local/tmp/nearside-macs/\(Token.id) 2>/dev/null; echo; getprop ro.serialno").output
+        guard proof == "\(Token.value)\n\(serial)" else {
+            NSLog("Nearside: USB: the plugged-in device didn't prove it's the paired phone; not using it")
+            adb.close()
+            lock.withLock { _ = usbFailed.insert(device.id) }
+            return nil
+        }
+        NSLog("Nearside: connected over USB")
+        return adb
+    }
+
+    @discardableResult
+    private static func install(_ adb: AdbConnection) -> AdbConnection {
+        let busy = lock.withLock { () -> Bool in
+            connection?.close()
+            connection = adb
+            return openWindows > 0
+        }
+        adb.setKeepalive(busy: busy)
+        return adb
+    }
+
+    private static func connectWiFi(pinned serial: String, key: AdbKey, expected: Data) -> AdbConnection? {
         for service in Discovery.browse(Discovery.connectType) where service.name.hasPrefix("adb-\(serial)-") {
             guard let host = ipv4(service.host) else { continue }
             let adb: AdbConnection
@@ -93,13 +159,7 @@ enum Native {
                 adb.close()
                 continue
             }
-            let busy = lock.withLock { () -> Bool in
-                connection?.close()
-                connection = adb
-                return openWindows > 0
-            }
-            adb.setKeepalive(busy: busy)
-            return adb
+            return install(adb)
         }
         return nil
     }

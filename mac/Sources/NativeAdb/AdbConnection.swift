@@ -94,7 +94,62 @@ public final class AdbConnection: @unchecked Sendable {
         return connection
     }
 
-    init(channel: Channel, banner: String, peerMaxPayload: Int, peerKeySHA256: Data) {
+    /// Over a USB cable: the phone checks this Mac's key with AUTH (no TLS). If the phone doesn't
+    /// know the key yet it asks "Allow USB debugging?": with `waitForApproval` > 0 we offer the key
+    /// and wait that long for the tap, otherwise fail with `.needsApproval`. There's nothing to pin
+    /// on a cable (`peerKeySHA256` is empty): the caller checks it's the paired phone.
+    public static func connectUSB(_ device: USB.Device, key: AdbKey, publicKey: String,
+                                  waitForApproval: TimeInterval = 0) throws -> AdbConnection {
+        let usb = try USB.open(device)
+        do {
+            try usb.write(Packet(command: Packet.cnxn, arg0: version, arg1: UInt32(maxPayload),
+                                 payload: Data("host::features=\(features)".utf8)).encoded())
+            var signed = false
+            while true {
+                let packet = try Self.readWithTimeout(usb, seconds: signed && waitForApproval > 0 ? waitForApproval : 10)
+                switch packet.command {
+                case Packet.cnxn:
+                    let connection = AdbConnection(channel: usb, banner: String(decoding: packet.payload, as: UTF8.self),
+                                                   peerMaxPayload: Int(packet.arg1), peerKeySHA256: Data(), overUSB: true)
+                    connection.startReading()
+                    return connection
+                case Packet.auth where packet.arg0 == 1: // TOKEN
+                    if !signed, let signature = key.signToken(packet.payload) {
+                        signed = true
+                        try usb.write(Packet(command: Packet.auth, arg0: 2, arg1: 0, payload: signature).encoded())
+                    } else {
+                        // The phone doesn't know this key: offer it (the phone then asks the user).
+                        guard waitForApproval > 0 else { throw AdbError.needsApproval }
+                        try usb.write(Packet(command: Packet.auth, arg0: 3, arg1: 0, payload: Data((publicKey + "\0").utf8)).encoded())
+                    }
+                default: throw AdbError.protocolError("unexpected packet during USB auth")
+                }
+            }
+        } catch {
+            usb.close()
+            throw error
+        }
+    }
+
+    /// The handshake's reads with a deadline (USB reads block until the phone sends something).
+    private static func readWithTimeout(_ channel: Channel, seconds: TimeInterval) throws -> Packet {
+        final class Box: @unchecked Sendable { var result: Result<Packet, Error>? } // written before `done`
+        let done = DispatchSemaphore(value: 0), box = Box()
+        Thread {
+            box.result = Result { try Packet.read(from: channel, maxPayload: 4096) }
+            done.signal()
+        }.start()
+        guard done.wait(timeout: .now() + seconds) == .success, let outcome = box.result else {
+            channel.close() // ends the read
+            throw AdbError.timeout
+        }
+        return try outcome.get()
+    }
+
+    public let overUSB: Bool
+
+    init(channel: Channel, banner: String, peerMaxPayload: Int, peerKeySHA256: Data, overUSB: Bool = false) {
+        self.overUSB = overUSB
         self.channel = channel
         self.banner = banner
         self.peerMaxPayload = min(max(peerMaxPayload, 4096), Self.maxPayload)

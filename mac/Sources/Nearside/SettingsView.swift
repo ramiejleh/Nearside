@@ -75,7 +75,7 @@ struct SettingsView: View {
                         Text("Motion")
                         Text(phoneAppsMotion == "responsive"
                              ? "Less delay; some frames are skipped when Wi-Fi is uneven."
-                             : "Every frame shown, a little more delay. For windows opened from now on.")
+                             : "Frames shown evenly, with only as much delay as the connection needs. For windows opened from now on.")
                     }
                     Picker(selection: $phoneQuality) {
                         ForEach(PhoneQuality.allCases, id: \.self) { Text($0.title).tag($0.rawValue) }

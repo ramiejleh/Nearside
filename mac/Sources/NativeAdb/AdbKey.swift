@@ -91,6 +91,18 @@ public final class AdbKey: @unchecked Sendable {
         return blob.base64EncodedString() + " " + comment
     }
 
+    /// USB auth: the phone's 20-byte token signed as if it were a SHA-1 digest (PKCS#1 v1.5), as
+    /// adb's auth.cpp does.
+    func signToken(_ token: Data) -> Data? {
+        guard token.count == 20, let rsa = EVP_PKEY_get0_RSA(pkey) else { return nil }
+        var signature = [UInt8](repeating: 0, count: Int(RSA_size(rsa)))
+        var length: UInt32 = 0
+        let ok = token.withUnsafeBytes { raw in
+            RSA_sign(NID_sha1, raw.bindMemory(to: UInt8.self).baseAddress, 20, &signature, &length, rsa)
+        }
+        return ok == 1 ? Data(signature.prefix(Int(length))) : nil
+    }
+
     /// C=US, O=Android, CN=Adb, self-signed, 10 years: what adb sends. adbd only checks that
     /// the public key is one it was paired with.
     private static func makeCertificate(_ key: OpaquePointer) -> OpaquePointer? {

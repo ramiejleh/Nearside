@@ -36,6 +36,8 @@ public final class SyncEngine {
     }
 
     public private(set) var state: State
+    /// Connected over a USB cable (steadier and faster than Wi-Fi) rather than Wi-Fi.
+    public private(set) var overUSB = false
     public private(set) var phoneName: String
     public private(set) var history: ClipHistory
     /// Phone clips that arrived since the panel was last opened.
@@ -220,6 +222,8 @@ public final class SyncEngine {
         // the notification service).
         ticks += 1
         if state == .connected, mirrorNotifications, ticks % 5 == 0 { notifications.reconcile() }
+        overUSB = state == .connected && Native.isOverUSB
+        moveToUSBIfPluggedIn()
         // Only ever talk to the phone pinned during the user-run pairing flow; no discovery
         // of "whatever phone is around" (that would let a look-alike device be adopted).
         guard link.isIdle, !preparing, !isPairing, state == .searching || state == .connected,
@@ -242,6 +246,22 @@ public final class SyncEngine {
             nextAttempt = inUseOn != nil ? Date().addingTimeInterval(60) : .distantPast
             adopt(phone)
             link.connect()
+        }
+    }
+
+    @ObservationIgnored private var movingToUSB = false
+
+    /// The phone plugged in while connected over Wi-Fi: move to the cable. The helper link and
+    /// any open windows drop and resume on it within a second or two. (Unplugging needs nothing:
+    /// the connection ends and the next try finds Wi-Fi.)
+    private func moveToUSBIfPluggedIn() {
+        guard state == .connected, !overUSB, !movingToUSB, !preparing, let pinned = pinnedSerial,
+              Native.pluggedIn(pinned) != nil else { return }
+        movingToUSB = true
+        Task {
+            let moved = await Task.detached { Native.moveToUSB(pinned: pinned) }.value
+            movingToUSB = false
+            if moved { log.info("moved to USB") }
         }
     }
 

@@ -38,6 +38,10 @@ than depending on either.
   trusted network); the Mac finds the phone over mDNS (`_adb-tls-connect._tcp`) and restarts
   the helper if needed. It reconnects every 6 h so Android's 7-day adb authorisation never
   lapses.
+- **USB:** plugging the paired phone in moves the connection to the cable (native IOUSBHost,
+  adb's USB protocol with RSA auth; see security.md for how the phone is proven), and open
+  windows resume on it; unplugging falls back to Wi-Fi. The cable is exclusive: if stock adb or
+  Android Studio holds the phone's USB connection, Nearside stays on Wi-Fi.
 - The Mac updates the phone app when its bundled copy is newer (versionCode = commit count).
 
 ### App ⇄ helper link

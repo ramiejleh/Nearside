@@ -66,8 +66,9 @@ final class StatsOverlay: NSView {
         guard let stats = session?.takeStats() else { return }
         let shown = Double(renderer.takePresented()) / max(stats.seconds, 0.001)
         let delay = stats.latencyMs.map { "\($0.average) ms (worst \($0.worst))" } ?? "–"
-        label.stringValue = String(format: "%.0f fps in · %.0f shown\n%.1f Mbps\ndelay %@\nencode %d ms · ping %d ms",
-                                   stats.fps, shown, stats.mbps, delay, stats.encodeMs, Int(stats.rttMicros / 1000))
+        let buffer = renderer.smooth ? String(format: " · buffer %.0f ms", renderer.pacer.addedDelay * 1000) : ""
+        label.stringValue = String(format: "%.0f fps in · %.0f shown\n%.1f Mbps\ndelay %@%@\nencode %d ms · ping %d ms",
+                                   stats.fps, shown, stats.mbps, delay, buffer, stats.encodeMs, Int(stats.rttMicros / 1000))
         Trace.log("stats: " + label.stringValue.replacingOccurrences(of: "\n", with: " | "))
     }
 

@@ -10,6 +10,7 @@ public enum AdbError: Error, CustomStringConvertible, Sendable {
     case tls(String)
     case refused(String) // OPEN rejected: unknown service, etc.
     case wrongPhone      // its TLS key isn't the one we pinned
+    case needsApproval   // USB: the phone hasn't allowed this Mac's key yet
 
     public var description: String {
         switch self {
@@ -20,6 +21,7 @@ public enum AdbError: Error, CustomStringConvertible, Sendable {
         case .tls(let m): "TLS: \(m)"
         case .refused(let m): "refused: \(m)"
         case .wrongPhone: "this isn't the paired phone (its key doesn't match)"
+        case .needsApproval: "the phone hasn't allowed USB debugging from this Mac yet"
         }
     }
 }

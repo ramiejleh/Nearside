@@ -334,6 +334,17 @@ class DisplayServer(
         }
     }
 
+    /**
+     * An app is about to move from [displayId] into another window. If that's an app window of
+     * ours, it gives up its sound first: Android routes an app's sound to one virtual audio
+     * device, and while the old window's still claims the app (its session waiting for the Mac
+     * to come back, say), the new window's claim is ignored, and once the old one lets go the
+     * sound plays on the phone's speaker. (A home window keeps its sound: its other apps use it.)
+     */
+    fun releaseSoundOn(displayId: Int) {
+        sessions.values.firstOrNull { it.displayId == displayId && !it.isHome }?.releaseSound()
+    }
+
     fun ended(session: DisplaySession) {
         sessions.remove(session.id)
         if (sessions.isEmpty()) { TaskEvents.listen(false); watchdog(false) }

@@ -27,6 +27,13 @@ Out of scope: an attacker who has already unlocked the Mac as you, or who has ro
   gives no way to show the key on the phone to compare.
 - The Mac's adb key is `~/.android/adbkey` if stock adb made one, else its own (RSA 2048,
   mode 0600).
+- **USB cable.** When the paired phone is plugged in, the Mac uses the cable instead of Wi-Fi.
+  A cable has no TLS key to pin (the phone checks the Mac's RSA key, as stock adb does; if it
+  doesn't know it yet it asks "Allow USB debugging?"), and a USB serial number is easy to fake.
+  So before anything else is sent, the device must prove it's the paired phone: it must hold this
+  Mac's token, which was written over the pinned Wi-Fi connection into a folder only the shell
+  user can read. The Mac reads it back and compares locally; the token is never sent to an
+  unproven device. A device that fails is not tried again until it's plugged in again.
 
 ## Mac ⇄ helper
 

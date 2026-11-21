@@ -77,7 +77,7 @@ class DisplaySession(
     private var touchscreen: Any? = null
     /** The window's sound (started with the display, if on the virtual device). */
     private val audio = AudioStreamer("display-$id")
-    private var hasAudio = false
+    @Volatile private var hasAudio = false
     /** The phone's status and gesture bars on this display (px), if it has them. */
     @Volatile private var bars: SystemBars.Bars? = null
 
@@ -296,6 +296,7 @@ class DisplaySession(
         val pkg = key.split('|').getOrNull(1)?.takeIf { it.matches(Regex("[A-Za-z0-9_.]+")) }
             ?: return fail(DisplayWire.ERR_NOT_FOUND, "not a notification")
         val existing = Hidden.rootTasks().firstOrNull { it.packageName == pkg && it.displayId != displayId }
+        existing?.let { server.releaseSoundOn(it.displayId) }
         if (existing != null && Hidden.moveTask(existing.taskId, displayId, onTop = true)) {
             Log.d("display session $id: moved task ${existing.taskId} ($pkg) here for a notification")
         }
@@ -323,6 +324,7 @@ class DisplaySession(
         val pkg = component?.packageName ?: target
         // A running app is moved over, keeping its state, rather than started again.
         val existing = Hidden.rootTasks().firstOrNull { it.packageName == pkg && it.displayId != displayId }
+        existing?.let { server.releaseSoundOn(it.displayId) }
         if (existing != null && Hidden.moveTask(existing.taskId, displayId, onTop = true)) {
             Log.d("display session $id: moved task ${existing.taskId} ($pkg) here")
             return
@@ -1043,6 +1045,14 @@ class DisplaySession(
      * on top). Then the display and encoder go.
      */
     @Synchronized
+    /** Its app is moving to another window (see DisplayServer.releaseSoundOn). */
+    fun releaseSound() {
+        if (!hasAudio) return
+        hasAudio = false
+        audio.stop()
+        Log.d("display session $id: sound released (its app is moving to another window)")
+    }
+
     fun close(toPhone: Boolean, onTop: Boolean = false) {
         if (closed) return
         closed = true
