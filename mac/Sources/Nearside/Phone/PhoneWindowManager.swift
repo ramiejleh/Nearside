@@ -16,6 +16,9 @@ final class PhoneWindowManager {
     private let engine: SyncEngine
     let library: PhoneAppLibrary
     private(set) var windows: [AppWindowController] = []
+    /// The phone window (one at most).
+    private(set) var phoneWindow: PhoneWindowController?
+    private var openingPhone = false
     private(set) lazy var launcher = PhoneLauncher(library: library, engine: engine) { [weak self] app in self?.open(app) }
     private let auth = AuthGate()
     private var hotKey: HotKey?
@@ -27,7 +30,10 @@ final class PhoneWindowManager {
         Self.shared = self
         library.onChange = { apps in PhoneSpotlight.index(apps, icon: { [weak self] in self?.library.iconPNG($0) }) }
         launcher.isLocked = { [weak self] in self?.auth.isLocked ?? true }
-        auth.onLock = { [weak self] in self?.windows.forEach { $0.setLocked(true) } }
+        auth.onLock = { [weak self] in
+            self?.windows.forEach { $0.setLocked(true) }
+            self?.phoneWindow?.setLocked(true)
+        }
         // Option-Command-P from anywhere.
         hotKey = HotKey(keyCode: kVK_ANSI_P, modifiers: cmdKey | optionKey) { [weak self] in self?.toggleLauncher() }
     }
@@ -59,6 +65,39 @@ final class PhoneWindowManager {
         }
     }
 
+    /// The phone window: a phone of its own, with our home screen (one at most).
+    func openPhoneWindow() {
+        if let phoneWindow {
+            Task { if await auth.authenticate(opening: false) { unlockWindows(); phoneWindow.show() } }
+            return
+        }
+        guard !openingPhone else { return }
+        openingPhone = true
+        Task { [weak self] in
+            guard let self else { return }
+            defer { openingPhone = false }
+            guard await auth.authenticate(opening: true) else { return }
+            unlockWindows()
+            if library.apps.isEmpty { library.refresh() } // the phone's shape comes with the list
+            guard let renderer = MetalRenderer(),
+                  let controller = PhoneWindowController(engine: engine, library: library, renderer: renderer,
+                                                         onClosed: { [weak self] _ in self?.phoneWindowClosed() }) else { return }
+            phoneWindow = controller
+            updateActivationPolicy()
+            controller.show()
+        }
+    }
+
+    private func phoneWindowClosed() {
+        phoneWindow = nil
+        DispatchQueue.main.async { [weak self] in self?.updateActivationPolicy() }
+    }
+
+    func focusedPhoneWindow() {
+        NSApp.applicationIconImage = nil // Nearside's own icon: the phone window is "the phone"
+        dockIconApp = nil
+    }
+
     /// From Spotlight: the app's `pkg/activity`.
     func open(id: String) {
         if let app = library.app(id: id) { return open(app) }
@@ -79,11 +118,15 @@ final class PhoneWindowManager {
         return true
     }
 
-    private func unlockWindows() { windows.forEach { $0.setLocked(false) } }
+    private func unlockWindows() {
+        windows.forEach { $0.setLocked(false) }
+        phoneWindow?.setLocked(false)
+    }
 
     /// The phone's "Stop" button: every window closes (its app is already back on the phone).
     func closeAll() {
         for controller in windows { controller.window.close() }
+        phoneWindow?.window.close()
     }
 
     private func closed(_ controller: AppWindowController) {
@@ -95,7 +138,7 @@ final class PhoneWindowManager {
     }
 
     private func updateActivationPolicy() {
-        let wanted: NSApplication.ActivationPolicy = windows.isEmpty ? .accessory : .regular
+        let wanted: NSApplication.ActivationPolicy = windows.isEmpty && phoneWindow == nil ? .accessory : .regular
         guard NSApp.activationPolicy() != wanted else { return }
         NSApp.setActivationPolicy(wanted)
         if wanted == .regular { Self.bringToFront() } // otherwise the menu bar may not switch over
@@ -143,7 +186,9 @@ final class PhoneWindowManager {
 
     private func showDockIcon(for controller: AppWindowController?) {
         guard let controller, let icon = library.icons[controller.app.id] else {
-            if controller == nil { NSApp.applicationIconImage = nil; dockIconApp = nil } // Nearside's own
+            if controller == nil, phoneWindow?.window.isKeyWindow != true || windows.isEmpty {
+                NSApp.applicationIconImage = nil; dockIconApp = nil // Nearside's own
+            }
             return
         }
         guard dockIconApp != controller.app.id else { return }
@@ -183,6 +228,7 @@ final class PhoneWindowManager {
         if !windows.isEmpty { menu.addItem(.separator()) }
         let open = NSMenuItem(title: "Open Phone App…", action: #selector(AppDelegate.showPhoneLauncher(_:)), keyEquivalent: "")
         menu.addItem(open)
+        menu.addItem(NSMenuItem(title: "Phone Window", action: #selector(AppDelegate.showPhoneWindow(_:)), keyEquivalent: ""))
         return menu
     }
 

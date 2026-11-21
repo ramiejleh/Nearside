@@ -70,10 +70,13 @@ final class PhoneLauncher: NSObject, NSWindowDelegate {
         effect.wantsLayer = true
         effect.layer?.cornerRadius = 22
         effect.layer?.masksToBounds = true
-        let host = NSHostingView(rootView: LauncherView(library: library, engine: engine, model: model) { [weak self] app in
+        let host = NSHostingView(rootView: LauncherView(library: library, engine: engine, model: model, open: { [weak self] app in
             self?.hide()
             self?.open(app)
-        })
+        }, openPhone: { [weak self] in
+            self?.hide()
+            PhoneWindowManager.shared?.openPhoneWindow()
+        }))
         host.translatesAutoresizingMaskIntoConstraints = false
         effect.addSubview(host)
         NSLayoutConstraint.activate([
@@ -129,6 +132,7 @@ struct LauncherView: View {
     let engine: SyncEngine
     @Bindable var model: LauncherModel
     let open: (PhoneApp) -> Void
+    var openPhone: () -> Void = {}
     @FocusState private var searchFocused: Bool
 
     static let columns = 7
@@ -183,6 +187,18 @@ struct LauncherView: View {
                     model.selection = grid.moving(model.selection, move)
                     return .handled
                 }
+            Button {
+                openPhone()
+            } label: {
+                Label("Phone Window", systemImage: "iphone")
+                    .labelStyle(.iconOnly)
+                    .font(.system(size: 18, weight: .medium))
+                    .foregroundStyle(.secondary)
+                    .frame(width: 34, height: 34)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help("Phone Window (⌥⇧⌘P): a phone of its own, with a home screen")
         }
         .padding(.horizontal, 20)
         .frame(height: 64)

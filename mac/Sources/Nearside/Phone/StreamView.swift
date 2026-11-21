@@ -314,11 +314,18 @@ final class StreamView: NSView {
         guard event.type == .keyDown, window?.firstResponder === self, event.modifierFlags.contains(.command) else {
             return super.performKeyEquivalent(with: event)
         }
+        if let c = event.charactersIgnoringModifiers, macShortcuts.contains(c),
+           event.modifierFlags.isDisjoint(with: [.control, .option]) {
+            return super.performKeyEquivalent(with: event) // the window's own (phone window: ⌘1, ⌘2, ⌘+…)
+        }
         let action = keyAction(event)
         if action == .mac { return super.performKeyEquivalent(with: event) }
         perform(action, event)
         return true
     }
+
+    /// ⌘ keys (by character) the window's menus handle instead of the phone.
+    var macShortcuts: Set<String> = []
 
     override func keyDown(with event: NSEvent) {
         let action = hasMarkedText() ? .text : keyAction(event) // composing: the input method owns the keys

@@ -96,6 +96,10 @@ extension SyncEngine {
         if reply == nil { NSLog("Nearside: no answer to display-apps") }
         if let error = reply?["error"] { NSLog("Nearside: display-apps failed: \(error)") }
         if let dp = reply?["statusBarDp"] as? Int, dp > 0 { PhoneInfo.statusBarDp = dp }
+        if let size = (reply?["screenDp"] as? String)?.split(separator: "x").compactMap({ Double($0) }), size.count == 2,
+           size[0] > 200, size[1] > 300 {
+            PhoneInfo.screenDp = CGSize(width: size[0], height: size[1])
+        }
         guard let list = reply?["apps"] as? [[String: Any]] else { return nil }
         return list.compactMap { entry in
             guard let pkg = entry["pkg"] as? String, let activity = entry["activity"] as? String else { return nil }
@@ -128,6 +132,13 @@ extension SyncEngine {
                 icons[id] = icon
             }
             onBatch(icons)
+        }
+    }
+
+    /// The phone window's session: our home screen on a display of `width`×`height` pixels.
+    public func makePhoneWindowSession(width: Int, height: Int, dpi: Int) -> PhoneAppSession {
+        PhoneAppSession(target: "home", width: width, height: height, dpi: dpi, token: Token.value) { [weak self] in
+            await self?.displayTicket()
         }
     }
 
@@ -172,6 +183,12 @@ public enum PhoneDisplaySize {
 public enum PhoneInfo {
     private static let lock = NSLock()
     nonisolated(unsafe) private static var _statusBarDp = 0
+    nonisolated(unsafe) private static var _screenDp = CGSize(width: 412, height: 915)
+    /// The phone's screen in dp, portrait (a typical phone until the app list has been fetched).
+    public static var screenDp: CGSize {
+        get { lock.withLock { _screenDp } }
+        set { lock.withLock { _screenDp = newValue } }
+    }
     /// The phone's status-bar height in dp (0 until the app list has been fetched).
     public static var statusBarDp: Int {
         get { lock.withLock { _statusBarDp } }

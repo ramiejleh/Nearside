@@ -28,6 +28,9 @@ public final class PhoneAppSession: @unchecked Sendable {
     public var onThermal: (@MainActor @Sendable (Bool) -> Void)?
     /// An app window blocks capture (FLAG_SECURE), or stopped blocking, on the main thread.
     public var onSecure: (@MainActor @Sendable (Bool) -> Void)?
+    /// Phone window: its apps (top first), and their pictures as they come, on the main thread.
+    public var onTasks: (@MainActor @Sendable ([PhoneTask]) -> Void)?
+    public var onSnapshot: (@MainActor @Sendable (Int32, Data) -> Void)?
     /// The video's pixel size (it changes after a resize), on the main thread.
     public var onVideoSize: (@MainActor @Sendable (CGSize) -> Void)?
 
@@ -124,6 +127,7 @@ public final class PhoneAppSession: @unchecked Sendable {
             }
             if stale { ctl.close(); vid.close(); return true }
             if let hint = lock.withLock({ layoutHint }) { try ctl.write(DisplayWire.utf8(DisplayWire.layout, hint)) }
+            if let dock = lock.withLock({ dock }) { try ctl.write(DisplayWire.utf8(DisplayWire.dock, dock.joined(separator: "\n"))) }
             DispatchQueue.main.async { [self] in startPinging() }
             Thread { [self] in readControl(ctl, ctlStart) }.start()
             Thread { [self] in readVideo(vid, vidStart) }.start()
@@ -159,6 +163,10 @@ public final class PhoneAppSession: @unchecked Sendable {
             case .taskGone(let reason): set(.gone(reason))
             case .error(4, _): set(.busy)
             case .error(_, let text): fail(text.isEmpty ? "The app couldn't be opened." : text)
+            case .tasks(let list):
+                if let onTasks { Task { @MainActor in onTasks(list) } }
+            case let .snapshot(task, jpeg):
+                if let onSnapshot { Task { @MainActor in onSnapshot(task, jpeg) } }
             case .secure(let on):
                 if let onSecure { Task { @MainActor in onSecure(on) } }
             case .thermal(let reduced):
@@ -314,6 +322,19 @@ public final class PhoneAppSession: @unchecked Sendable {
     }
 
     public func back() { send(DisplayWire.packet(DisplayWire.nav, Data([1]))) }
+
+    // Phone window
+    public func home() { send(DisplayWire.packet(DisplayWire.nav, Data([2]))) }
+    /// Asks for the window's apps (onTasks), then their pictures (onSnapshot).
+    public func requestRecents() { send(DisplayWire.packet(DisplayWire.recents)) }
+    public func bringToFront(task: Int32) { send(DisplayWire.task(DisplayWire.taskFront, task)) }
+    public func remove(task: Int32) { send(DisplayWire.task(DisplayWire.taskRemove, task)) }
+    /// The home screen's dock: packages, at most 5 shown.
+    public func setDock(_ packages: [String]) {
+        lock.withLock { dock = packages }
+        send(DisplayWire.utf8(DisplayWire.dock, packages.joined(separator: "\n")))
+    }
+    private var dock: [String]?
 
     // MARK: Keyboard
 

@@ -4,6 +4,12 @@ import Foundation
 /// The phone-apps stream protocol (vault/phone-apps-plan.md; helper side: DisplayServer.kt).
 /// Every packet: u8 type, u8 flags, u32 big-endian length, payload. Lengths from the wire are never
 /// trusted: each message checks its minimum size, and packets over `maxPacket` end the stream.
+/// An app in the phone window (a task on its display).
+public struct PhoneTask: Equatable, Sendable, Identifiable {
+    public let id: Int32
+    public let package: String
+}
+
 public enum DisplayWire {
     static let hello: UInt8 = 0x01
     // Mac → phone (control)
@@ -17,7 +23,9 @@ public enum DisplayWire {
     static let maxControlBody = 1024 * 1024 - 16
     // phone → Mac
     static let task: UInt8 = 0x20, taskGone: UInt8 = 0x21, pong: UInt8 = 0x22, error: UInt8 = 0x23
-    static let thermal: UInt8 = 0x24, secure: UInt8 = 0x25
+    static let thermal: UInt8 = 0x24, secure: UInt8 = 0x25, tasks: UInt8 = 0x26, snapshot: UInt8 = 0x27
+    // Phone window, Mac → phone.
+    static let recents: UInt8 = 0x41, taskFront: UInt8 = 0x42, taskRemove: UInt8 = 0x43, dock: UInt8 = 0x44
     /// Mac → phone: the picture went all black (1) or isn't any more (0).
     static let black: UInt8 = 0x40
     static let config: UInt8 = 0x30, frame: UInt8 = 0x31
@@ -45,6 +53,10 @@ public enum DisplayWire {
         case thermal(reduced: Bool)
         /// An app window on the display blocks capture (it draws black), or no longer does.
         case secure(Bool)
+        /// The phone window's apps, top first (task id, package).
+        case tasks([PhoneTask])
+        /// A task's last picture (JPEG).
+        case snapshot(task: Int32, jpeg: Data)
         case config(gen: UInt32, width: Int, height: Int, parameterSets: Data)
         case frame(gen: UInt32, ptsMicros: Int64, encodedMicros: Int64, keyframe: Bool, data: Data)
         /// The audio stream's format (Opus).
@@ -132,6 +144,11 @@ public enum DisplayWire {
         return packet(type, Data(s.utf8))
     }
 
+    static func task(_ type: UInt8, _ id: Int32) -> Data {
+        var b = Data(); b.appendBE(UInt32(bitPattern: id))
+        return packet(type, b)
+    }
+
     static func ack(ptsMicros: Int64) -> Data {
         var b = Data(); b.appendBE(UInt64(bitPattern: ptsMicros))
         return packet(ack, b)
@@ -187,6 +204,14 @@ public enum DisplayWire {
             return .pong(t0: p.readBE(UInt64.self, at: s), phoneMicros: p.readBE(UInt64.self, at: s + 8))
         case error where p.count >= 1:
             return .error(code: p[s], message: String(decoding: p.suffix(from: s + 1), as: UTF8.self))
+        case tasks:
+            guard let list = try? JSONSerialization.jsonObject(with: p) as? [[String: Any]] else { return nil }
+            return .tasks(list.compactMap { e in
+                guard let id = (e["id"] as? NSNumber)?.int32Value, let pkg = e["pkg"] as? String else { return nil }
+                return PhoneTask(id: id, package: pkg)
+            })
+        case snapshot where p.count > 4:
+            return .snapshot(task: Int32(bitPattern: p.readBE(UInt32.self, at: s)), jpeg: p.subdata(in: s + 4..<p.endIndex))
         case secure where p.count >= 1:
             return .secure(p[s] != 0)
         case thermal where p.count >= 1:

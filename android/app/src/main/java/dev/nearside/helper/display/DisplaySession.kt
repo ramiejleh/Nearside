@@ -46,6 +46,10 @@ class DisplaySession(
     private val fps = open.fps
     private val kbps = open.kbps
     private val target = open.target
+    /** The phone window: our home screen, and whatever is opened from it, on one display. */
+    val isHome = target == DisplayWire.HOME_TARGET
+    @Volatile private var homeTask = -1
+    @Volatile private var dock: List<String> = emptyList()
 
     private lateinit var display: VirtualDisplay
     val displayId get() = display.display.displayId
@@ -150,6 +154,14 @@ class DisplaySession(
                 resize(b.short.toInt() and 0xffff, b.short.toInt() and 0xffff, b.short.toInt() and 0xffff)
             }
             DisplayWire.NAV -> if (b.remaining() >= 1) nav(b.get().toInt())
+            DisplayWire.RECENTS -> if (isHome) watcher.execute { runCatching { sendRecents() } }
+            DisplayWire.TASK_FRONT -> if (isHome && b.remaining() >= 4) b.int.let { t -> if (onDisplay(t)) Hidden.taskToFront(t) }
+            DisplayWire.TASK_REMOVE -> if (isHome && b.remaining() >= 4) b.int.let { t -> if (onDisplay(t) && t != homeTask) Hidden.removeTask(t) }
+            DisplayWire.DOCK -> if (isHome) {
+                dock = utf8(b).lines().filter { it.matches(Regex("[A-Za-z0-9_.]+")) }.take(6)
+                // Shown now: update it (starting it again would bring it over an open app otherwise).
+                if (Hidden.rootTasks().any { it.taskId == homeTask && it.visible }) launchHome(toFront = false)
+            }
             DisplayWire.ACK -> if (b.remaining() >= 8) acked(b.long)
             DisplayWire.PING -> if (b.remaining() >= 8) {
                 val t0 = b.long
@@ -167,7 +179,55 @@ class DisplaySession(
 
     // MARK: - App
 
+    // MARK: - Phone window
+
+    private fun onDisplay(task: Int) = Hidden.rootTasks().any { it.taskId == task && it.displayId == displayId }
+
+    /**
+     * Our home screen on this display: started (or brought to the front, with the current dock)
+     * by the shell, which alone may start it. Its own task affinity keeps it — and the apps it
+     * opens — here (Gate A).
+     */
+    private fun launchHome(toFront: Boolean) {
+        val intent = Intent().setClassName("dev.nearside", "dev.nearside.phone.HomeActivity")
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            .putExtra("dock", dock.toTypedArray())
+            .putExtra("toFront", toFront)
+        val options = ActivityOptions.makeBasic().setLaunchDisplayId(displayId).toBundle()
+        if (!Hidden.startActivity(intent, options)) fail(DisplayWire.ERR_LAUNCH, "couldn't open the phone's home screen")
+    }
+
+    /** The display's apps (top first, without the home screen), then each one's snapshot. */
+    private fun sendRecents() {
+        val tasks = Hidden.rootTasks().filter { it.displayId == displayId && it.taskId != homeTask && it.packageName != null }
+        val json = org.json.JSONArray()
+        tasks.forEach { json.put(org.json.JSONObject().put("id", it.taskId).put("pkg", it.packageName)) }
+        ctl?.send(DisplayWire.TASKS, json.toString().toByteArray())
+        for (t in tasks) {
+            val jpeg = Snapshots.jpeg(t.taskId, t.visible) ?: continue
+            ctl?.send(DisplayWire.SNAPSHOT, ByteBuffer.allocate(4).putInt(t.taskId).array() + jpeg)
+        }
+    }
+
+    /** The phone window: knows its home task; relaunches the home screen if it went. */
+    private fun watchHome() {
+        val home = Hidden.rootTasks().firstOrNull { it.displayId == displayId && it.packageName == "dev.nearside" }
+        if (home != null) {
+            val found = homeTask != home.taskId
+            if (found) Log.d("display session $id: home task ${home.taskId}")
+            homeTask = home.taskId
+            if (found && dock.isNotEmpty() && home.visible) launchHome(toFront = false) // the dock came first
+            if (taskId == -1) { taskId = home.taskId; sendTask() }
+        } else if (homeTask != -1 || SystemClock.uptimeMillis() - openedAt > LAUNCH_TIMEOUT_MS) {
+            Log.d("display session $id: home screen gone; starting it again")
+            homeTask = -1
+            launchHome(toFront = true)
+        }
+    }
+
     private fun launch() {
+        if (isHome) Snapshots.warmUp()
+        if (isHome) return launchHome(toFront = true)
         val component = if ('/' in target) ComponentName.unflattenFromString(target) else null
         val pkg = component?.packageName ?: target
         // A running app is moved over, keeping its state, rather than started again.
@@ -199,7 +259,6 @@ class DisplaySession(
         ctl?.send(DisplayWire.ERROR, byteArrayOf(code.toByte()) + message.toByteArray())
     }
 
-    /** Polled: which task is ours, and did it leave (closed, or moved to the phone)? */
     // MARK: - Secure apps
     //
     // An app window with FLAG_SECURE (banking apps) is drawn black into our display. The Mac
@@ -235,7 +294,7 @@ class DisplaySession(
         ctl?.send(DisplayWire.SECURE, byteArrayOf(if (found) 1 else 0))
     }
 
-    fun owns(task: Int) = !closed && !taskGone && taskId == task
+    fun owns(task: Int) = !closed && if (isHome) task != homeTask && onDisplay(task) else !taskGone && taskId == task
 
     /**
      * Something started this window's app again. Android brings an existing task to the front on
@@ -243,13 +302,13 @@ class DisplaySession(
      * phone is in use (screen on), that was the person on the phone: the app goes to the phone,
      * and the window says so (the task poller reports the move).
      */
-    fun openedOnPhone() {
+    fun openedOnPhone(task: Int) {
         val power = FakeContext.instance.getSystemService(android.os.PowerManager::class.java)
-        if (power?.isInteractive != true) return Log.d("display session $id: task $taskId restarted with the phone's screen off; staying")
-        Log.d("display session $id: task $taskId opened on the phone; moving it there")
-        matchPhone()
-        Hidden.moveTask(taskId, 0, onTop = true)
-        watcher.execute { runCatching { watchTasks() } } // tell the Mac now, not at the next poll
+        if (power?.isInteractive != true) return Log.d("display session $id: task $task restarted with the phone's screen off; staying")
+        Log.d("display session $id: task $task opened on the phone; moving it there")
+        matchPhone() // the phone window is phone-sized already: nothing to do there
+        Hidden.moveTask(task, 0, onTop = true)
+        if (!isHome) watcher.execute { runCatching { watchTasks() } } // tell the Mac now, not at the next poll
     }
 
     /**
@@ -271,8 +330,10 @@ class DisplaySession(
         Thread.sleep(400) // the app's relayout
     }.onFailure { Log.d("display session $id: couldn't match the phone's size: $it") }
 
+    /** Polled: which task is ours, and did it leave (closed, or moved to the phone)? */
     private fun watchTasks() {
         if (closed) return
+        if (isHome) return watchHome()
         val tasks = Hidden.rootTasks()
         if (taskId == -1) {
             val mine = tasks.firstOrNull { it.displayId == displayId }
@@ -760,6 +821,7 @@ class DisplaySession(
     }
 
     private fun nav(which: Int) {
+        if (which == DisplayWire.NAV_HOME) { if (isHome) launchHome(toFront = true); return }
         val code = when (which) {
             DisplayWire.NAV_BACK -> KeyEvent.KEYCODE_BACK
             else -> return
@@ -788,8 +850,12 @@ class DisplaySession(
         // start making noise there.
         if (hasAudio && Media.pause(onOurs.mapNotNull { it.packageName }.toSet())) Thread.sleep(150)
         audio.stop()
-        if (toPhone && onOurs.isNotEmpty()) matchPhone()
-        if (toPhone) onOurs.forEach { Hidden.moveTask(it.taskId, 0, onTop = onTop) }
+        // The phone window's home screen ends with it (releasing the display would otherwise move
+        // it onto the phone); its apps go back like any window's.
+        if (isHome) onOurs.filter { it.taskId == homeTask || it.packageName == "dev.nearside" }.forEach { Hidden.removeTask(it.taskId) }
+        val apps = if (isHome) onOurs.filter { it.taskId != homeTask && it.packageName != "dev.nearside" } else onOurs
+        if (toPhone && apps.isNotEmpty()) matchPhone()
+        if (toPhone) apps.forEach { Hidden.moveTask(it.taskId, 0, onTop = onTop) }
         runCatching { awake?.release() }
         runCatching { keyboard?.close() }
         touchscreen?.let { PhoneDevice.closeInput(it) }
@@ -800,7 +866,7 @@ class DisplaySession(
         ctl?.close()
         video?.close()
         server.ended(this)
-        Log.d("display session $id: closed (${onOurs.size} task(s) back to the phone)")
+        Log.d("display session $id: closed (${apps.size} app(s) back to the phone)")
     }
 
     val isClosed get() = closed

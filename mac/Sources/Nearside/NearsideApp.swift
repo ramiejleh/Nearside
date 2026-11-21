@@ -45,6 +45,7 @@ enum NearsideMain {
         ])
         _ = submenu("File", [
             item("Open Phone App…", #selector(AppDelegate.showPhoneLauncher(_:)), "p", [.command, .option]),
+            item("Phone Window", #selector(AppDelegate.showPhoneWindow(_:)), "p", [.command, .option, .shift]),
             .separator(),
             item("Close Window", #selector(NSWindow.performClose(_:)), "w"),
         ])
@@ -59,6 +60,13 @@ enum NearsideMain {
         ])
         _ = submenu("View", [
             item("Back", #selector(AppWindowController.goBack(_:)), "["),
+            item("Home", #selector(PhoneWindowController.goHome(_:)), "1"),
+            item("Recents", #selector(PhoneWindowController.toggleRecents(_:)), "2"),
+            .separator(),
+            item("Larger", #selector(PhoneWindowController.zoomIn(_:)), "+"),
+            item("Smaller", #selector(PhoneWindowController.zoomOut(_:)), "-"),
+            item("Actual Size", #selector(PhoneWindowController.actualSize(_:)), "0"),
+            .separator(),
             item("Hide Top Bar", #selector(AppWindowController.toggleTopBar(_:))),
             .separator(),
             item("Enter Full Screen", #selector(NSWindow.toggleFullScreen(_:)), "f", [.command, .control]),
@@ -95,6 +103,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc func showPhoneLauncher(_ sender: Any?) { statusItem?.phoneApps.showLauncher() }
 
+    @objc func showPhoneWindow(_ sender: Any?) { statusItem?.phoneApps.openPhoneWindow() }
+
     func applicationDockMenu(_ sender: NSApplication) -> NSMenu? { statusItem?.phoneApps.dockMenu() }
 
     /// A phone app picked in Spotlight.
@@ -125,6 +135,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// (a comma-separated list opens several, a few seconds apart).
     private func openAppForTesting(_ engine: SyncEngine) {
         guard let list = ProcessInfo.processInfo.environment["NEARSIDE_OPEN_APP"] else { return }
+        if list == "phone" { // the phone window
+            Task { @MainActor in
+                while engine.state != .connected { try? await Task.sleep(for: .milliseconds(300)) }
+                _ = await engine.phoneApps() // the phone's shape
+                statusItem?.phoneApps.openPhoneWindow()
+            }
+            return
+        }
         Task { @MainActor in
             while engine.state != .connected { try? await Task.sleep(for: .milliseconds(300)) }
             // NEARSIDE_OPEN_APP_DELAY=<s>: open later (with another app in front by then).

@@ -49,6 +49,7 @@ object AppCatalog {
                 .put("ver", ver).put("used", used[a.packageName] ?: 0L))
         }
         return JSONObject().put("t", "display-apps").put("apps", apps).put("statusBarDp", statusBar)
+            .put("screenDp", screenDp())
     }
 
     /** Last foreground time per package (usage stats; the shell may read them). */
@@ -118,6 +119,16 @@ object AppCatalog {
         }.getOrNull()
         return Math.round(real?.takeIf { it > 0 } ?: resource ?: 0f).also { Log.d("status bar: $it dp (window manager $real, resource $resource)") }
     }
+
+    /** The phone's screen in dp, "WxH" (portrait): the phone window has its shape. */
+    private fun screenDp(): String = runCatching {
+        val m = android.util.DisplayMetrics()
+        @Suppress("DEPRECATION")
+        Hidden.displayManager.getDisplay(android.view.Display.DEFAULT_DISPLAY).getRealMetrics(m)
+        val w = minOf(m.widthPixels, m.heightPixels) / m.density
+        val h = maxOf(m.widthPixels, m.heightPixels) / m.density
+        "${Math.round(w)}x${Math.round(h)}"
+    }.getOrDefault("")
 
     /** Reads the names (and the status bar) in the background when the helper starts. */
     fun warmUp() {

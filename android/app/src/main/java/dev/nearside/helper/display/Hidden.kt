@@ -157,6 +157,18 @@ object Hidden {
             .filterNotNull().map(::rootTask)
     }.onFailure { Log.d("getAllRootTaskInfos failed: ${it.cause ?: it}") }.getOrDefault(emptyList())
 
+    /** Ends a task (as swiping it away in Recents does). */
+    fun removeTask(taskId: Int): Boolean = runCatching {
+        activityTasks.javaClass.getMethod("removeTask", Int::class.java).invoke(activityTasks, taskId) as Boolean
+    }.onFailure { Log.d("removeTask failed: ${it.cause ?: it}") }.getOrDefault(false)
+
+    /** Brings a task to the front where it is, as picking it in Recents does. */
+    fun taskToFront(taskId: Int): Boolean = runCatching {
+        val result = activityTasks.javaClass.getMethod("startActivityFromRecents", Int::class.java, Bundle::class.java)
+            .invoke(activityTasks, taskId, null) as Int
+        result >= 0
+    }.onFailure { Log.d("startActivityFromRecents failed: ${it.cause ?: it}") }.getOrDefault(false)
+
     /** Moves a task to a display; onTop=false slides it under whatever is showing there. */
     fun moveTask(taskId: Int, displayId: Int, onTop: Boolean): Boolean {
         try {

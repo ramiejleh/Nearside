@@ -40,7 +40,14 @@ object DisplayWire {
     const val AUDIO_CONFIG = 0x32; const val AUDIO = 0x33
 
     const val ROLE_CONTROL = 1; const val ROLE_VIDEO = 2; const val ROLE_AUDIO = 3
-    const val NAV_BACK = 1
+    const val NAV_BACK = 1; const val NAV_HOME = 2
+    /** OPEN target for the phone window: our home screen, with apps opened from it on top. */
+    const val HOME_TARGET = "home"
+    // Phone window, Mac → phone: RECENTS (no body), TASK_FRONT / TASK_REMOVE (i32 task), DOCK (utf8
+    // packages, one per line). Phone → Mac: TASKS (utf8 JSON [{id, pkg}], top first), SNAPSHOT
+    // (i32 task + JPEG).
+    const val RECENTS = 0x41; const val TASK_FRONT = 0x42; const val TASK_REMOVE = 0x43; const val DOCK = 0x44
+    const val TASKS = 0x26; const val SNAPSHOT = 0x27
     /** VISIBILITY: the window in use, hidden, or on screen but not in use. */
     const val VIS_FOCUSED = 0; const val VIS_HIDDEN = 1; const val VIS_VISIBLE = 2
     const val MOUSE_HOVER = 0; const val MOUSE_EXIT = 1; const val MOUSE_SECONDARY_DOWN = 2; const val MOUSE_SECONDARY_UP = 3
@@ -136,7 +143,7 @@ class DisplayServer(
         }
         listening = true
         // An app in a window opened again on the phone (its icon, Recents…): it goes to the phone.
-        TaskEvents.onRestartAttempt = { task -> sessions.values.firstOrNull { it.owns(task) }?.openedOnPhone() }
+        TaskEvents.onRestartAttempt = { task -> sessions.values.firstOrNull { it.owns(task) }?.openedOnPhone(task) }
         TaskEvents.register()
         Thermal.onChange = {
             rebalance()
@@ -217,6 +224,11 @@ class DisplayServer(
                     conn.send(DisplayWire.ERROR, byteArrayOf(DisplayWire.ERR_LAUNCH.toByte()) +
                         "Nearside on your phone isn't running. Open it once, then try again.".toByteArray())
                     return conn.close()
+                }
+                // One phone window: our home screen is a single task, and a second window (or one
+                // left waiting for a Mac that went) would pull it back and forth between displays.
+                if (open.target == DisplayWire.HOME_TARGET) {
+                    sessions.values.filter { it.isHome }.forEach { it.close(toPhone = true) }
                 }
                 val session = DisplaySession(sid, this, open)
                 sessions[sid] = session
