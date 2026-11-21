@@ -11,6 +11,7 @@ struct SettingsView: View {
     @AppStorage("showArrivalToast") private var showArrivalToast = true
     @State private var phoneAppsAuth = AuthGate.mode
     @AppStorage(PhoneSpotlight.enabledKey) private var phoneAppsInSpotlight = true
+    @AppStorage("PhoneApps.motion") private var phoneAppsMotion = "smooth"
     @State private var launchAtLogin = SMAppService.mainApp.status == .enabled
     @State private var confirmReset = false
 
@@ -52,6 +53,15 @@ struct SettingsView: View {
                     }
                     .onChange(of: phoneAppsInSpotlight) { _, on in
                         if on { PhoneWindowManager.shared?.library.refresh() } else { PhoneSpotlight.remove() }
+                    }
+                    Picker(selection: $phoneAppsMotion) {
+                        Text("Smooth").tag("smooth")
+                        Text("Responsive").tag("responsive")
+                    } label: {
+                        Text("Motion")
+                        Text(phoneAppsMotion == "responsive"
+                             ? "Less delay; some frames are skipped when Wi-Fi is uneven."
+                             : "Every frame shown, a little more delay. For windows opened from now on.")
                     }
                     LabeledContent("Open the launcher", value: "⌥⌘P")
                 }

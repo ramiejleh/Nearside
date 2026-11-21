@@ -7,9 +7,14 @@ import QuartzCore
 
 /// Draws a phone app's frames with Metal, from any thread.
 ///
-/// Frames are drawn the moment they're decoded (no display link, vsync off for this layer):
-/// Gate B measured that at ~31 ms capture→screen against ~77 ms when waiting on a
-/// CAMetalDisplayLink. In a window WindowServer composites anyway, so there's no tearing.
+/// Wi-Fi delivers frames in bunches (12 % of receive gaps > 25 ms), and drawn the moment they
+/// arrived with vsync off, two frames often landed in one screen refresh: only 62 % of refreshes
+/// showed a new frame (user: stutter). Two ways to draw, by the "Motion" setting (measured with a
+/// 60 fps animation, receive → on screen):
+///  - Smooth (default): vsync on, frames queue in the drawables: 98 % of refreshes, +~45 ms.
+///  - Responsive: vsync off, paced to the display link: a frame arriving when this refresh
+///    already has one waits for the next (at most 2 waiting, trimmed if it stays behind):
+///    82 %, +~16 ms.
 final class MetalRenderer: @unchecked Sendable {
     let layer = CAMetalLayer()
     private let queue: MTLCommandQueue
@@ -18,6 +23,15 @@ final class MetalRenderer: @unchecked Sendable {
     private let lock = NSLock()
     private var latest: VideoDecoder.Frame?
     private var crop = 0
+    // Pacing (under `pace`): frames waiting for the next refresh, when the last refresh began
+    // (display-link tick), whether this refresh has shown a frame, how long the queue stayed full.
+    private let pace = NSLock()
+    private var waiting: [VideoDecoder.Frame] = []
+    private var shownThisRefresh = false
+    private var backlogTicks = 0
+    private var ticking = false
+    /// Settings → Phone apps → Motion ("PhoneApps.motion": smooth | responsive), when the window opens.
+    let smooth = UserDefaults.standard.string(forKey: "PhoneApps.motion") != "responsive"
 
     /// Top rows of each frame not to show (an app's empty band; see PhoneDisplaySize).
     var cropPixels: Int {
@@ -33,7 +47,7 @@ final class MetalRenderer: @unchecked Sendable {
         layer.device = device
         layer.pixelFormat = .bgra8Unorm
         layer.framebufferOnly = true
-        layer.displaySyncEnabled = false
+        layer.displaySyncEnabled = smooth // responsive: paced to the display instead (show/tick)
         layer.maximumDrawableCount = 2
         layer.colorspace = CGColorSpace(name: CGColorSpace.sRGB)
         layer.backgroundColor = CGColor(gray: 0, alpha: 1)
@@ -44,9 +58,41 @@ final class MetalRenderer: @unchecked Sendable {
     var lastFrame: VideoDecoder.Frame? { lock.withLock { latest } }
 
     func show(_ frame: VideoDecoder.Frame) {
-        lock.withLock { latest = frame }
-        draw(frame)
+        let now: Bool = pace.withLock {
+            // Smooth: vsync paces. Without a display link yet (not on screen): draw at once.
+            guard !smooth, ticking else { return true }
+            if !shownThisRefresh, waiting.isEmpty { shownThisRefresh = true; return true }
+            waiting.append(frame)
+            if waiting.count > 2 { waiting.removeFirst() } // too far behind: skip the oldest
+            return false
+        }
+        if now {
+            lock.withLock { latest = frame }
+            draw(frame)
+        }
     }
+
+    /// A new screen refresh (the view's display link, main thread): the oldest waiting frame.
+    func tick() {
+        let next: VideoDecoder.Frame? = pace.withLock {
+            ticking = true
+            shownThisRefresh = false
+            // Still a frame behind after a while: drop one, back to drawing on arrival.
+            backlogTicks = waiting.count > 1 ? backlogTicks + 1 : 0
+            if backlogTicks > 30, waiting.count > 1 { waiting.removeFirst(); backlogTicks = 0 }
+            guard !waiting.isEmpty else { return nil }
+            shownThisRefresh = true
+            return waiting.removeFirst()
+        }
+        guard let next else { return }
+        DispatchQueue.global(qos: .userInteractive).async { [self] in
+            lock.withLock { latest = next }
+            draw(next)
+        }
+    }
+
+    /// The window left the screen: no ticks, so draw on arrival again.
+    func stopTicking() { pace.withLock { ticking = false; waiting.removeAll() } }
 
     func redraw() {
         if let frame = lastFrame { draw(frame) }
@@ -164,6 +210,22 @@ final class StreamView: NSView {
         wantsLayer = true
         layer = renderer.layer
     }
+
+    private var displayLink: CADisplayLink?
+
+    /// Paces drawing to the screen this window is on (see MetalRenderer).
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        displayLink?.invalidate()
+        displayLink = nil
+        renderer.stopTicking()
+        guard window != nil else { return }
+        let link = displayLink(target: self, selector: #selector(refresh(_:)))
+        link.add(to: .main, forMode: .common)
+        displayLink = link
+    }
+
+    @objc private func refresh(_ link: CADisplayLink) { renderer.tick() }
 
     required init?(coder: NSCoder) { fatalError("not used") }
 
