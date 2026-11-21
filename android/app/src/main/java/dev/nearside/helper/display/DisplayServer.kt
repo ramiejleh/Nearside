@@ -43,6 +43,13 @@ object DisplayWire {
     const val NAV_BACK = 1; const val NAV_HOME = 2
     /** OPEN target for the phone window: our home screen, with apps opened from it on top. */
     const val HOME_TARGET = "home"
+    /**
+     * OPEN target for a notification opened on the Mac: this prefix + its key in hex (keys hold
+     * any characters). The app's task comes over and the notification's own intent opens on the
+     * display. NOTIFICATION (utf8 key) does the same in a window that's already open.
+     */
+    const val NOTIFICATION_TARGET = "notification:"
+    const val NOTIFICATION = 0x45
     // Phone window, Mac → phone: RECENTS (no body), TASK_FRONT / TASK_REMOVE (i32 task), DOCK (utf8
     // packages, one per line). Phone → Mac: TASKS (utf8 JSON [{id, pkg}], top first), SNAPSHOT
     // (i32 task + JPEG).
@@ -71,7 +78,8 @@ object DisplayWire {
                 val kbps = buf.int
                 val target = String(b, 11, b.size - 11)
                 if (w !in 64..4096 || h !in 64..4096 || dpi !in 72..640 || fps !in 1..120 || kbps !in 500..100_000) return null
-                if (!target.matches(Regex("[A-Za-z0-9_.]+(/[A-Za-z0-9_.$]+)?"))) return null
+                if (!target.matches(Regex("[A-Za-z0-9_.]+(/[A-Za-z0-9_.$]+)?")) &&
+                    !target.matches(Regex("${NOTIFICATION_TARGET}([0-9a-f]{2}){1,1024}"))) return null
                 return Open(w and 1.inv(), h and 1.inv(), dpi, fps, kbps, target)
             }
         }

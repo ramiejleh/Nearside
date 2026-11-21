@@ -69,7 +69,7 @@ object HelperConnection {
             "notif-dismiss" -> NotificationMirror.instance?.dismiss(msg.optString("key"))
             "file-received" -> context?.let { FileNotifications.received(it, msg.optString("name")) }
             "sms-threads", "sms-thread", "sms-send", "sms-read" -> context?.let { SmsBridge.handle(it, msg) }
-            "notif-open" -> NotificationMirror.instance?.open(msg.optString("key"))
+            "notif-open" -> NotificationMirror.instance?.open(msg.optString("key"), msg.optInt("display", -1))
             "display-state" -> context?.let { InUseNotification.update(it, msg.optInt("open")) }
             "notif-action" -> NotificationMirror.instance?.runAction(
                 msg.optString("key"),

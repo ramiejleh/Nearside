@@ -352,6 +352,11 @@ public final class PhoneAppSession: @unchecked Sendable {
     public func paste(_ text: String?) { send(DisplayWire.utf8(DisplayWire.paste, text ?? "")) }
 
     /// The Mac's keyboard layout ("Danish\nda"), so the phone can type every character it can.
+    /// Opens a phone notification in this window (its app is the window's), as tapping it would.
+    public func openNotification(_ key: String) {
+        send(DisplayWire.utf8(DisplayWire.notification, key))
+    }
+
     /// Kept, and sent again after a reconnect.
     public func setKeyboardLayout(_ hint: String) {
         lock.withLock { layoutHint = hint }

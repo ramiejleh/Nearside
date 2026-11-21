@@ -19,4 +19,6 @@ interface IHelper {
      * Mac, which pulls it over adb. False when no Mac is connected.
      */
     boolean sendFile(String name, in ParcelFileDescriptor fd);
+    /** The same as sendIntent, opening on display [displayId] (a Mac window's). */
+    boolean sendIntentOnDisplay(in PendingIntent intent, int displayId);
 }

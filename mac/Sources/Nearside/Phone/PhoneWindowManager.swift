@@ -66,6 +66,37 @@ final class PhoneWindowManager {
         }
     }
 
+    /// A phone notification's "Open on Mac": in its app's window (opening one if needed), where
+    /// the notification opens as tapping it on the phone would.
+    func openNotification(key: String, package: String, label: String) {
+        if let existing = windows.first(where: { $0.app.package == package }) {
+            Task {
+                guard await auth.authenticate(opening: false) else { return }
+                unlockWindows()
+                existing.openNotification(key)
+                existing.show()
+            }
+            return
+        }
+        guard !opening.contains(package) else { return }
+        opening.insert(package)
+        let app = library.app(package: package) ?? PhoneApp(package: package, activity: "", label: label.isEmpty ? package : label)
+        Task { [weak self] in
+            guard let self else { return }
+            defer { opening.remove(package) }
+            await phoneShapeKnown()
+            guard await auth.authenticate(opening: true) else { return }
+            unlockWindows()
+            guard let renderer = MetalRenderer(),
+                  let controller = AppWindowController(app: app, engine: engine, renderer: renderer, icon: library.icons[app.id],
+                                                       notification: key, onClosed: { [weak self] in self?.closed($0) }) else { return }
+            library.markUsed(app)
+            windows.append(controller)
+            updateActivationPolicy()
+            controller.show()
+        }
+    }
+
     /// The phone window: a phone of its own, with our home screen (one at most).
     func openPhoneWindow() {
         if let phoneWindow {

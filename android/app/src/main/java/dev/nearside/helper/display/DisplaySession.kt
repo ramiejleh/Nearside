@@ -17,6 +17,7 @@ import android.view.KeyCharacterMap
 import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.Surface
+import dev.nearside.helper.AppLink
 import dev.nearside.helper.FakeContext
 import dev.nearside.helper.Log
 import java.io.IOException
@@ -37,6 +38,9 @@ class DisplaySession(
         const val FLAGS = (1 shl 0) or (1 shl 3) or (1 shl 6) or (1 shl 10) or (1 shl 11) or (1 shl 12) or
             (1 shl 13) or (1 shl 14)
         private const val GRACE_MS = 30_000L
+        /** Our windows' displays (a notification may be opened only onto one of them). */
+        private val displays = java.util.concurrent.ConcurrentHashMap.newKeySet<Int>()
+        fun isOurs(displayId: Int) = displayId in displays
         private const val LAUNCH_TIMEOUT_MS = 10_000L
     }
 
@@ -86,6 +90,7 @@ class DisplaySession(
             ?: run { device?.close(); device = null; null }
             ?: Hidden.displayManager.createVirtualDisplay("nearside-$id", w, h, dpi, surface, FLAGS)
         Log.d("display session $id: display $displayId ${w}x$h@$dpi for $target${device?.let { " (virtual device ${it.deviceId})" } ?: ""}")
+        displays.add(displayId)
         awake = Hidden.keepAwake(displayId, "Nearside:display-$id")
         // Before the launch, so the app lays out with them from the start.
         bars = SystemBars.add(displayId, dpi, phoneDensity())
@@ -160,6 +165,7 @@ class DisplaySession(
                 resize(b.short.toInt() and 0xffff, b.short.toInt() and 0xffff, b.short.toInt() and 0xffff)
             }
             DisplayWire.NAV -> if (b.remaining() >= 1) nav(b.get().toInt())
+            DisplayWire.NOTIFICATION -> if (!isHome) utf8(b).let { key -> watcher.execute { openNotification(key) } }
             DisplayWire.RECENTS -> if (isHome) watcher.execute { runCatching { sendRecents() } }
             DisplayWire.TASK_FRONT -> if (isHome && b.remaining() >= 4) b.int.let { t -> if (onDisplay(t)) Hidden.taskToFront(t) }
             DisplayWire.TASK_REMOVE -> if (isHome && b.remaining() >= 4) b.int.let { t -> if (onDisplay(t) && t != homeTask) Hidden.removeTask(t) }
@@ -234,6 +240,35 @@ class DisplaySession(
     private fun launch() {
         if (isHome) Snapshots.warmUp()
         if (isHome) return launchHome(toFront = true)
+        if (target.startsWith(DisplayWire.NOTIFICATION_TARGET)) {
+            val key = String(target.removePrefix(DisplayWire.NOTIFICATION_TARGET).chunked(2).map { it.toInt(16).toByte() }.toByteArray())
+            return openNotification(key)
+        }
+        launchApp(target)
+    }
+
+    /**
+     * Opens notification [key] here, as tapping it on the phone would: its app's task comes over
+     * (if it runs), then the app fires the notification's intent onto this display. If nothing
+     * shows up (the notification went meanwhile), the app opens as from the launcher.
+     */
+    private fun openNotification(key: String) {
+        val pkg = key.split('|').getOrNull(1)?.takeIf { it.matches(Regex("[A-Za-z0-9_.]+")) }
+            ?: return fail(DisplayWire.ERR_NOT_FOUND, "not a notification")
+        val existing = Hidden.rootTasks().firstOrNull { it.packageName == pkg && it.displayId != displayId }
+        if (existing != null && Hidden.moveTask(existing.taskId, displayId, onTop = true)) {
+            Log.d("display session $id: moved task ${existing.taskId} ($pkg) here for a notification")
+        }
+        AppLink.deliver(org.json.JSONObject().put("t", "notif-open").put("key", key).put("display", displayId))
+        watcher.schedule({
+            if (!closed && Hidden.rootTasks().none { it.displayId == displayId }) {
+                Log.d("display session $id: the notification opened nothing; opening $pkg")
+                launchApp(pkg)
+            }
+        }, 2, TimeUnit.SECONDS)
+    }
+
+    private fun launchApp(target: String) {
         val component = if ('/' in target) ComponentName.unflattenFromString(target) else null
         val pkg = component?.packageName ?: target
         // A running app is moved over, keeping its state, rather than started again.
@@ -882,6 +917,7 @@ class DisplaySession(
         runCatching { keyboard?.close() }
         touchscreen?.let { PhoneDevice.closeInput(it) }
         if (bars != null) SystemBars.remove(displayId)
+        displays.remove(displayId)
         runCatching { display.release() }
         device?.close()
         codec?.let { runCatching { it.stop() }; it.release() }

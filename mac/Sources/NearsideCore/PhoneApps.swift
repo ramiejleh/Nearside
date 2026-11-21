@@ -142,8 +142,10 @@ extension SyncEngine {
     }
 
     /// A session showing `app` in a window of `width`×`height` pixels (start it to connect).
-    public func makePhoneAppSession(_ app: PhoneApp, width: Int, height: Int, dpi: Int) -> PhoneAppSession {
-        PhoneAppSession(target: app.id, width: width, height: height, dpi: dpi, token: Token.value) { [weak self] in
+    /// `notification`: opened from that phone notification (its key) rather than the launcher.
+    public func makePhoneAppSession(_ app: PhoneApp, width: Int, height: Int, dpi: Int, notification: String? = nil) -> PhoneAppSession {
+        PhoneAppSession(target: notification.map(DisplayWire.notificationTarget) ?? app.id, width: width, height: height, dpi: dpi,
+                        token: Token.value) { [weak self] in
             await self?.displayTicket()
         }
     }

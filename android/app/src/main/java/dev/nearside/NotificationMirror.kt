@@ -27,6 +27,7 @@ import java.io.ByteArrayOutputStream
  *   ← {"t":"notif-dismiss","key"}          dismissed on the Mac
  *   ← {"t":"notif-action","key","i","text"?}  button (or reply with text) clicked on the Mac
  *   ← {"t":"notif-open","key"}             notification clicked on the Mac: open it here
+ *   ← {"t":"notif-open","key","display"}   … or in a Mac window (that window's display, via the helper)
  * Access is granted by the Mac over adb (`cmd notification allow_listener`), so there's no
  * settings screen to visit, and turning mirroring off on the Mac revokes it again.
  * All state is touched on the main thread only.
@@ -194,12 +195,17 @@ class NotificationMirror : NotificationListenerService() {
         }
     }
 
-    /** Opens the notification's target on the phone, as tapping it would. */
-    fun open(key: String) = main.post {
+    /** Opens the notification's target on the phone (or on [display], a Mac window's), as tapping it would. */
+    fun open(key: String, display: Int = -1) = main.post {
         val n = active[key] ?: return@post
         val target = n.contentIntent ?: return@post
-        runCatching { fire(target, null) }
-            .onFailure { Status.lastEvent = "open failed: ${it.message}" }
+        runCatching {
+            if (display >= 0) {
+                if (HelperConnection.helper?.sendIntentOnDisplay(target, display) != true) error("the helper couldn't open it there")
+            } else {
+                fire(target, null)
+            }
+        }.onFailure { Status.lastEvent = "open failed: ${it.message}" }
         // Tapping an auto-cancel notification removes it; do the same.
         if (n.flags and Notification.FLAG_AUTO_CANCEL != 0) {
             delivered.remove(key) // the Mac already removed its copy

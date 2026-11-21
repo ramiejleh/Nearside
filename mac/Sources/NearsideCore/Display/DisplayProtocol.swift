@@ -28,6 +28,13 @@ public enum DisplayWire {
     static let insets: UInt8 = 0x28
     // Phone window, Mac → phone.
     static let recents: UInt8 = 0x41, taskFront: UInt8 = 0x42, taskRemove: UInt8 = 0x43, dock: UInt8 = 0x44
+    /// Mac → phone: open a notification (utf8 key) in this window, as tapping it would.
+    static let notification: UInt8 = 0x45
+
+    /// OPEN target for a window opened from a notification: its key in hex (keys hold any characters).
+    public static func notificationTarget(_ key: String) -> String {
+        "notification:" + Data(key.utf8).map { String(format: "%02x", $0) }.joined()
+    }
     /// Mac → phone: the picture went all black (1) or isn't any more (0).
     static let black: UInt8 = 0x40
     static let config: UInt8 = 0x30, frame: UInt8 = 0x31

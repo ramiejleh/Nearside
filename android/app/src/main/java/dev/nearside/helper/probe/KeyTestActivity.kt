@@ -44,6 +44,15 @@ class KeyTestActivity : Activity() {
         } else setContentView(field)
         field.requestFocus()
         if (intent.hasExtra("tone")) playTone(intent.getIntExtra("tone", 8))
+        // `--ei pending_display N`: a PendingIntent (as a notification's) opened on display N via the helper.
+        if (intent.hasExtra("pending_display")) {
+            val target = android.app.PendingIntent.getActivity(this, 1,
+                android.content.Intent.makeMainSelectorActivity(android.content.Intent.ACTION_MAIN, android.content.Intent.CATEGORY_APP_CALCULATOR).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK),
+                android.app.PendingIntent.FLAG_IMMUTABLE)
+            val ok = runCatching { dev.nearside.link.HelperConnection.helper?.sendIntentOnDisplay(target, intent.getIntExtra("pending_display", -1)) }
+            android.util.Log.i("KeyTest", "pending intent on display ${intent.getIntExtra("pending_display", -1)}: $ok")
+            finish()
+        }
     }
 
     /**

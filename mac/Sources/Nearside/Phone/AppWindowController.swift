@@ -68,7 +68,8 @@ final class AppWindowController: NSObject, NSWindowDelegate {
         }
     }
 
-    init?(app: PhoneApp, engine: SyncEngine, renderer: MetalRenderer, icon: NSImage?,
+    /// `notification`: opened from that phone notification (its key): it opens in the window.
+    init?(app: PhoneApp, engine: SyncEngine, renderer: MetalRenderer, icon: NSImage?, notification: String? = nil,
           onClosed: @escaping (AppWindowController) -> Void) {
         self.app = app
         self.onClosed = onClosed
@@ -125,7 +126,7 @@ final class AppWindowController: NSObject, NSWindowDelegate {
         stream.macShortcuts = ["=", "+", "-", "0"] // View → Larger / Smaller / Actual Size
         window.delegate = self
         let size = displaySize()
-        session = engine.makePhoneAppSession(app, width: size.width, height: size.height, dpi: size.dpi)
+        session = engine.makePhoneAppSession(app, width: size.width, height: size.height, dpi: size.dpi, notification: notification)
         render(.opening)
 
         session.onFrame = { [renderer] frame in renderer.show(frame) }
@@ -400,6 +401,11 @@ final class AppWindowController: NSObject, NSWindowDelegate {
             touch(.up, 0.5, 0.3)
             NSLog("Nearside: test input sent")
         }
+    }
+
+    /// A notification of this window's app: it opens here, as tapping it would.
+    func openNotification(_ key: String) {
+        session.openNotification(key)
     }
 
     private func reopen() {

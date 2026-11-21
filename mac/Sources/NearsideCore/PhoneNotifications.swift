@@ -19,6 +19,12 @@ final class PhoneNotifications: NSObject, UNUserNotificationCenterDelegate {
     var onOpen: ((String) -> Void)?
     /// (phone notification key, action index, typed reply text if it was a reply)
     var onAction: ((String, Int, String?) -> Void)?
+    /// "Open on Mac" (or a click, if set so): (key, package, app name).
+    var onOpenOnMac: ((String, String, String) -> Void)?
+
+    /// What clicking a phone notification does: "phone" (open it there) or "mac" (in a window).
+    nonisolated static let clickKey = "PhoneApps.notificationClick"
+    nonisolated private static let openOnMac = "mac"
 
     private static let plainCategory = "phone-notification"
     /// Phone notifications we put in Notification Center, with when; see `reconcile()`.
@@ -46,7 +52,7 @@ final class PhoneNotifications: NSObject, UNUserNotificationCenterDelegate {
                     ? UNTextInputNotificationAction(identifier: "a\(index)", title: action.title, options: [],
                                                     textInputButtonTitle: "Send", textInputPlaceholder: "Reply…")
                     : UNNotificationAction(identifier: "a\(index)", title: action.title, options: [])
-            }
+            } + [UNNotificationAction(identifier: Self.openOnMac, title: "Open on Mac", options: [.foreground])]
             // customDismissAction makes macOS tell us when the user closes a notification.
             categories[id] = UNNotificationCategory(identifier: id, actions: buttons, intentIdentifiers: [],
                                                     options: [.customDismissAction])
@@ -55,8 +61,14 @@ final class PhoneNotifications: NSObject, UNUserNotificationCenterDelegate {
         return id
     }
 
+    /// Our own notifications: no phone buttons, no "Open on Mac".
+    private static let localCategory = "local"
+
     func activate() {
         _ = category(for: [])
+        categories[Self.localCategory] = UNNotificationCategory(identifier: Self.localCategory, actions: [], intentIdentifiers: [],
+                                                               options: [.customDismissAction])
+        center.setNotificationCategories(Set(categories.values))
         adoptDelivered()
         center.requestAuthorization(options: [.alert, .sound]) { _, _ in }
     }
@@ -69,6 +81,7 @@ final class PhoneNotifications: NSObject, UNUserNotificationCenterDelegate {
         if !title.isEmpty { content.subtitle = app }
         content.body = text
         content.threadIdentifier = package
+        content.userInfo = ["pkg": package, "app": app]
         content.categoryIdentifier = category(for: actions)
         if quiet { content.interruptionLevel = .passive }
         if let url = iconFile(package: package, png: iconPNG),
@@ -99,7 +112,7 @@ final class PhoneNotifications: NSObject, UNUserNotificationCenterDelegate {
         let content = UNMutableNotificationContent()
         content.title = title
         content.body = body
-        content.categoryIdentifier = category(for: [])
+        content.categoryIdentifier = Self.localCategory
         center.add(UNNotificationRequest(identifier: id, content: content, trigger: nil))
     }
 
@@ -183,9 +196,14 @@ final class PhoneNotifications: NSObject, UNUserNotificationCenterDelegate {
                                             didReceive response: UNNotificationResponse) async {
         let key = response.notification.request.identifier
         let action = response.actionIdentifier
+        let info = response.notification.request.content.userInfo
+        let pkg = info["pkg"] as? String ?? "", app = info["app"] as? String ?? ""
         Self.log.notice("notification response: \(action, privacy: .public)")
+        let clickOpensOnMac = UserDefaults.standard.string(forKey: Self.clickKey) == Self.openOnMac
         if action == UNNotificationDismissActionIdentifier {
             await dismissed(key)
+        } else if action == Self.openOnMac || (action == UNNotificationDefaultActionIdentifier && clickOpensOnMac && !pkg.isEmpty) {
+            await openedOnMac(key, pkg, app)
         } else if action == UNNotificationDefaultActionIdentifier {
             await opened(key)
         } else if action.hasPrefix("a"), let index = Int(action.dropFirst()) {
@@ -204,6 +222,12 @@ final class PhoneNotifications: NSObject, UNUserNotificationCenterDelegate {
     private func opened(_ key: String) {
         shown[key] = nil
         onOpen?(key)
+    }
+
+    private func openedOnMac(_ key: String, _ pkg: String, _ app: String) {
+        shown[key] = nil
+        guard !pkg.isEmpty else { onOpen?(key); return } // from before this was kept: open it on the phone
+        onOpenOnMac?(key, pkg, app)
     }
 
     nonisolated private static let log = Logger(subsystem: "dev.nearside.mac", category: "notifications")

@@ -136,6 +136,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Test hook: NEARSIDE_OPEN_APP=<package> opens that phone app once the phone is connected
     /// (a comma-separated list opens several, a few seconds apart).
     private func openAppForTesting(_ engine: SyncEngine) {
+        // NEARSIDE_OPEN_NOTIFICATION=<key>: that phone notification's "Open on Mac".
+        if let key = ProcessInfo.processInfo.environment["NEARSIDE_OPEN_NOTIFICATION"] {
+            Task { @MainActor in
+                while engine.state != .connected { try? await Task.sleep(for: .milliseconds(300)) }
+                try? await Task.sleep(for: .seconds(1))
+                let pkg = key.split(separator: "|").dropFirst().first.map(String.init) ?? ""
+                engine.onOpenNotificationOnMac?(key, pkg, "Test")
+            }
+            return
+        }
         guard let list = ProcessInfo.processInfo.environment["NEARSIDE_OPEN_APP"] else { return }
         Task { @MainActor in
             while engine.state != .connected { try? await Task.sleep(for: .milliseconds(300)) }
@@ -219,6 +229,9 @@ final class StatusItemController: NSObject {
 
         updateIcon()
         engine.onPhoneAppsStop = { [weak self] in self?.phoneApps.closeAll() }
+        engine.onOpenNotificationOnMac = { [weak self] key, pkg, app in
+            self?.phoneApps.openNotification(key: key, package: pkg, label: app)
+        }
         _ = phoneApps // its hot key (⌥⌘P) works from launch
 
         // First run (or re-pairing needed): open the setup wizard straight away.

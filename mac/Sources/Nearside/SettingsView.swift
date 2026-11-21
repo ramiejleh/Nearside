@@ -12,6 +12,7 @@ struct SettingsView: View {
     @State private var phoneAppsAuth = AuthGate.mode
     @AppStorage(PhoneSpotlight.enabledKey) private var phoneAppsInSpotlight = true
     @AppStorage("PhoneApps.motion") private var phoneAppsMotion = "smooth"
+    @AppStorage("PhoneApps.notificationClick") private var notificationClick = "phone"
     @State private var launchAtLogin = SMAppService.mainApp.status == .enabled
     @State private var confirmReset = false
 
@@ -22,6 +23,13 @@ struct SettingsView: View {
                     Toggle(isOn: Binding(get: { engine.mirrorNotifications }, set: { engine.mirrorNotifications = $0 })) {
                         Text("Mirror phone notifications")
                         Text("Your \(engine.phoneName)'s notifications appear on this Mac. Dismissing one here dismisses it on the phone.")
+                    }
+                    Picker(selection: $notificationClick) {
+                        Text("On your phone").tag("phone")
+                        Text("On this Mac").tag("mac")
+                    } label: {
+                        Text("Clicking a notification opens it")
+                        Text("Either way, “Open on Mac” in a notification’s options opens it in a window here.")
                     }
                     Toggle(isOn: $showArrivalToast) {
                         Text("Pop-up when a clip arrives")

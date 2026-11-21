@@ -97,19 +97,27 @@ object AppLink {
             return true
         }
 
-        override fun sendIntent(intent: PendingIntent, fillIn: Intent?): Boolean {
+        override fun sendIntent(intent: PendingIntent, fillIn: Intent?): Boolean = send(intent, fillIn, null)
+
+        override fun sendIntentOnDisplay(intent: PendingIntent, displayId: Int): Boolean {
+            if (Binder.getCallingUid() != appUid) throw SecurityException("not the Nearside app")
+            // Only onto one of our windows' displays.
+            if (!dev.nearside.helper.display.DisplaySession.isOurs(displayId)) return false
+            return send(intent, null, displayId)
+        }
+
+        private fun send(intent: PendingIntent, fillIn: Intent?, displayId: Int?): Boolean {
             if (Binder.getCallingUid() != appUid) throw SecurityException("not the Nearside app")
             val options = when {
                 Build.VERSION.SDK_INT >= 36 -> ActivityOptions.makeBasic()
                     .setPendingIntentBackgroundActivityStartMode(ActivityOptions.MODE_BACKGROUND_ACTIVITY_START_ALLOW_ALWAYS)
-                    .toBundle()
                 Build.VERSION.SDK_INT >= 34 -> ActivityOptions.makeBasic()
                     .setPendingIntentBackgroundActivityStartMode(@Suppress("DEPRECATION") ActivityOptions.MODE_BACKGROUND_ACTIVITY_START_ALLOWED)
-                    .toBundle()
-                else -> null
+                else -> if (displayId != null) ActivityOptions.makeBasic() else null
             }
+            displayId?.let { options?.setLaunchDisplayId(it) }
             return runCatching {
-                intent.send(FakeContext.instance, 0, fillIn, null, null, null, options)
+                intent.send(FakeContext.instance, 0, fillIn, null, null, null, options?.toBundle())
             }.onFailure { Log.d("sendIntent failed: $it") }.isSuccess
         }
     }

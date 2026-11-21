@@ -90,6 +90,8 @@ public final class SyncEngine {
     private var nextDisplayRequest = 1
     /// The phone's "Stop" on its apps-open notification: close every phone-app window.
     public var onPhoneAppsStop: (() -> Void)?
+    /// A phone notification to open in a Mac window: (key, package, app name).
+    public var onOpenNotificationOnMac: ((String, String, String) -> Void)?
 
     public init(apkURL: URL?) {
         self.apkURL = apkURL
@@ -129,6 +131,9 @@ public final class SyncEngine {
                 return
             }
             self?.link.send(["t": "notif-open", "key": key])
+        }
+        notifications.onOpenOnMac = { [weak self] key, pkg, app in
+            self?.onOpenNotificationOnMac?(key, pkg, app)
         }
         notifications.onAction = { [weak self] key, index, text in
             var message: [String: Any] = ["t": "notif-action", "key": key, "i": index]
