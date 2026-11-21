@@ -147,7 +147,7 @@ class DisplaySession(
                 val t0 = b.long
                 ctl?.send(DisplayWire.PONG, ByteBuffer.allocate(16).putLong(t0).putLong(System.nanoTime() / 1000).array())
             }
-            DisplayWire.VISIBILITY -> if (b.remaining() >= 1) setVisible(b.get().toInt() == 0)
+            DisplayWire.VISIBILITY -> if (b.remaining() >= 1) setVisibility(b.get().toInt())
             DisplayWire.SYNC -> requestKeyframe()
             DisplayWire.CLOSE -> close(toPhone = true)
         }
@@ -269,7 +269,7 @@ class DisplaySession(
     private fun newEncoder(): Surface {
         val format = MediaFormat.createVideoFormat(MediaFormat.MIMETYPE_VIDEO_HEVC, w, h).apply {
             setInteger(MediaFormat.KEY_COLOR_FORMAT, MediaCodecInfo.CodecCapabilities.COLOR_FormatSurface)
-            setInteger(MediaFormat.KEY_BIT_RATE, kbps * 1000)
+            setInteger(MediaFormat.KEY_BIT_RATE, budgetKbps() * 1000)
             setInteger(MediaFormat.KEY_BITRATE_MODE, MediaCodecInfo.EncoderCapabilities.BITRATE_MODE_CBR)
             setInteger(MediaFormat.KEY_FRAME_RATE, fps)
             setFloat(MediaFormat.KEY_I_FRAME_INTERVAL, 10f)
@@ -279,7 +279,7 @@ class DisplaySession(
             setInteger(MediaFormat.KEY_PREPEND_HEADER_TO_SYNC_FRAMES, 1)
             setInteger(MediaFormat.KEY_COLOR_STANDARD, MediaFormat.COLOR_STANDARD_BT709)
             setInteger(MediaFormat.KEY_COLOR_RANGE, MediaFormat.COLOR_RANGE_LIMITED)
-            setFloat("max-fps-to-encoder", fps.toFloat())
+            setFloat("max-fps-to-encoder", budgetFps().toFloat().also { encoderFps = it.toInt() })
         }
         val c = MediaCodec.createEncoderByType(MediaFormat.MIMETYPE_VIDEO_HEVC)
         c.configure(format, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
@@ -338,12 +338,60 @@ class DisplaySession(
         runCatching { codec?.setParameters(Bundle().apply { putInt(MediaCodec.PARAMETER_KEY_REQUEST_SYNC_FRAME, 0) }) }
     }
 
-    /** Hidden or minimised on the Mac: stop encoding, but leave the app running (it isn't told). */
-    private fun setVisible(visible: Boolean) {
+    // MARK: - Budget
+    //
+    // The phone has one hardware video encoder block shared by every window (and its camera), and
+    // it heats up. Each window gets a share by how it's seen on the Mac: the one in use full rate,
+    // others on screen a lower frame rate and bitrate, hidden ones nothing (the encoder suspends;
+    // the app keeps running and isn't told).
+
+    @Volatile private var visibility = DisplayWire.VIS_FOCUSED
+
+    private fun budgetFps(): Int = when (visibility) {
+        DisplayWire.VIS_FOCUSED -> fps
+        else -> minOf(fps, 30)
+    }
+
+    private fun budgetKbps(): Int = when (visibility) {
+        DisplayWire.VIS_FOCUSED -> kbps
+        else -> kbps * 6 / 10
+    }
+
+    /** The frame-rate cap the current encoder was made with. */
+    @Volatile private var encoderFps = 0
+
+    /**
+     * Applies the budget. Bitrate and suspending change on the running encoder; the frame-rate cap
+     * doesn't (Exynos HEVC ignored "max-fps-to-encoder" in setParameters: 300 frames per 5 s
+     * either way), so a new cap means a new encoder, as a resize does (~0.1 s, one keyframe).
+     */
+    @Synchronized
+    private fun applyBudget() {
+        if (closed) return
+        if (visibility != DisplayWire.VIS_HIDDEN && budgetFps() != encoderFps) return replaceEncoder()
         runCatching {
-            codec?.setParameters(Bundle().apply { putInt(MediaCodec.PARAMETER_KEY_SUSPEND, if (visible) 0 else 1) })
-        }
-        if (visible) requestKeyframe()
+            codec?.setParameters(Bundle().apply {
+                putInt(MediaCodec.PARAMETER_KEY_SUSPEND, if (visibility == DisplayWire.VIS_HIDDEN) 1 else 0)
+                putInt(MediaCodec.PARAMETER_KEY_VIDEO_BITRATE, budgetKbps() * 1000)
+            })
+        }.onFailure { Log.d("display session $id: budget not applied: $it") }
+    }
+
+    /** A new encoder for the display at the current size and budget. */
+    @Synchronized
+    private fun replaceEncoder() {
+        val old = codec
+        display.surface = newEncoder()
+        old?.let { runCatching { it.stop() }; it.release() }
+    }
+
+    private fun setVisibility(level: Int) {
+        if (level == visibility) return
+        val wasHidden = visibility == DisplayWire.VIS_HIDDEN
+        visibility = level
+        applyBudget()
+        Log.d("display session $id: ${listOf("focused", "hidden", "visible").getOrElse(level) { "?" }} → ${if (level == DisplayWire.VIS_HIDDEN) "suspended" else "${budgetFps()} fps, ${budgetKbps()} kbps"}")
+        if (wasHidden && level != DisplayWire.VIS_HIDDEN) requestKeyframe()
     }
 
     @Synchronized

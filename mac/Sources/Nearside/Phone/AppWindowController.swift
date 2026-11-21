@@ -95,6 +95,9 @@ final class AppWindowController: NSObject, NSWindowDelegate {
                                                name: NSTextInputContext.keyboardSelectionDidChangeNotification, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(occlusionChanged),
                                                name: NSWindow.didChangeOcclusionStateNotification, object: window)
+        for name in [NSApplication.didBecomeActiveNotification, NSApplication.didResignActiveNotification] {
+            NotificationCenter.default.addObserver(self, selector: #selector(updateVisibility), name: name, object: nil)
+        }
         session.start()
     }
 
@@ -122,7 +125,7 @@ final class AppWindowController: NSObject, NSWindowDelegate {
         self.locked = locked
         if locked { stream.cancelInput() }
         stream.session = locked ? nil : session // no keys reach the app either
-        session.setVisible(!locked && window.occlusionState.contains(.visible))
+        updateVisibility()
         render(state)
     }
 
@@ -358,9 +361,29 @@ final class AppWindowController: NSObject, NSWindowDelegate {
         scheduleResize() // moved to a screen with a different scale
     }
 
-    func windowDidResignKey(_ notification: Notification) { stream.cancelInput() }
+    func windowDidResignKey(_ notification: Notification) {
+        stream.cancelInput()
+        updateVisibility()
+    }
 
-    func windowDidBecomeKey(_ notification: Notification) { PhoneWindowManager.shared?.focused(self) }
+    func windowDidBecomeKey(_ notification: Notification) {
+        PhoneWindowManager.shared?.focused(self)
+        updateVisibility()
+    }
+
+    private var lastVisibility: PhoneAppSession.Visibility?
+
+    /// The window in use (key, Nearside active) gets the phone's full frame rate; others on
+    /// screen less; hidden (covered, minimised, another Space, locked) none.
+    @objc private func updateVisibility() {
+        let visibility: PhoneAppSession.Visibility =
+            locked || !window.occlusionState.contains(.visible) ? .hidden
+            : window.isKeyWindow && NSApp.isActive ? .focused : .visible
+        guard visibility != lastVisibility else { return }
+        lastVisibility = visibility
+        NSLog("Nearside: phone app window \(app.package) \(visibility)")
+        session.setVisibility(visibility)
+    }
 
     @objc private func keyboardLayoutChanged() { session.setKeyboardLayout(Self.keyboardLayout()) }
 
@@ -378,11 +401,7 @@ final class AppWindowController: NSObject, NSWindowDelegate {
         return "\(name)\n\(language)"
     }
 
-    @objc private func occlusionChanged() {
-        let visible = window.occlusionState.contains(.visible)
-        NSLog("Nearside: phone app window \(app.package) \(visible ? "visible" : "hidden")")
-        session.setVisible(visible && !locked)
-    }
+    @objc private func occlusionChanged() { updateVisibility() }
 
     // The title-bar icon is only an icon: no path menu, no dragging a file.
     func window(_ window: NSWindow, shouldPopUpDocumentPathMenu menu: NSMenu) -> Bool { false }

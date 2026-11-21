@@ -23,7 +23,25 @@ class KeyTestActivity : Activity() {
             override fun onTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
             override fun afterTextChanged(s: Editable?) { android.util.Log.i("KeyTest", "text=\"$s\"") }
         })
-        setContentView(field)
+        if (intent.getBooleanExtra("animate", false)) {
+            // Changes every frame (frame-rate and bitrate tests): moving bars and a frame counter.
+            setContentView(object : android.view.View(this) {
+                var n = 0
+                val paint = android.graphics.Paint().apply { textSize = 120f; color = android.graphics.Color.WHITE }
+                override fun onDraw(canvas: android.graphics.Canvas) {
+                    n++
+                    canvas.drawColor(android.graphics.Color.HSVToColor(floatArrayOf((n * 3 % 360).toFloat(), 0.6f, 0.5f)))
+                    for (i in 0 until 12) {
+                        paint.color = android.graphics.Color.HSVToColor(floatArrayOf((i * 30f + n) % 360, 0.8f, 0.9f))
+                        val x = ((n * (i + 2) * 7) % (width + 200)) - 100f
+                        canvas.drawRect(x, i * height / 12f, x + 160, (i + 1) * height / 12f, paint)
+                    }
+                    paint.color = android.graphics.Color.WHITE
+                    canvas.drawText("$n", 60f, 200f, paint)
+                    postInvalidateOnAnimation()
+                }
+            })
+        } else setContentView(field)
         field.requestFocus()
         if (intent.hasExtra("tone")) playTone(intent.getIntExtra("tone", 8))
     }

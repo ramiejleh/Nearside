@@ -323,10 +323,16 @@ public final class PhoneAppSession: @unchecked Sendable {
     }
 
     /// Hidden windows stop the video (the app keeps running).
-    public func setVisible(_ visible: Bool) {
-        send(DisplayWire.packet(DisplayWire.visibility, Data([visible ? 0 : 1])))
+    /// How much of the phone's encoder the window gets: the window in use full rate, others on
+    /// screen less, hidden ones nothing (the app keeps running).
+    public enum Visibility: UInt8, Sendable { case focused = 0, hidden = 1, visible = 2 }
+
+    public func setVisibility(_ visibility: Visibility) {
+        send(DisplayWire.packet(DisplayWire.visibility, Data([visibility.rawValue])))
         DispatchQueue.main.async { [self] in
-            self.visible = visible
+            let shown = visibility != .hidden
+            guard shown != visible else { return }
+            visible = shown
             startPinging()
         }
     }

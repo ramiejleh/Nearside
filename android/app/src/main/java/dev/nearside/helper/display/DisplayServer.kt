@@ -33,6 +33,8 @@ object DisplayWire {
 
     const val ROLE_CONTROL = 1; const val ROLE_VIDEO = 2; const val ROLE_AUDIO = 3
     const val NAV_BACK = 1
+    /** VISIBILITY: the window in use, hidden, or on screen but not in use. */
+    const val VIS_FOCUSED = 0; const val VIS_HIDDEN = 1; const val VIS_VISIBLE = 2
     const val MOUSE_HOVER = 0; const val MOUSE_EXIT = 1; const val MOUSE_SECONDARY_DOWN = 2; const val MOUSE_SECONDARY_UP = 3
     const val GONE_EXITED = 0; const val GONE_MOVED = 1
     const val ERR_NOT_FOUND = 1; const val ERR_LAUNCH = 2; const val ERR_NO_SESSION = 3
