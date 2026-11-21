@@ -79,13 +79,17 @@ final class PhoneWindowManager {
             guard await auth.authenticate(opening: true) else { return }
             unlockWindows()
             if library.apps.isEmpty { library.refresh() } // the phone's shape comes with the list
-            guard let renderer = MetalRenderer(),
-                  let controller = PhoneWindowController(engine: engine, library: library, renderer: renderer,
-                                                         onClosed: { [weak self] _ in self?.phoneWindowClosed() }) else { return }
-            phoneWindow = controller
-            updateActivationPolicy()
-            controller.show()
+            makePhoneWindow()
         }
+    }
+
+    private func makePhoneWindow() {
+        guard let renderer = MetalRenderer(),
+              let controller = PhoneWindowController(engine: engine, library: library, renderer: renderer,
+                                                     onClosed: { [weak self] _ in self?.phoneWindowClosed() }) else { return }
+        phoneWindow = controller
+        updateActivationPolicy()
+        controller.show()
     }
 
     private func phoneWindowClosed() {

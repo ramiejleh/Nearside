@@ -13,11 +13,12 @@ final class AppWindowController: NSObject, NSWindowDelegate {
     private let stream: StreamView
     private let overlay = OverlayHostingView(rootView: AppWindowOverlay(state: .opening, label: ""))
     private var state: PhoneAppSession.State = .opening
-    private var resizeWork: DispatchWorkItem?
     private let onClosed: (AppWindowController) -> Void
     private var cropPixels = 0
     /// Covered after the Mac slept or locked, until Touch ID (AuthGate).
     private var locked = false
+    fileprivate var sizeGroup: NSToolbarItemGroup?
+    fileprivate var cropItem: NSToolbarItem?
     /// The app's window blocks capture (FLAG_SECURE): the picture is black, so say why.
     private var secure = false
 
@@ -29,30 +30,59 @@ final class AppWindowController: NSObject, NSWindowDelegate {
         hidesTopBand ? PhoneInfo.statusBarDp : 0
     }
 
-    private func displaySize() -> (width: Int, height: Int, dpi: Int, cropPixels: Int) {
-        PhoneDisplaySize.forWindow(window.contentLayoutRect.size, scale: window.backingScaleFactor, cropTopDp: topBandDp)
+    // MARK: Size (the toolbox): a preset, never a free resize
+
+    /// Phone / Foldable / Tablet, remembered per app.
+    private var size: PhoneSize {
+        get { PhoneSize(rawValue: UserDefaults.standard.string(forKey: "PhoneApp.size.\(app.package)") ?? "") ?? .phone }
+        set { UserDefaults.standard.set(newValue.rawValue, forKey: "PhoneApp.size.\(app.package)") }
     }
 
-    /// 75 % of the screen's height (at most 900 pt), a little wider than a phone, unless this app has
-    /// a saved size.
+    private var dp: CGSize { size.dp(phone: PhoneInfo.screenDp) }
+
+    /// The display keeps the preset's dp (2 px per dp, capped); the window only scales it.
+    private func displaySize() -> (width: Int, height: Int, dpi: Int, cropPixels: Int) {
+        PhoneDisplaySize.forWindow(dp, scale: 2, cropTopDp: topBandDp)
+    }
+
+    /// Window points per dp: saved per app and size, else what fits the screen.
+    private var zoom: CGFloat {
+        let saved = UserDefaults.standard.double(forKey: "PhoneApp.zoom.\(app.package).\(size.rawValue)")
+        if saved > 0 { return saved }
+        let screen = (window.screen ?? NSScreen.main)?.visibleFrame.size ?? CGSize(width: 1440, height: 875)
+        return PhoneSize.fittingZoom(dp, chrome: window.frame.height - window.contentLayoutRect.height, screen: screen)
+    }
+
+    /// The window to the size's shape at `zoom`, its top-left corner kept.
+    private func fitWindow(zoom z: CGFloat, animate: Bool) {
+        let content = NSSize(width: (dp.width * z).rounded(), height: (dp.height * z).rounded())
+        var frame = window.frameRect(forContentRect: NSRect(origin: .zero, size: content))
+        frame.origin = NSPoint(x: window.frame.minX, y: window.frame.maxY - frame.height)
+        if let visible = (window.screen ?? NSScreen.main)?.visibleFrame { // stay on screen
+            frame.origin.x = min(max(frame.origin.x, visible.minX), visible.maxX - frame.width)
+            frame.origin.y = min(max(frame.origin.y, visible.minY), visible.maxY - frame.height)
+        }
+        // Animated through Core Animation: setFrame(animate: true) runs a nested event loop,
+        // and run from a Swift Task that crashed the app (a timer's MainActor check inside it).
+        if animate {
+            NSAnimationContext.runAnimationGroup { $0.duration = 0.2; window.animator().setFrame(frame, display: true) }
+        } else {
+            window.setFrame(frame, display: true)
+        }
+    }
+
     init?(app: PhoneApp, engine: SyncEngine, renderer: MetalRenderer, icon: NSImage?,
           onClosed: @escaping (AppWindowController) -> Void) {
         self.app = app
         self.onClosed = onClosed
-        let screen = NSScreen.main?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
-        // Taller than wide, like the app expects, but roomier than a phone (9:20 felt cramped);
-        // resize freely, the app relays itself out, and each app remembers its size.
-        let height = min(screen.height * 0.75, 900).rounded()
-        let content = NSRect(x: 0, y: 0, width: (height * 0.62).rounded(), height: height)
-        window = NSWindow(contentRect: content, styleMask: [.titled, .closable, .miniaturizable, .resizable],
+        // A preset size (the toolbox), not resizable: the app lays out once per size.
+        window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 400, height: 800), styleMask: [.titled, .closable, .miniaturizable],
                           backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false
         window.title = app.label
         window.tabbingMode = .disallowed
-        window.contentMinSize = NSSize(width: 280, height: 360)
-        window.collectionBehavior.insert(.fullScreenPrimary)
-        window.setFrameAutosaveName("PhoneApp-\(app.package)")
-        if !window.setFrameUsingName("PhoneApp-\(app.package)") { window.center() }
+        window.setFrameAutosaveName("PhoneApp-\(app.package)") // where it was; its size comes from the preset
+        let placed = window.setFrameUsingName("PhoneApp-\(app.package)")
         if let icon {
             // The app's icon in the title bar (as a document's) and on the minimised window.
             window.representedURL = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent(app.label)
@@ -77,6 +107,9 @@ final class AppWindowController: NSObject, NSWindowDelegate {
 
         super.init()
         installToolbar()
+        fitWindow(zoom: zoom, animate: false)
+        if !placed { window.center() }
+        stream.macShortcuts = ["=", "+", "-", "0"] // View → Larger / Smaller / Actual Size
         window.delegate = self
         let size = displaySize()
         cropPixels = size.cropPixels
@@ -355,7 +388,7 @@ final class AppWindowController: NSObject, NSWindowDelegate {
     }
 
     /// The app, in front on the phone; the window closes.
-    private func openOnPhone() {
+    fileprivate func openOnPhone() {
         session.openOnPhone()
         window.close()
     }
@@ -370,39 +403,44 @@ final class AppWindowController: NSObject, NSWindowDelegate {
         UserDefaults.standard.object(forKey: "PhoneApp.hideTopBand.\(app.package)") as? Bool ?? Self.topBandApps.contains(app.package)
     }
 
-    /// View → Hide Top Bar: crop (or stop cropping) the empty band some apps keep at the top.
+    /// Toolbox / View → Hide Top Bar: crop (or stop cropping) the empty band some apps keep at the top.
     @objc func toggleTopBar(_ sender: Any?) {
         UserDefaults.standard.set(!hidesTopBand, forKey: "PhoneApp.hideTopBand.\(app.package)")
-        resizeWork?.cancel()
         applySize()
+        updateToolbox()
+    }
+
+    /// Toolbox / View → Phone, Foldable, Tablet.
+    @objc func sizePhone(_ sender: Any?) { setSize(.phone) }
+    @objc func sizeFoldable(_ sender: Any?) { setSize(.foldable) }
+    @objc func sizeTablet(_ sender: Any?) { setSize(.tablet) }
+
+    fileprivate func setSize(_ new: PhoneSize) {
+        guard new != size, !locked else { return updateToolbox() }
+        size = new
+        applySize()
+        fitWindow(zoom: zoom, animate: true)
+        updateToolbox()
+    }
+
+    // View → Larger / Smaller / Actual Size: the picture only (the app keeps its layout).
+    private static let zooms: [CGFloat] = [0.4, 0.5, 0.6, 0.7, 0.75, 0.8, 0.9, 1.0, 1.15, 1.3, 1.5]
+    @objc func zoomIn(_ sender: Any?) { setZoom(Self.zooms.first { $0 > zoom + 0.01 } ?? Self.zooms.last!) }
+    @objc func zoomOut(_ sender: Any?) { setZoom(Self.zooms.last { $0 < zoom - 0.01 } ?? Self.zooms.first!) }
+    @objc func actualSize(_ sender: Any?) { setZoom(1) }
+
+    private func setZoom(_ z: CGFloat) {
+        UserDefaults.standard.set(Double(z), forKey: "PhoneApp.zoom.\(app.package).\(size.rawValue)")
+        fitWindow(zoom: z, animate: true)
     }
 
     // MARK: - Window events
-
-    func windowDidResize(_ notification: Notification) {
-        // Zoom, tiling, full screen: no live resize, so react here (a drag waits for its end).
-        if !window.inLiveResize { scheduleResize() }
-    }
-
-    func windowDidEndLiveResize(_ notification: Notification) { scheduleResize() }
-
-    /// Let the hand settle, then give the phone the window's new size.
-    private func scheduleResize() {
-        resizeWork?.cancel()
-        let work = DispatchWorkItem { [weak self] in self?.applySize() }
-        resizeWork = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25, execute: work)
-    }
 
     private func applySize() {
         let size = displaySize()
         cropPixels = size.cropPixels
         stream.renderer.cropPixels = size.cropPixels
         session.resize(width: size.width, height: size.height, dpi: size.dpi, cropPixels: size.cropPixels)
-    }
-
-    func windowDidChangeBackingProperties(_ notification: Notification) {
-        scheduleResize() // moved to a screen with a different scale
     }
 
     func windowDidResignKey(_ notification: Notification) {
@@ -470,14 +508,72 @@ extension AppWindowController: NSMenuItemValidation {
     }
 }
 
+extension AppWindowController {
+    @objc fileprivate func sizePicked(_ sender: NSToolbarItemGroup) {
+        setSize(PhoneSize.allCases[max(0, sender.selectedIndex)])
+    }
+
+    @objc fileprivate func openOnPhoneFromToolbar(_ sender: Any?) { openOnPhone() }
+
+    /// The toolbox shows the current size and whether the crop is on.
+    func updateToolbox() {
+        sizeGroup?.selectedIndex = PhoneSize.allCases.firstIndex(of: size) ?? 0
+        if let cropItem {
+            cropItem.image = NSImage(systemSymbolName: hidesTopBand ? "rectangle.topthird.inset.filled" : "rectangle.inset.filled",
+                                     accessibilityDescription: hidesTopBand ? "Show Top Bar" : "Hide Top Bar")
+            cropItem.label = hidesTopBand ? "Show Top Bar" : "Hide Top Bar"
+        }
+    }
+}
+
 extension AppWindowController: NSToolbarDelegate {
     private static let back = NSToolbarItem.Identifier("back")
 
-    func toolbarDefaultItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] { [Self.back] }
-    func toolbarAllowedItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] { [Self.back] }
+    private static let sizes = NSToolbarItem.Identifier("sizes")
+    private static let crop = NSToolbarItem.Identifier("crop")
+    private static let toPhone = NSToolbarItem.Identifier("toPhone")
+
+    // The permanent bar, beside the app (never over it): Back, then the toolbox — the size
+    // (Phone / Foldable / Tablet), the top-band crop, and Open on Phone.
+    func toolbarDefaultItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
+        [Self.back, .flexibleSpace, Self.sizes, Self.crop, Self.toPhone]
+    }
+    func toolbarAllowedItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
+        [Self.back, .flexibleSpace, Self.sizes, Self.crop, Self.toPhone]
+    }
 
     func toolbar(_ toolbar: NSToolbar, itemForItemIdentifier id: NSToolbarItem.Identifier,
                  willBeInsertedIntoToolbar flag: Bool) -> NSToolbarItem? {
+        switch id {
+        case Self.sizes:
+            let group = NSToolbarItemGroup(itemIdentifier: id, images: PhoneSize.allCases.map {
+                NSImage(systemSymbolName: $0.symbol, accessibilityDescription: $0.title)!
+            }, selectionMode: .selectOne, labels: PhoneSize.allCases.map(\.title), target: self, action: #selector(sizePicked(_:)))
+            group.label = "Size"
+            group.toolTip = "Show the app at a phone, open foldable or tablet size"
+            group.selectedIndex = PhoneSize.allCases.firstIndex(of: size) ?? 0
+            sizeGroup = group
+            return group
+        case Self.crop:
+            let item = NSToolbarItem(itemIdentifier: id)
+            item.toolTip = "Hide the empty band some apps leave at the top"
+            item.isBordered = true
+            item.target = self
+            item.action = #selector(toggleTopBar(_:))
+            cropItem = item
+            updateToolbox()
+            return item
+        case Self.toPhone:
+            let item = NSToolbarItem(itemIdentifier: id)
+            item.label = "Open on Phone"
+            item.toolTip = "Open on Phone: the app goes back to your phone, in front"
+            item.image = NSImage(systemSymbolName: "iphone.and.arrow.forward", accessibilityDescription: "Open on Phone")
+            item.isBordered = true
+            item.target = self
+            item.action = #selector(openOnPhoneFromToolbar(_:))
+            return item
+        default: break
+        }
         guard id == Self.back else { return nil }
         let item = NSToolbarItem(itemIdentifier: id)
         item.label = "Back"

@@ -4,9 +4,9 @@ import SwiftUI
 
 /// The phone window: a whole phone of its own on the Mac, separate from the real phone's screen.
 /// Our home screen runs on its display, and apps opened there stay there. It looks like a phone:
-/// borderless, rounded, phone-shaped; a bar appears when the pointer is at the top (drag, close,
-/// Back, Home, Recents). The display keeps the phone's size in dp; making the window larger or
-/// smaller only scales the picture, so apps never relayout.
+/// borderless and rounded, with a permanent bar above the screen (never over it): close,
+/// minimise, Back / Home / Recents, and the toolbox's size (Phone / Foldable / Tablet). The
+/// display keeps the size's dp; Larger / Smaller only scale the picture.
 @MainActor
 final class PhoneWindowController: NSObject, NSWindowDelegate {
     let window: PhoneWindow
@@ -23,70 +23,76 @@ final class PhoneWindowController: NSObject, NSWindowDelegate {
     private var state: PhoneAppSession.State = .opening
     private var locked = false
     private var secure = false
-    /// The phone's screen in dp (points at actual size).
-    private let dp: CGSize
+    private static let zooms: [CGFloat] = [0.4, 0.5, 0.6, 0.7, 0.75, 0.8, 0.9, 1.0, 1.15, 1.3, 1.5]
 
-    private static let zoomKey = "PhoneWindow.zoom"
-    private static let zooms: [CGFloat] = [0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 1.15, 1.3, 1.5]
+    /// Phone / Foldable / Tablet (the toolbox), remembered.
+    private var size: PhoneSize {
+        get { PhoneSize(rawValue: UserDefaults.standard.string(forKey: "PhoneWindow.size") ?? "") ?? .phone }
+        set { UserDefaults.standard.set(newValue.rawValue, forKey: "PhoneWindow.size") }
+    }
+
+    /// The screen in dp (points at actual size).
+    private var dp: CGSize { size.dp(phone: PhoneInfo.screenDp) }
 
     init?(engine: SyncEngine, library: PhoneAppLibrary, renderer: MetalRenderer, onClosed: @escaping (PhoneWindowController) -> Void) {
         self.library = library
         self.onClosed = onClosed
-        dp = PhoneInfo.screenDp
-        // The display: the phone's dp at 2 px per dp (crisp on Retina at actual size).
-        let size = PhoneDisplaySize.forWindow(dp, scale: 2)
-        session = engine.makePhoneWindowSession(width: size.width, height: size.height, dpi: size.dpi)
+        let size = PhoneSize(rawValue: UserDefaults.standard.string(forKey: "PhoneWindow.size") ?? "") ?? .phone
+        // The display: the size's dp at 2 px per dp (crisp on Retina at actual size).
+        let display = PhoneDisplaySize.forWindow(size.dp(phone: PhoneInfo.screenDp), scale: 2)
+        session = engine.makePhoneWindowSession(width: display.width, height: display.height, dpi: display.dpi)
 
-        let screen = NSScreen.main?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
-        let saved = UserDefaults.standard.double(forKey: Self.zoomKey)
-        let zoom = saved > 0 ? saved : min(1, (screen.height * 0.82 / dp.height * 20).rounded(.down) / 20)
-        window = PhoneWindow(contentRect: NSRect(origin: .zero, size: NSSize(width: dp.width * zoom, height: dp.height * zoom)),
-                             styleMask: [.borderless, .resizable, .miniaturizable], backing: .buffered, defer: false)
+        window = PhoneWindow(contentRect: NSRect(x: 0, y: 0, width: 400, height: 800),
+                             styleMask: [.borderless, .miniaturizable], backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false
         window.title = "Phone"
         window.backgroundColor = .clear
         window.isOpaque = false
         window.hasShadow = true
-        window.contentAspectRatio = dp
-        window.contentMinSize = NSSize(width: dp.width * 0.45, height: dp.height * 0.45)
         window.collectionBehavior.insert(.fullScreenNone)
-        window.setFrameAutosaveName("PhoneWindow")
-        if !window.setFrameUsingName("PhoneWindow") { window.center() }
+        window.setFrameAutosaveName("PhoneWindow") // where it was; its size comes from the preset
+        let placed = window.setFrameUsingName("PhoneWindow")
 
         stream = StreamView(renderer: renderer)
         stream.macShortcuts = ["1", "2", "=", "+", "-", "0", "w", "m"]
         recents = OverlayHostingView(rootView: RecentsView(model: recentsModel, library: library))
         recents.isHidden = true
 
-        let container = PhoneContentView()
+        let container = NSView()
         container.wantsLayer = true
         container.layer?.masksToBounds = true
         container.layer?.backgroundColor = NSColor.black.cgColor
+        // All in the window first: constraints between views need a common ancestor (pinning the
+        // screen to a bar not added yet threw, through a Swift Task, and crashed the app later).
+        for view in [stream, overlay, recents, bar] as [NSView] { container.addSubview(view) }
         for view in [stream, overlay, recents, bar] as [NSView] {
-            container.addSubview(view)
             view.translatesAutoresizingMaskIntoConstraints = false
             NSLayoutConstraint.activate([
                 view.leadingAnchor.constraint(equalTo: container.leadingAnchor),
                 view.trailingAnchor.constraint(equalTo: container.trailingAnchor),
-                view.topAnchor.constraint(equalTo: container.topAnchor),
             ])
+            // The bar on top, the screen under it: nothing covers the app.
             if view === bar {
+                bar.topAnchor.constraint(equalTo: container.topAnchor).isActive = true
                 bar.heightAnchor.constraint(equalToConstant: PhoneHoverBar.height).isActive = true
             } else {
+                view.topAnchor.constraint(equalTo: bar.bottomAnchor).isActive = true
                 view.bottomAnchor.constraint(equalTo: container.bottomAnchor).isActive = true
             }
         }
         window.contentView = container
         super.init()
         window.delegate = self
-        container.onHover = { [weak self] inside in self?.bar.setShown(inside) }
-        updateCorners()
+        fitWindow(zoom: zoom, animate: false)
+        if !placed { window.center() }
 
         bar.onClose = { [weak self] in self?.window.performClose(nil) }
         bar.onMinimize = { [weak self] in self?.window.miniaturize(nil) }
         bar.onBack = { [weak self] in self?.goBack(nil) }
         bar.onHome = { [weak self] in self?.goHome(nil) }
         bar.onRecents = { [weak self] in self?.toggleRecents(nil) }
+        bar.onSize = { [weak self] new in self?.setSize(new) }
+        bar.size = size
         recentsModel.onPick = { [weak self] task in self?.pick(task) }
         recentsModel.onRemove = { [weak self] task in self?.session.remove(task: task.id) }
         recentsModel.onDismiss = { [weak self] in self?.hideRecents() }
@@ -147,8 +153,10 @@ final class PhoneWindowController: NSObject, NSWindowDelegate {
                 return
             }
             if mode == "bar" {
-                bar.setShown(true)
-                try? await Task.sleep(for: .seconds(1))
+                if let new = ProcessInfo.processInfo.environment["NEARSIDE_TEST_SIZE"].flatMap(PhoneSize.init(rawValue:)) {
+                    setSize(new)
+                    try? await Task.sleep(for: .seconds(4))
+                }
                 guard let view = window.contentView, let path = ProcessInfo.processInfo.environment["NEARSIDE_TEST_OVERLAY"],
                       let rep = view.bitmapImageRepForCachingDisplay(in: view.bounds) else { return }
                 view.cacheDisplay(in: view.bounds, to: rep)
@@ -250,32 +258,56 @@ final class PhoneWindowController: NSObject, NSWindowDelegate {
         hideRecents()
     }
 
-    // MARK: - Sizes (View menu: ⌘+ ⌘− ⌘0)
+    // MARK: - Size (toolbox) and zoom (View menu: ⌘+ ⌘− ⌘0)
 
-    private var zoom: CGFloat { window.contentLayoutRect.width / dp.width }
+    @objc func sizePhone(_ sender: Any?) { setSize(.phone) }
+    @objc func sizeFoldable(_ sender: Any?) { setSize(.foldable) }
+    @objc func sizeTablet(_ sender: Any?) { setSize(.tablet) }
+
+    private func setSize(_ new: PhoneSize) {
+        guard new != size, !locked else { bar.size = size; return }
+        size = new
+        let display = PhoneDisplaySize.forWindow(dp, scale: 2)
+        session.resize(width: display.width, height: display.height, dpi: display.dpi)
+        fitWindow(zoom: zoom, animate: true)
+        bar.size = new
+    }
+
+    /// Window points per dp: saved per size, else what fits the screen.
+    private var zoom: CGFloat {
+        let saved = UserDefaults.standard.double(forKey: "PhoneWindow.zoom.\(size.rawValue)")
+        if saved > 0 { return saved }
+        let screen = (window.screen ?? NSScreen.main)?.visibleFrame.size ?? CGSize(width: 1440, height: 875)
+        return PhoneSize.fittingZoom(dp, chrome: PhoneHoverBar.height, screen: screen)
+    }
 
     @objc func zoomIn(_ sender: Any?) { setZoom(Self.zooms.first { $0 > zoom + 0.01 } ?? Self.zooms.last!) }
     @objc func zoomOut(_ sender: Any?) { setZoom(Self.zooms.last { $0 < zoom - 0.01 } ?? Self.zooms.first!) }
     @objc func actualSize(_ sender: Any?) { setZoom(1) }
 
     private func setZoom(_ z: CGFloat) {
-        var frame = window.frame
-        let size = NSSize(width: (dp.width * z).rounded(), height: (dp.height * z).rounded())
-        // Keep the top edge where it is (as a phone held up would grow downwards).
-        frame.origin.y += frame.height - size.height
-        frame.origin.x += (frame.width - size.width) / 2
-        frame.size = size
-        window.setFrame(frame, display: true, animate: true)
+        UserDefaults.standard.set(Double(z), forKey: "PhoneWindow.zoom.\(size.rawValue)")
+        fitWindow(zoom: z, animate: true)
     }
 
-    func windowDidResize(_ notification: Notification) {
-        updateCorners()
-        UserDefaults.standard.set(Double(zoom), forKey: Self.zoomKey)
-    }
-
-    /// A phone's corner, scaled with the window.
-    private func updateCorners() {
-        window.contentView?.layer?.cornerRadius = 34 * window.contentLayoutRect.width / dp.width
+    /// The window: the bar plus the screen at `z`, its top edge kept (a phone held up grows down).
+    private func fitWindow(zoom z: CGFloat, animate: Bool) {
+        let content = NSSize(width: (dp.width * z).rounded(), height: (dp.height * z).rounded() + PhoneHoverBar.height)
+        var frame = NSRect(x: window.frame.midX - content.width / 2, y: window.frame.maxY - content.height,
+                           width: content.width, height: content.height)
+        if let visible = (window.screen ?? NSScreen.main)?.visibleFrame {
+            frame.origin.x = min(max(frame.origin.x, visible.minX), visible.maxX - frame.width)
+            frame.origin.y = min(max(frame.origin.y, visible.minY), visible.maxY - frame.height)
+        }
+        // Animated through Core Animation: setFrame(animate: true) runs a nested event loop,
+        // and run from a Swift Task that crashed the app (a timer's MainActor check inside it).
+        if animate {
+            NSAnimationContext.runAnimationGroup { $0.duration = 0.2; window.animator().setFrame(frame, display: true) }
+        } else {
+            window.setFrame(frame, display: true)
+        }
+        // A phone's corner, scaled with the window.
+        window.contentView?.layer?.cornerRadius = 30 * z
         window.invalidateShadow()
     }
 
@@ -299,7 +331,6 @@ final class PhoneWindowController: NSObject, NSWindowDelegate {
 
     func windowDidResignKey(_ notification: Notification) {
         stream.cancelInput()
-        bar.setShown(false)
         updateVisibility()
     }
 
@@ -341,31 +372,8 @@ final class PhoneWindow: NSWindow {
     }
 }
 
-/// Tells the controller when the pointer is near the top, where the bar appears.
-final class PhoneContentView: NSView {
-    var onHover: (Bool) -> Void = { _ in }
-    private var area: NSTrackingArea?
-
-    override func updateTrackingAreas() {
-        super.updateTrackingAreas()
-        if let area { removeTrackingArea(area) }
-        let a = NSTrackingArea(rect: bounds, options: [.mouseMoved, .mouseEnteredAndExited, .activeAlways, .inVisibleRect],
-                               owner: self, userInfo: nil)
-        addTrackingArea(a)
-        area = a
-    }
-
-    override func mouseMoved(with event: NSEvent) {
-        let y = convert(event.locationInWindow, from: nil).y
-        onHover(bounds.height - y < PhoneHoverBar.height + 12)
-        super.mouseMoved(with: event)
-    }
-
-    override func mouseExited(with event: NSEvent) { onHover(false) }
-}
-
-/// The bar at the top of the phone window: close and minimise, Back / Home / Recents, and a
-/// handle to drag the window by. It fades in when the pointer is at the top.
+/// The phone window's permanent bar, above the screen: close and minimise, Back / Home /
+/// Recents, the toolbox's size switch, and a handle to drag the window by (its empty parts).
 final class PhoneHoverBar: NSView {
     static let height: CGFloat = 40
 
@@ -374,24 +382,26 @@ final class PhoneHoverBar: NSView {
     var onBack: () -> Void = {}
     var onHome: () -> Void = {}
     var onRecents: () -> Void = {}
-    var subtitle: String? { didSet { note.stringValue = subtitle ?? ""; note.isHidden = subtitle == nil } }
+    var onSize: (PhoneSize) -> Void = { _ in }
+    var size: PhoneSize = .phone {
+        didSet { sizes.selectedSegment = PhoneSize.allCases.firstIndex(of: size) ?? 0 }
+    }
+    var subtitle: String? {
+        didSet {
+            note.stringValue = subtitle ?? ""
+            note.isHidden = subtitle == nil
+            toolTip = subtitle
+        }
+    }
 
     private let note = NSTextField(labelWithString: "")
-    private var shown = false
+    private let sizes = NSSegmentedControl()
 
     override init(frame: NSRect) {
         super.init(frame: frame)
-        let effect = NSVisualEffectView()
-        effect.material = .hudWindow
-        effect.blendingMode = .withinWindow
-        effect.state = .active
-        effect.translatesAutoresizingMaskIntoConstraints = false
-        addSubview(effect)
-        NSLayoutConstraint.activate([
-            effect.leadingAnchor.constraint(equalTo: leadingAnchor), effect.trailingAnchor.constraint(equalTo: trailingAnchor),
-            effect.topAnchor.constraint(equalTo: topAnchor), effect.bottomAnchor.constraint(equalTo: bottomAnchor),
-        ])
-        func button(_ symbol: String, _ label: String, _ action: Selector, size: CGFloat = 15) -> NSButton {
+        wantsLayer = true
+        layer?.backgroundColor = NSColor(white: 0.11, alpha: 1).cgColor
+        func button(_ symbol: String, _ label: String, _ action: Selector, size: CGFloat = 14) -> NSButton {
             let b = NSButton(image: NSImage(systemSymbolName: symbol, accessibilityDescription: label)!
                 .withSymbolConfiguration(.init(pointSize: size, weight: .medium))!, target: self, action: action)
             b.isBordered = false
@@ -400,47 +410,53 @@ final class PhoneHoverBar: NSView {
             b.translatesAutoresizingMaskIntoConstraints = false
             return b
         }
-        let close = button("xmark.circle.fill", "Close", #selector(close(_:)), size: 14)
-        close.contentTintColor = NSColor(white: 1, alpha: 0.75)
-        let minimize = button("minus.circle.fill", "Minimise", #selector(minimize(_:)), size: 14)
-        minimize.contentTintColor = NSColor(white: 1, alpha: 0.75)
+        let close = button("xmark.circle.fill", "Close", #selector(close(_:)), size: 13)
+        close.contentTintColor = NSColor(white: 1, alpha: 0.7)
+        let minimize = button("minus.circle.fill", "Minimise", #selector(minimize(_:)), size: 13)
+        minimize.contentTintColor = NSColor(white: 1, alpha: 0.7)
         let nav = NSStackView(views: [button("chevron.backward", "Back (⌘[)", #selector(back(_:))),
                                       button("circle", "Home (⌘1)", #selector(home(_:))),
                                       button("square.on.square", "Recents (⌘2)", #selector(recents(_:)))])
-        nav.spacing = 26
+        nav.spacing = 20
         nav.translatesAutoresizingMaskIntoConstraints = false
-        note.font = .systemFont(ofSize: 10)
-        note.textColor = NSColor(white: 1, alpha: 0.7)
+        // The toolbox: the size, as small icons.
+        sizes.segmentCount = PhoneSize.allCases.count
+        for (i, s) in PhoneSize.allCases.enumerated() {
+            sizes.setImage(NSImage(systemSymbolName: s.symbol, accessibilityDescription: s.title)!
+                .withSymbolConfiguration(.init(pointSize: 11, weight: .medium)), forSegment: i)
+            sizes.setToolTip("\(s.title) size", forSegment: i)
+            sizes.setWidth(24, forSegment: i)
+        }
+        sizes.trackingMode = .selectOne
+        sizes.segmentStyle = .separated
+        sizes.controlSize = .small
+        sizes.appearance = NSAppearance(named: .darkAqua)
+        sizes.target = self
+        sizes.action = #selector(sizePicked(_:))
+        sizes.translatesAutoresizingMaskIntoConstraints = false
+        note.font = .systemFont(ofSize: 9)
+        note.textColor = NSColor(white: 1, alpha: 0.6)
         note.isHidden = true
         note.translatesAutoresizingMaskIntoConstraints = false
-        for v in [close, minimize, nav, note] as [NSView] { addSubview(v) }
+        for v in [close, minimize, nav, sizes, note] as [NSView] { addSubview(v) }
         NSLayoutConstraint.activate([
-            close.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 18),
+            close.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 16),
             close.centerYAnchor.constraint(equalTo: centerYAnchor),
-            minimize.leadingAnchor.constraint(equalTo: close.trailingAnchor, constant: 8),
+            minimize.leadingAnchor.constraint(equalTo: close.trailingAnchor, constant: 6),
             minimize.centerYAnchor.constraint(equalTo: centerYAnchor),
             nav.centerXAnchor.constraint(equalTo: centerXAnchor),
             nav.centerYAnchor.constraint(equalTo: centerYAnchor),
-            note.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -16),
+            sizes.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -12),
+            sizes.centerYAnchor.constraint(equalTo: centerYAnchor),
+            note.leadingAnchor.constraint(equalTo: minimize.trailingAnchor, constant: 8),
             note.centerYAnchor.constraint(equalTo: centerYAnchor),
         ])
-        alphaValue = 0
         setAccessibilityRole(.toolbar)
     }
 
     required init?(coder: NSCoder) { fatalError() }
 
-    func setShown(_ show: Bool) {
-        guard show != shown else { return }
-        shown = show
-        NSAnimationContext.runAnimationGroup { ctx in
-            ctx.duration = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion ? 0 : 0.15
-            animator().alphaValue = show ? 1 : 0
-        }
-    }
-
-    // Hidden, it lets clicks through to the phone; shown, its empty parts drag the window.
-    override func hitTest(_ point: NSPoint) -> NSView? { shown ? super.hitTest(point) : nil }
+    // Its empty parts drag the window (it's borderless).
     override func mouseDown(with event: NSEvent) { window?.performDrag(with: event) }
 
     @objc private func close(_ sender: Any?) { onClose() }
@@ -448,6 +464,7 @@ final class PhoneHoverBar: NSView {
     @objc private func back(_ sender: Any?) { onBack() }
     @objc private func home(_ sender: Any?) { onHome() }
     @objc private func recents(_ sender: Any?) { onRecents() }
+    @objc private func sizePicked(_ sender: NSSegmentedControl) { onSize(PhoneSize.allCases[max(0, sender.selectedSegment)]) }
 }
 
 // MARK: - Recents

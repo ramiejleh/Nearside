@@ -62,6 +62,14 @@ class HomeActivity : Activity() {
         grid.smoothScrollToPosition(0)
     }
 
+    /** About one column per 96 dp: 4 on a phone, more on a foldable or tablet-sized window. */
+    private fun columns() = maxOf(4, (resources.configuration.screenWidthDp / 96))
+
+    override fun onConfigurationChanged(newConfig: android.content.res.Configuration) {
+        super.onConfigurationChanged(newConfig)
+        grid.numColumns = columns() // the Mac's toolbox switched the size
+    }
+
     override fun onResume() {
         super.onResume()
         if (apps.isNotEmpty()) load() // apps installed or removed meanwhile
@@ -98,7 +106,7 @@ class HomeActivity : Activity() {
             addView(clock); addView(date)
         }
         grid = GridView(this).apply {
-            numColumns = 4
+            numColumns = columns()
             verticalSpacing = (18 * dp).toInt()
             setPadding((10 * dp).toInt(), (8 * dp).toInt(), (10 * dp).toInt(), (16 * dp).toInt())
             clipToPadding = false

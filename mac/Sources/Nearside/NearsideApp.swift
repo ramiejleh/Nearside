@@ -63,6 +63,10 @@ enum NearsideMain {
             item("Home", #selector(PhoneWindowController.goHome(_:)), "1"),
             item("Recents", #selector(PhoneWindowController.toggleRecents(_:)), "2"),
             .separator(),
+            item("Phone Size", #selector(PhoneWindowController.sizePhone(_:)), "1", [.command, .control]),
+            item("Foldable Size", #selector(PhoneWindowController.sizeFoldable(_:)), "2", [.command, .control]),
+            item("Tablet Size", #selector(PhoneWindowController.sizeTablet(_:)), "3", [.command, .control]),
+            .separator(),
             item("Larger", #selector(PhoneWindowController.zoomIn(_:)), "+"),
             item("Smaller", #selector(PhoneWindowController.zoomOut(_:)), "-"),
             item("Actual Size", #selector(PhoneWindowController.actualSize(_:)), "0"),
@@ -135,16 +139,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// (a comma-separated list opens several, a few seconds apart).
     private func openAppForTesting(_ engine: SyncEngine) {
         guard let list = ProcessInfo.processInfo.environment["NEARSIDE_OPEN_APP"] else { return }
-        if list == "phone" { // the phone window
-            Task { @MainActor in
-                while engine.state != .connected { try? await Task.sleep(for: .milliseconds(300)) }
-                _ = await engine.phoneApps() // the phone's shape
-                statusItem?.phoneApps.openPhoneWindow()
-            }
-            return
-        }
         Task { @MainActor in
             while engine.state != .connected { try? await Task.sleep(for: .milliseconds(300)) }
+            if list == "phone" { // the phone window
+                _ = await engine.phoneApps() // the phone's shape
+                statusItem?.phoneApps.openPhoneWindow()
+                return
+            }
             // NEARSIDE_OPEN_APP_DELAY=<s>: open later (with another app in front by then).
             let delay = Double(ProcessInfo.processInfo.environment["NEARSIDE_OPEN_APP_DELAY"] ?? "") ?? 1
             try? await Task.sleep(for: .seconds(delay))
