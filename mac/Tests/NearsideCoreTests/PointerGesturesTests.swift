@@ -7,11 +7,12 @@ struct PointerGesturesTests {
 
     @Test func scrollIsOneFingerDragFromThePointer() {
         var g = PointerGestures(size: size)
-        let down = g.scroll(.began, at: CGPoint(x: 200, y: 400), delta: .zero)
-        #expect(down == [.init(action: .down, pointer: 1, x: 0.5, y: 0.5)])
-        // Content moving up (fingers up, natural scrolling) moves the finger up.
+        // Fingers on the trackpad, not moving yet: nothing touches the app.
+        #expect(g.scroll(.began, at: CGPoint(x: 200, y: 400), delta: .zero).isEmpty)
+        #expect(!g.isActive)
+        // Content moving up (fingers up, natural scrolling): the finger goes down, then moves up.
         let move = g.scroll(.changed, at: CGPoint(x: 200, y: 400), delta: CGVector(dx: 0, dy: -80))
-        #expect(move == [.init(action: .move, pointer: 1, x: 0.5, y: 0.4)])
+        #expect(move == [.init(action: .down, pointer: 1, x: 0.5, y: 0.5), .init(action: .move, pointer: 1, x: 0.5, y: 0.4)])
         #expect(g.isActive)
         let up = g.scroll(.ended, at: .zero, delta: .zero)
         #expect(up == [.init(action: .up, pointer: 1, x: 0.5, y: 0.4)])
@@ -20,13 +21,29 @@ struct PointerGesturesTests {
 
     @Test func scrollStartsInsideButMayLeave() {
         var g = PointerGestures(size: size)
-        let down = g.scroll(.began, at: CGPoint(x: -50, y: 900), delta: .zero)
-        #expect(down[0].x >= 0 && down[0].y <= 1)
+        _ = g.scroll(.began, at: CGPoint(x: -50, y: 900), delta: .zero)
         let move = g.scroll(.changed, at: .zero, delta: CGVector(dx: 0, dy: 600))
-        #expect(move[0].y > 1)
+        #expect(move[0].action == .down && move[0].x >= 0 && move[0].y <= 1)
+        #expect(move[1].y > 1)
         // A huge scroll stops at the limit instead of running away.
         let far = g.scroll(.changed, at: .zero, delta: CGVector(dx: 0, dy: 1_000_000))
         #expect(far[0].y == 3)
+    }
+
+    @Test func aSlowStartStillClearsTheTouchSlop() {
+        var g = PointerGestures(size: size)
+        _ = g.scroll(.began, at: CGPoint(x: 200, y: 400), delta: .zero)
+        let first = g.scroll(.changed, at: .zero, delta: CGVector(dx: 0, dy: -1)) // one point
+        #expect(first.map(\.action) == [.down, .move])
+        #expect(abs(CGFloat(first[0].y - first[1].y) * 800 - PointerGestures.firstMove) < 0.01) // moved the minimum
+        let next = g.scroll(.changed, at: .zero, delta: CGVector(dx: 0, dy: -1))
+        #expect(abs((first[1].y - next[0].y) * 800 - 1) < 0.01) // then exactly as the fingers move
+    }
+
+    @Test func restingFingersTouchNothing() {
+        var g = PointerGestures(size: size)
+        #expect(g.scroll(.began, at: CGPoint(x: 200, y: 400), delta: .zero).isEmpty)
+        #expect(g.scroll(.ended, at: .zero, delta: .zero).isEmpty)
     }
 
     @Test func changedWithoutBeganStartsTheDrag() {
@@ -68,7 +85,7 @@ struct PointerGesturesTests {
 
     @Test func cancelLiftsEverything() {
         var g = PointerGestures(size: size)
-        _ = g.scroll(.began, at: CGPoint(x: 10, y: 10), delta: .zero)
+        _ = g.scroll(.began, at: CGPoint(x: 10, y: 10), delta: CGVector(dx: 0, dy: 5))
         _ = g.magnify(.began, at: CGPoint(x: 200, y: 400), by: 0)
         let out = g.cancel()
         #expect(out.map(\.action) == [.up, .up, .up])

@@ -23,7 +23,14 @@ public struct PointerGestures: Sendable {
     static let scrollFinger: UInt8 = 1, pinchFingers: (UInt8, UInt8) = (2, 3)
 
     public var size: CGSize
+    /// The scroll finger, once it's down.
     private var scroll: CGPoint?
+    /// Where a scroll began, before it moved: the finger isn't down yet.
+    private var scrollStart: CGPoint?
+    /// The first move goes at least this far (points ≈ dp), past Android's touch slop (8 dp), so
+    /// the app sees a drag at once: a finger that rests, or creeps, on an item is a long press in
+    /// some apps (Snapchat opened a message's menu instead of scrolling).
+    static let firstMove: CGFloat = 12
     private var pinch: (center: CGPoint, span: CGFloat, angle: CGFloat)?
     private var magnifying = false, rotating = false
 
@@ -35,18 +42,28 @@ public struct PointerGestures: Sendable {
 
     /// `delta` is NSEvent.scrollingDelta in points (+y = content moves down, whatever the
     /// natural-scrolling setting, so the finger simply moves by it).
+    ///
+    /// The finger goes down only when the scroll starts moving (fingers resting on the trackpad
+    /// touch nothing), and its first move clears the touch slop.
     public mutating func scroll(_ phase: Phase, at point: CGPoint, delta: CGVector) -> [Touch] {
         switch phase {
         case .began:
-            var out = scroll.map { [touch(.up, Self.scrollFinger, $0)] } ?? []
-            let start = inside(point, margin: 1)
-            scroll = start
-            out.append(touch(.down, Self.scrollFinger, start))
-            if delta != .zero { out += self.scroll(.changed, at: point, delta: delta) }
-            return out
+            let out = scroll.map { [touch(.up, Self.scrollFinger, $0)] } ?? []
+            scroll = nil
+            scrollStart = inside(point, margin: 1)
+            return delta == .zero ? out : out + self.scroll(.changed, at: point, delta: delta)
         case .changed:
-            // Began outside the window, or before it was key: start here.
-            guard var p = scroll else { return self.scroll(.began, at: point, delta: delta) }
+            guard var p = scroll else {
+                // Not moving yet: wait. Began outside the window, or before it was key: start here.
+                let length = hypot(delta.dx, delta.dy)
+                guard length > 0 else { return [] }
+                let start = scrollStart ?? inside(point, margin: 1)
+                scrollStart = nil
+                let reach = max(length, Self.firstMove) / length
+                let first = CGPoint(x: start.x + delta.dx * reach, y: start.y + delta.dy * reach)
+                scroll = first
+                return [touch(.down, Self.scrollFinger, start), touch(.move, Self.scrollFinger, first)]
+            }
             p.x += delta.dx
             p.y += delta.dy
             // Far past the edge Android may not deliver it any more; stop there.
@@ -55,7 +72,8 @@ public struct PointerGestures: Sendable {
             scroll = p
             return [touch(.move, Self.scrollFinger, p)]
         case .ended:
-            guard let p = scroll else { return [] }
+            scrollStart = nil
+            guard let p = scroll else { return [] } // never moved: nothing was touched
             scroll = nil
             return [touch(.up, Self.scrollFinger, p)]
         }
@@ -113,7 +131,7 @@ public struct PointerGestures: Sendable {
             let (a, b) = fingers()
             out += [touch(.up, Self.pinchFingers.1, b), touch(.up, Self.pinchFingers.0, a)]
         }
-        scroll = nil; pinch = nil; magnifying = false; rotating = false
+        scroll = nil; scrollStart = nil; pinch = nil; magnifying = false; rotating = false
         return out
     }
 

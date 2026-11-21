@@ -106,10 +106,8 @@ class PhoneDevice private constructor(private val device: Any, val deviceId: Int
         Log.d("virtual device $deviceId closed")
     }
 
-    /** [fps]: the display composes at the rate the window is encoded at (no frames made only to be dropped). */
-    fun createDisplay(name: String, w: Int, h: Int, dpi: Int, fps: Int, surface: Surface, flags: Int): VirtualDisplay? = runCatching {
-        val config = VirtualDisplayConfig.Builder(name, w, h, dpi).setSurface(surface).setFlags(flags)
-            .setRequestedRefreshRate(fps.toFloat()).build()
+    fun createDisplay(name: String, w: Int, h: Int, dpi: Int, surface: Surface, flags: Int): VirtualDisplay? = runCatching {
+        val config = VirtualDisplayConfig.Builder(name, w, h, dpi).setSurface(surface).setFlags(flags).build()
         call(device, "createVirtualDisplay", config, executor, null) as VirtualDisplay
     }.onFailure { Log.d("virtual device display failed: ${it.cause ?: it}") }.getOrNull()
 

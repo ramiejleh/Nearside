@@ -88,7 +88,10 @@ class DisplaySession(
         val surface = try { newEncoder() } catch (e: Exception) { throw EncoderBusy(e) }
         // On the virtual device (own clipboard and keyboard, works locked), else a plain display.
         device = PhoneDevice.create("Nearside ${id.take(8)}")
-        display = device?.createDisplay("nearside-$id", w, h, dpi, fps, surface, FLAGS)
+        // No requested refresh rate: with one, Android's frame-rate heuristics treat the display
+        // like a phone screen and drop it to ~25 fps whenever nobody touches it (video stuttered
+        // unless you scrolled); without, it composes every frame the app draws.
+        display = device?.createDisplay("nearside-$id", w, h, dpi, surface, FLAGS)
             ?: run { device?.close(); device = null; null }
             ?: Hidden.displayManager.createVirtualDisplay("nearside-$id", w, h, dpi, surface, FLAGS)
         Log.d("display session $id: display $displayId ${w}x$h@$dpi for $target${device?.let { " (virtual device ${it.deviceId})" } ?: ""}")
