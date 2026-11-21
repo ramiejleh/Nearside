@@ -1,0 +1,59 @@
+Nearside
+Copyright 2026 The Nearside contributors
+
+This product is licensed under the Apache License, Version 2.0 (see LICENSE).
+
+-------------------------------------------------------------------------------
+This product includes code adapted from scrcpy.
+
+  Copyright (C) 2018 Genymobile
+  Copyright (C) 2018-2026 Romain Vimont
+  Licensed under the Apache License, Version 2.0
+  https://github.com/Genymobile/scrcpy
+
+  Adapted in the Android helper (android/app/src/main/java/dev/nearside/helper):
+    - Workarounds.kt          from server/.../Workarounds.java and FakeContext.java
+    - display/Hidden.kt       from server/.../wrappers/*.java
+    - display/DisplaySession.kt  encoder setup and input injection
+    - display/Keyboard.kt     UHID keyboard setup (server/.../control/UhidManager.java,
+                              app/src/hid/hid_keyboard.c)
+
+-------------------------------------------------------------------------------
+This product includes code derived from the Android Open Source Project (adb).
+
+  Copyright (C) The Android Open Source Project
+  Licensed under the Apache License, Version 2.0
+  https://android.googlesource.com/platform/packages/modules/adb
+
+  The native adb client (mac/Sources/NativeAdb) implements the adb wire protocol,
+  wireless-debugging pairing, the file sync protocol and adb's key format after AOSP's
+  adb sources; AdbKey.swift mirrors crypto/x509_generator.cpp and
+  libcrypto_utils' android_pubkey_encode.
+
+-------------------------------------------------------------------------------
+This product depends on, and the Mac app statically links, the following.
+
+  SwiftNIO SSL, SwiftNIO, Swift Atomics, Swift Collections, Swift System
+    Copyright Apple Inc. and the SwiftNIO / Swift project authors
+    Licensed under the Apache License, Version 2.0
+    https://github.com/apple/swift-nio-ssl
+    https://github.com/apple/swift-nio
+    https://github.com/apple/swift-atomics
+    https://github.com/apple/swift-collections
+    https://github.com/apple/swift-system
+    SwiftNIO SSL's own NOTICE (including its credits to Netty and grpc-swift) applies:
+    https://github.com/apple/swift-nio-ssl/blob/main/NOTICE.txt
+
+  BoringSSL (bundled in SwiftNIO SSL)
+    Copyright The BoringSSL Authors, and portions Copyright The OpenSSL Project and
+    Eric Young (eay@cryptsoft.com)
+    Licensed under the Apache License, Version 2.0, with older portions under the
+    OpenSSL / SSLeay and ISC licenses
+    https://boringssl.googlesource.com/boringssl/+/refs/heads/main/LICENSE
+
+-------------------------------------------------------------------------------
+Techniques (no code copied)
+
+  Shizuku (Copyright RikkaApps, Apache License 2.0, https://github.com/RikkaApps/Shizuku)
+    The shell-uid helper hands the app a Binder through a ContentProvider call, as Shizuku
+    does.

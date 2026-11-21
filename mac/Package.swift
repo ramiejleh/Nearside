@@ -15,9 +15,6 @@ let package = Package(
         .target(name: "NearsideCore", dependencies: ["NativeAdb"]),
         // The menu-bar app. Bundle it with scripts/bundle.sh.
         .executableTarget(name: "Nearside", dependencies: ["NearsideCore"]),
-        // Gate B viewer (dev tool): streams a phone app into a Metal window and measures latency.
-        .executableTarget(name: "atview", dependencies: ["NativeAdb"],
-                          swiftSettings: [.swiftLanguageMode(.v5)]),
         .testTarget(name: "NearsideCoreTests", dependencies: ["NearsideCore", "NativeAdb"]),
     ]
 )
