@@ -55,6 +55,7 @@ final class PhoneWindowManager {
             defer { opening.remove(app.package) }
             guard await auth.authenticate(opening: true) else { return }
             unlockWindows()
+            await phoneShapeKnown()
             guard let renderer = MetalRenderer(),
                   let controller = AppWindowController(app: app, engine: engine, renderer: renderer, icon: library.icons[app.id],
                                                        onClosed: { [weak self] in self?.closed($0) }) else { return }
@@ -78,9 +79,16 @@ final class PhoneWindowManager {
             defer { openingPhone = false }
             guard await auth.authenticate(opening: true) else { return }
             unlockWindows()
-            if library.apps.isEmpty { library.refresh() } // the phone's shape comes with the list
+            await phoneShapeKnown()
             makePhoneWindow()
         }
+    }
+
+    /// Windows use the phone's density and shape: ask the phone if it hasn't told us since launch
+    /// (an app started at another density keeps the wrong text size, even back on the phone).
+    private func phoneShapeKnown() async {
+        guard !PhoneInfo.isCurrent else { return }
+        _ = await engine.phoneApps() // the reply carries them (~150 ms)
     }
 
     private func makePhoneWindow() {

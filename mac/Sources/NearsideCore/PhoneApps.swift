@@ -95,12 +95,10 @@ extension SyncEngine {
         let reply = await displayRequest("display-apps", timeout: .seconds(20))
         if reply == nil { NSLog("Nearside: no answer to display-apps") }
         if let error = reply?["error"] { NSLog("Nearside: display-apps failed: \(error)") }
-        if let dp = reply?["statusBarDp"] as? Int, dp > 0 { PhoneInfo.statusBarDp = dp }
-        if let dpi = reply?["densityDpi"] as? Int, (120...800).contains(dpi) { PhoneInfo.densityDpi = dpi }
-        if let size = (reply?["screenDp"] as? String)?.split(separator: "x").compactMap({ Double($0) }), size.count == 2,
-           size[0] > 200, size[1] > 300 {
-            PhoneInfo.screenDp = CGSize(width: size[0], height: size[1])
-        }
+        let size = (reply?["screenDp"] as? String)?.split(separator: "x").compactMap { Double($0) }
+        PhoneInfo.update(statusBarDp: (reply?["statusBarDp"] as? Int).flatMap { $0 > 0 ? $0 : nil },
+                         densityDpi: (reply?["densityDpi"] as? Int).flatMap { (120...800).contains($0) ? $0 : nil },
+                         screenDp: size.flatMap { $0.count == 2 && $0[0] > 200 && $0[1] > 300 ? CGSize(width: $0[0], height: $0[1]) : nil })
         guard let list = reply?["apps"] as? [[String: Any]] else { return nil }
         return list.compactMap { entry in
             guard let pkg = entry["pkg"] as? String, let activity = entry["activity"] as? String else { return nil }
@@ -192,25 +190,36 @@ public enum PhoneDisplaySize {
     }
 }
 
-/// What the phone told us about itself (from the app-list reply).
+/// What the phone told us about itself (from the app-list reply), remembered across launches.
+///
+/// Windows must use the phone's own density: an app started on a display of another density
+/// keeps sizing its text for that one (YouTube: tiny text and bars, on the Mac and later on the
+/// phone, until killed). So a window waits for these when the phone hasn't sent them since launch.
 public enum PhoneInfo {
     private static let lock = NSLock()
-    nonisolated(unsafe) private static var _statusBarDp = 0
-    nonisolated(unsafe) private static var _screenDp = CGSize(width: 412, height: 915)
-    nonisolated(unsafe) private static var _densityDpi = 420
-    /// The phone's screen density (a typical phone's until the app list has been fetched).
-    public static var densityDpi: Int {
-        get { lock.withLock { _densityDpi } }
-        set { lock.withLock { _densityDpi = newValue } }
-    }
-    /// The phone's screen in dp, portrait (a typical phone until the app list has been fetched).
+    nonisolated(unsafe) private static var _statusBarDp = UserDefaults.standard.integer(forKey: "PhoneInfo.statusBarDp")
+    nonisolated(unsafe) private static var _screenDp = NSSizeFromString(UserDefaults.standard.string(forKey: "PhoneInfo.screenDp") ?? "")
+    nonisolated(unsafe) private static var _densityDpi = UserDefaults.standard.integer(forKey: "PhoneInfo.densityDpi")
+    nonisolated(unsafe) private static var _current = false
+
+    /// The phone's screen density (a typical phone's until the phone has told us).
+    public static var densityDpi: Int { lock.withLock { _densityDpi > 0 ? _densityDpi : 420 } }
+    /// The phone's screen in dp, portrait (a typical phone until the phone has told us).
     public static var screenDp: CGSize {
-        get { lock.withLock { _screenDp } }
-        set { lock.withLock { _screenDp = newValue } }
+        lock.withLock { _screenDp.width > 0 ? _screenDp : CGSize(width: 412, height: 915) }
     }
-    /// The phone's status-bar height in dp (0 until the app list has been fetched).
-    public static var statusBarDp: Int {
-        get { lock.withLock { _statusBarDp } }
-        set { lock.withLock { _statusBarDp = newValue } }
+    /// The phone's status-bar height in dp (0 until the phone has told us).
+    public static var statusBarDp: Int { lock.withLock { _statusBarDp } }
+    /// The phone has sent them since Nearside started (its display settings may have changed).
+    public static var isCurrent: Bool { lock.withLock { _current } }
+
+    static func update(statusBarDp: Int?, densityDpi: Int?, screenDp: CGSize?) {
+        let defaults = UserDefaults.standard
+        lock.withLock {
+            if let statusBarDp { _statusBarDp = statusBarDp; defaults.set(statusBarDp, forKey: "PhoneInfo.statusBarDp") }
+            if let densityDpi { _densityDpi = densityDpi; defaults.set(densityDpi, forKey: "PhoneInfo.densityDpi") }
+            if let screenDp { _screenDp = screenDp; defaults.set(NSStringFromSize(screenDp), forKey: "PhoneInfo.screenDp") }
+            if densityDpi != nil, screenDp != nil { _current = true }
+        }
     }
 }
