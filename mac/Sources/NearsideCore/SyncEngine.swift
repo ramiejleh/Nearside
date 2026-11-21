@@ -88,6 +88,18 @@ public final class SyncEngine {
     private var started = false
     private var displayRequests: [Int: CheckedContinuation<HelperReply?, Never>] = [:]
     private var nextDisplayRequest = 1
+    /// Another Mac is using the phone (its name): this one waits until it's free, or until
+    /// `useHere()`. Phone-app windows closed when it took over.
+    public private(set) var inUseOn: String?
+    private var waitTicks = 0
+
+    /// "Use on this Mac": take the phone back from the other Mac.
+    public func useHere() {
+        inUseOn = nil
+        link.passive = false
+        tick()
+    }
+
     /// The phone's "Stop" on its apps-open notification: close every phone-app window.
     public var onPhoneAppsStop: (() -> Void)?
     /// A phone notification to open in a Mac window: (key, package, app name).
@@ -170,6 +182,10 @@ public final class SyncEngine {
         // of "whatever phone is around" (that would let a look-alike device be adopted).
         guard link.isIdle, !preparing, !isPairing, state == .searching || state == .connected,
               let pinned = pinnedSerial else { return }
+        if inUseOn != nil { // another Mac has it: ask now and then whether it's free
+            waitTicks += 1
+            guard waitTicks % 5 == 0 else { return }
+        }
         preparing = true
         Task {
             let phone = await Task.detached { Adb.prepareHelper(pinned: pinned) }.value
@@ -211,6 +227,7 @@ public final class SyncEngine {
         switch message["t"] as? String {
         case "hello":
             state = .connected
+            inUseOn = nil // the phone is ours again
             applyNotificationAccess()
             if let serial = adbSerial {
                 Task {
@@ -230,6 +247,13 @@ public final class SyncEngine {
                 waiting.resume(returning: HelperReply(message))
             }
         case "apps-stop":
+            onPhoneAppsStop?()
+        case "busy", "taken-over":
+            // Another Mac uses the phone now: wait (politely) instead of taking it back.
+            inUseOn = (message["by"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? "another Mac"
+            NSLog("Nearside: phone in use on another Mac; waiting")
+            link.passive = true
+            link.disconnect()
             onPhoneAppsStop?()
         case "share-failed":
             if let pkg = message["pkg"] as? String { onShareFailed?(pkg, message["accepts"] as? Bool ?? false) }

@@ -18,6 +18,8 @@ final class HelperLink {
     private var verified = false
     private var ourNonce = ""
     var isIdle: Bool { stream == nil && !connecting }
+    /// Only take the phone if no other Mac is using it (after being taken over; see the helper).
+    var passive = false
 
     func connect() {
         guard isIdle else { return }
@@ -39,7 +41,7 @@ final class HelperLink {
         // Mutual challenge-response (see helper/Main.kt `serve`). Nothing else is sent or
         // delivered until the helper has proven it knows the token.
         ourNonce = Self.randomHex()
-        sendRaw(["t": "hello-mac", "nonce": ourNonce])
+        sendRaw(["t": "hello-mac", "nonce": ourNonce, "id": Token.id, "name": Host.current().localizedName ?? "Mac", "passive": passive])
 
         let reader = Thread { [weak self] in
             while let data = try? stream.read() {

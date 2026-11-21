@@ -136,11 +136,11 @@ object DisplayWire {
  * phone can open a stream or capture an app.
  */
 class DisplayServer(
-    private val token: String,
     private val canNotify: () -> Boolean,
     private val onSessionsChanged: (Int) -> Unit,
 ) {
-    private class Ticket(val expires: Long, val usedRoles: MutableSet<Int> = mutableSetOf())
+    /** [token]: the Mac's that asked for it (each Mac has its own; see MacTokens). */
+    private class Ticket(val expires: Long, val token: String, val usedRoles: MutableSet<Int> = mutableSetOf())
 
     private val tickets = ConcurrentHashMap<String, Ticket>()
     private val sessions = ConcurrentHashMap<String, DisplaySession>()
@@ -176,12 +176,12 @@ class DisplayServer(
     }
 
     /** A ticket for the Mac's next display streams: random, single use per role, 10 seconds. */
-    fun issueTicket(): String? {
+    fun issueTicket(token: String): String? {
         if (!listening) return null
         val now = System.currentTimeMillis()
         tickets.entries.removeIf { it.value.expires < now }
         val ticket = ByteArray(32).also(random::nextBytes).toHex()
-        tickets[ticket] = Ticket(now + 10_000)
+        tickets[ticket] = Ticket(now + 10_000, token)
         return ticket
     }
 
@@ -199,7 +199,7 @@ class DisplayServer(
             val ticket = ByteArray(32).also { b.get(it) }.toHex()
             val proof = ByteArray(32).also { b.get(it) }
             val t = tickets[ticket]
-            val expected = hmac("nearside-display:$role:$sid:$ticket")
+            val expected = if (t == null) ByteArray(32) else hmac(t.token, "nearside-display:$role:$sid:$ticket")
             if (t == null || t.expires < System.currentTimeMillis() || !MessageDigest.isEqual(expected, proof) ||
                 !synchronized(t) { t.usedRoles.add(role) }) {
                 Log.d("display stream refused (bad or used ticket)")
@@ -207,7 +207,7 @@ class DisplayServer(
             }
             // Prove we're the real helper (not something squatting our socket name) before the
             // Mac sends input or trusts any video: HMAC over the same values, server-labelled.
-            conn.send(DisplayWire.HELLO, hmac("nearside-display-server:$role:$sid:$ticket"))
+            conn.send(DisplayWire.HELLO, hmac(t.token, "nearside-display-server:$role:$sid:$ticket"))
             when (role) {
                 DisplayWire.ROLE_CONTROL -> control(conn, sid)
                 DisplayWire.ROLE_VIDEO, DisplayWire.ROLE_AUDIO -> {
@@ -234,6 +234,8 @@ class DisplayServer(
             type == DisplayWire.RESUME && existing != null && !existing.isClosed -> existing.attachControl(conn)
             type == DisplayWire.OPEN && existing == null -> {
                 val open = DisplayWire.Open.parse(body) ?: return conn.close()
+                // Just after the helper starts, the app restarts once (SystemBars): give it a moment.
+                for (i in 0 until 50) { if (canNotify()) break; Thread.sleep(200) }
                 if (!canNotify()) {
                     conn.send(DisplayWire.ERROR, byteArrayOf(DisplayWire.ERR_LAUNCH.toByte()) +
                         "Nearside on your phone isn't running. Open it once, then try again.".toByteArray())
@@ -294,7 +296,7 @@ class DisplayServer(
     /** Ends every session, apps back to the phone (the phone's "Stop" button, or a new Mac). */
     fun closeAll() = sessions.values.toList().forEach { it.close(toPhone = true) }
 
-    private fun hmac(message: String): ByteArray =
+    private fun hmac(token: String, message: String): ByteArray =
         Mac.getInstance("HmacSHA256").apply { init(SecretKeySpec(token.toByteArray(), "HmacSHA256")) }
             .doFinal(message.toByteArray())
 

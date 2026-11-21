@@ -24,6 +24,7 @@ struct PanelView: View {
                     case .needsSetup:
                         SetupPrompt(openSetup: openSetup)
                     case .searching, .connected:
+                        if let other = engine.inUseOn, engine.state != .connected { InUseElsewhere(phoneName: engine.phoneName, other: other) { engine.useHere() } }
                         if !engine.transfers.isEmpty { TransfersView(engine: engine) }
                         HistoryView(engine: engine, highlighted: highlighted)
                     }
@@ -66,7 +67,7 @@ struct PanelView: View {
                 .font(.system(size: 14, weight: .semibold))
                 .contentTransition(.opacity)
             Spacer()
-            StatusPill(state: engine.state, phoneName: engine.phoneName)
+            StatusPill(state: engine.state, phoneName: engine.phoneName, inUseOn: engine.inUseOn)
             if engine.state == .connected && !showingSettings {
                 Button(action: openApps) {
                     Image(systemName: "apps.iphone")
@@ -175,10 +176,12 @@ private struct DropOverlay: View {
 struct StatusPill: View {
     let state: SyncEngine.State
     let phoneName: String
+    var inUseOn: String? = nil
 
     var body: some View {
         let (color, text): (Color, String) = switch state {
         case .connected: (.green, phoneName)
+        case .searching where inUseOn != nil: (.secondary, "In use on \(inUseOn ?? "")")
         case .searching: (.orange, "Looking for \(phoneName)…")
         case .needsSetup: (.secondary, "Not set up")
         }
@@ -195,6 +198,31 @@ struct StatusPill: View {
         .padding(.vertical, 4)
         .background(.quaternary.opacity(0.6), in: Capsule())
         .help(state == .searching ? "Make sure the phone is on the same Wi-Fi with Wireless debugging on." : "")
+    }
+}
+
+/// Another Mac took the phone: this one waits (it checks now and then) or takes it back.
+struct InUseElsewhere: View {
+    let phoneName: String
+    let other: String
+    let useHere: () -> Void
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "laptopcomputer.and.arrow.down")
+                .font(.system(size: 18))
+                .foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("\(phoneName) is in use on \(other)").font(.system(size: 12.5, weight: .semibold))
+                Text("This Mac reconnects once it's free.").font(.system(size: 11)).foregroundStyle(.secondary)
+            }
+            Spacer(minLength: 4)
+            Button("Use on this Mac", action: useHere)
+                .controlSize(.small)
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
+        .background(.quaternary.opacity(0.4))
     }
 }
 

@@ -41,6 +41,9 @@ object Main {
 
     private val io = Executors.newSingleThreadExecutor()
     @Volatile private var client: Writer? = null
+    /** The Mac using the phone now (see [serve]): its id, name and socket. */
+    private class Owner(val id: String, val name: String, val socket: LocalSocket, val writer: Writer)
+    @Volatile private var owner: Owner? = null
     @Volatile private var lastSetByMac: String? = null
     private lateinit var displays: DisplayServer
     private var lastSent: String? = null // main looper only
@@ -108,7 +111,7 @@ object Main {
 
         // Phone apps can be used from the Mac while the phone is locked, so the phone must always
         // show that: no app link (no notification) means no new sessions, and a relink re-posts it.
-        displays = DisplayServer(token, canNotify = { AppLink.isLinked }) { open ->
+        displays = DisplayServer(canNotify = { AppLink.isLinked }) { open ->
             AppLink.deliver(JSONObject().put("t", "display-state").put("open", open))
         }.also {
             it.start()
@@ -155,19 +158,31 @@ object Main {
 
     /**
      * Mutual challenge-response; the token itself never crosses the link.
-     *   Mac → {"t":"hello-mac","nonce":Nm}
+     *   Mac → {"t":"hello-mac","nonce":Nm,"id","name","passive"}   (id: whose token, see MacTokens)
      *   us  → {"t":"challenge","proof":HMAC(token,"nearside-helper:"+Nm),"nonce":Nh}
      *   Mac → {"t":"auth","proof":HMAC(token,"nearside-mac:"+Nh)}
      * The Mac sends nothing sensitive until it has verified our proof, so an app squatting
      * our socket name learns nothing.
+     *
+     * One Mac at a time. Another Mac connecting takes the phone over: the first one's app
+     * windows close (their apps go back to the phone) and it's told {"t":"taken-over","by"}. A
+     * Mac that was taken over connects "passive": then it's only answered {"t":"busy","by"}
+     * while another Mac has the phone, so two Macs never take it from each other in turn.
      */
-    private fun serve(socket: LocalSocket, token: String, clipboard: ClipboardManager, main: Handler) {
+    private fun serve(socket: LocalSocket, starterToken: String, clipboard: ClipboardManager, main: Handler) {
+        val macId: String
+        val macName: String
+        val token: String
         try {
             socket.soTimeout = 5000
             val out = socket.outputStream
             val hello = JSONObject(readBoundedLine(socket.inputStream, 512))
             val macNonce = hello.optString("nonce")
             if (hello.optString("t") != "hello-mac" || macNonce.length != 64) throw IOException("bad hello")
+            // Older Macs send no id: the starter's.
+            macId = hello.optString("id").ifEmpty { MacTokens.idOf(starterToken) }
+            macName = hello.optString("name").filter { it >= ' ' }.take(64).ifEmpty { "another Mac" }
+            token = MacTokens.token(macId, starterToken) ?: throw IOException("unknown Mac $macId")
             val ourNonce = randomHex()
             val challenge = JSONObject().put("t", "challenge")
                 .put("proof", hmacHex(token, "nearside-helper:$macNonce")).put("nonce", ourNonce)
@@ -182,14 +197,37 @@ object Main {
                 return
             }
             socket.soTimeout = 0
+            val current = owner
+            if (current != null && current.id != macId) {
+                if (hello.optBoolean("passive")) { // waiting for the phone to be free
+                    out.write("${JSONObject().put("t", "busy").put("by", current.name)}\n".toByteArray())
+                    out.flush()
+                    socket.close()
+                    return
+                }
+                Log.d("Mac \"$macName\" takes the phone over from \"${current.name}\"")
+                io.execute { // after anything still queued for it
+                    runCatching {
+                        current.writer.write("${JSONObject().put("t", "taken-over").put("by", macName)}\n")
+                        current.writer.flush()
+                    }
+                    // Shut down first: a close alone doesn't wake its reader thread.
+                    runCatching { current.socket.shutdownInput() }
+                    runCatching { current.socket.shutdownOutput() }
+                    runCatching { current.socket.close() }
+                }
+                displays.closeAll() // its windows' apps go back to the phone
+            }
         } catch (e: Exception) {
+            Log.d("Mac hello refused: ${e.message}")
             runCatching { socket.close() }
             return
         }
 
         val writer = socket.outputStream.bufferedWriter()
+        owner = Owner(macId, macName, socket, writer)
         client = writer // one Mac at a time; the newest wins
-        Log.d("Mac connected")
+        Log.d("Mac connected (\"$macName\")")
         send(JSONObject().put("t", "hello").put("sdk", android.os.Build.VERSION.SDK_INT))
         send(JSONObject().put("t", "app").put("linked", AppLink.isLinked))
         AppLink.macConnectionChanged(true)
@@ -198,7 +236,7 @@ object Main {
                 val msg = runCatching { JSONObject(line) }.getOrNull() ?: return@forEachLine
                 val type = msg.optString("t")
                 if (type.startsWith("display-")) {
-                    handleDisplay(msg)
+                    handleDisplay(msg, token)
                 } else if (type != "clip") {
                     AppLink.deliver(msg) // everything else is for the app's features
                 } else {
@@ -217,16 +255,17 @@ object Main {
                 client = null
                 AppLink.macConnectionChanged(false)
             }
+            if (owner?.writer === writer) owner = null
             runCatching { socket.close() }
             Log.d("Mac disconnected")
         }
     }
 
     /** Phone-apps requests on the control link (the streams themselves use nearside-display). */
-    private fun handleDisplay(msg: JSONObject) {
+    private fun handleDisplay(msg: JSONObject, token: String) {
         when (msg.optString("t")) {
             "display-ticket" -> send(JSONObject().put("t", "display-ticket").put("req", msg.opt("req"))
-                .put("ticket", displays.issueTicket() ?: JSONObject.NULL))
+                .put("ticket", displays.issueTicket(token) ?: JSONObject.NULL))
             "display-apps" -> Thread {
                 val started = System.currentTimeMillis()
                 val reply = runCatching { dev.nearside.helper.display.AppCatalog.apps() }.getOrElse {

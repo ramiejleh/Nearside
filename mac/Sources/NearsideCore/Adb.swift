@@ -86,6 +86,13 @@ public enum Adb {
             .contains { $0.split(whereSeparator: \.isWhitespace) == ["shell", "nearside-helper"] }
     }
 
+    /// Every Mac paired with the phone has its own token; a helper another Mac started finds ours
+    /// here, in a folder only the shell user can read (apps can't), named by our token's id.
+    static func registerToken(_ serial: String) {
+        let dir = "/data/local/tmp/nearside-macs"
+        _ = shell(serial, "mkdir -p \(dir) && chmod 700 \(dir) && umask 077 && printf %s \(Token.value) > \(dir)/\(Token.id)")
+    }
+
     /// Launches the privileged helper in its own session so it outlives this adb connection.
     /// The token travels as an env var: only the shell user can read the helper's environment.
     static func startHelper(_ serial: String) -> Result {
@@ -107,6 +114,7 @@ public enum Adb {
     /// stream straight to the helper's socket over this connection: no port forwarding.)
     static func prepareHelper(pinned: String) -> Phone? {
         guard let serial = ensureConnected(pinned: pinned) else { return nil }
+        registerToken(serial)
         if !helperRunning(serial) {
             _ = startHelper(serial)
             Thread.sleep(forTimeInterval: 1.5)

@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 import Security
 
@@ -11,6 +12,11 @@ public enum Paths {
 /// The Mac's secret for the helper (passed as its env var over adb, then sent back through the
 /// adb tunnel). Stored owner-only. Shared with the PoC CLI so an existing pairing keeps working.
 enum Token {
+    /// Names this Mac's token to the helper without revealing it (see the helper's MacTokens).
+    static var id: String {
+        SHA256.hash(data: Data("nearside-id:\(value)".utf8)).map { String(format: "%02x", $0) }.joined().prefix(16).description
+    }
+
     static let value: String = {
         if let existing = try? String(contentsOf: Paths.token, encoding: .utf8), existing.count >= 32 {
             return existing
