@@ -10,7 +10,12 @@ android {
         applicationId = "dev.nearside"
         minSdk = 30 // Wireless debugging exists from Android 11.
         targetSdk = 36
-        versionCode = 1
+        // Grows with every commit, so the Mac can tell its bundled phone app is newer than the
+        // installed one and update it (SyncEngine.updatePhoneAppIfNeeded).
+        versionCode = providers.exec {
+            commandLine("git", "rev-list", "--count", "HEAD")
+            isIgnoreExitValue = true
+        }.standardOutput.asText.get().trim().toIntOrNull() ?: 1
         versionName = "0.0.1-poc"
     }
 

@@ -1,6 +1,7 @@
 import AppKit
 import Foundation
 import Observation
+import os
 
 /// Everything the UI shows: connection state, clipboard history, unseen arrivals, setup progress.
 @MainActor
@@ -188,11 +189,55 @@ public final class SyncEngine {
         }
         preparing = true
         Task {
+            await updatePhoneAppIfNeeded(pinned: pinned)
             let phone = await Task.detached { Adb.prepareHelper(pinned: pinned) }.value
             preparing = false
             guard let phone else { return }
             adopt(phone)
             link.connect()
+        }
+    }
+
+    /// The phone app bundled in this Mac app, by versionCode (Info.plist, from bundle.sh).
+    private let bundledAppVersion = Bundle.main.object(forInfoDictionaryKey: "NearsidePhoneAppVersion") as? Int
+    /// Checked once per launch (and never while another Mac has the phone: its helper would stop).
+    private var checkedPhoneApp = false
+    @ObservationIgnored private let log = Logger(subsystem: "dev.nearside.mac", category: "phone-app")
+    /// The phone app couldn't be updated: shown in the panel until fixed.
+    public private(set) var phoneAppProblem: PhoneAppProblem?
+    public private(set) var reinstallingPhoneApp = false
+
+    public enum PhoneAppProblem: Equatable {
+        /// The installed app was signed with another key, so it must be replaced (`reinstallPhoneApp`).
+        case otherSignature
+        case failed(String)
+    }
+
+    private func updatePhoneAppIfNeeded(pinned: String) async {
+        guard !checkedPhoneApp, inUseOn == nil, let apk = apkURL, let version = bundledAppVersion, version > 0 else { return }
+        checkedPhoneApp = true
+        switch await Task.detached(operation: { Adb.updateAppIfOutdated(pinned: pinned, apk: apk, version: version) }).value {
+        case .upToDate: phoneAppProblem = nil
+        case .updated:
+            phoneAppProblem = nil
+            log.info("updated the phone app to \(version)")
+        case .otherSignature: phoneAppProblem = .otherSignature
+        case .failed(let message):
+            phoneAppProblem = .failed(Self.friendly(message))
+            log.error("phone app update failed: \(message, privacy: .public)")
+        }
+    }
+
+    /// Replaces a phone app signed with another key (after the user agreed in the panel).
+    public func reinstallPhoneApp() {
+        guard let pinned = pinnedSerial, let apk = apkURL, !reinstallingPhoneApp else { return }
+        reinstallingPhoneApp = true
+        link.disconnect()
+        Task {
+            let r = await Task.detached { Adb.reinstallApp(pinned: pinned, apk: apk) }.value
+            reinstallingPhoneApp = false
+            phoneAppProblem = r.ok ? nil : .failed(Self.friendly(r.out))
+            tick()
         }
     }
 
@@ -567,11 +612,7 @@ public final class SyncEngine {
 
             guard await run(3, {
                 guard let serial = Adb.ensureConnected(pinned: phoneSerial) else { return "Lost the connection to the phone." }
-                let pkg = Adb.appPackage
-                _ = Adb.shell(serial, "pm grant \(pkg) android.permission.WRITE_SECURE_SETTINGS")
-                _ = Adb.shell(serial, "cmd deviceidle whitelist +\(pkg)")
-                // Launching once takes the app out of the "stopped" state so it gets BOOT_COMPLETED.
-                _ = Adb.shell(serial, "am start -n \(pkg)/.MainActivity")
+                Adb.grantBackground(serial)
                 return nil
             }) else { return }
 

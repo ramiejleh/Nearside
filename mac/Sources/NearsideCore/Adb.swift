@@ -139,6 +139,60 @@ public enum Adb {
         }
     }
 
+    /// The installed phone app's versionCode; nil when it isn't installed (or can't be read).
+    static func installedAppVersion(_ serial: String) -> Int? {
+        let r = shell(serial, "pm list packages --show-versioncode \(appPackage)")
+        guard r.ok else { return nil }
+        for line in r.out.split(separator: "\n") {
+            let parts = line.split(separator: " ")
+            guard parts.first == "package:\(appPackage)", let code = parts.last,
+                  code.hasPrefix("versionCode:") else { continue }
+            return Int(code.dropFirst("versionCode:".count))
+        }
+        return nil
+    }
+
+    public enum AppUpdate: Sendable, Equatable {
+        case upToDate, updated
+        /// Installed from a build signed with another key (e.g. built from source): Android
+        /// refuses to update it, only to replace it.
+        case otherSignature
+        case failed(String)
+    }
+
+    /// Updates the phone app when the installed one is older than `version` (never downgrades,
+    /// never installs it where it's missing: that's setup's job). The helper runs from the old
+    /// APK, so it's stopped and the next connection starts the new one.
+    static func updateAppIfOutdated(pinned: String, apk: URL, version: Int) -> AppUpdate {
+        guard let serial = ensureConnected(pinned: pinned),
+              let installed = installedAppVersion(serial), installed < version else { return .upToDate }
+        let r = install(apk)
+        guard r.ok else {
+            return r.out.contains("INSTALL_FAILED_UPDATE_INCOMPATIBLE") ? .otherSignature : .failed(r.out)
+        }
+        _ = shell(serial, "pkill -x nearside-helper")
+        return .updated
+    }
+
+    /// Replaces an app signed with another key: uninstall (its data and grants go with it),
+    /// install ours, grant the background permissions again.
+    static func reinstallApp(pinned: String, apk: URL) -> Result {
+        guard let serial = ensureConnected(pinned: pinned) else { return Result(code: -1, out: "not connected") }
+        _ = shell(serial, "pkill -x nearside-helper; pm uninstall \(appPackage)")
+        let r = install(apk)
+        guard r.ok else { return r }
+        grantBackground(serial)
+        return r
+    }
+
+    /// What setup grants so the app works in the background.
+    static func grantBackground(_ serial: String) {
+        _ = shell(serial, "pm grant \(appPackage) android.permission.WRITE_SECURE_SETTINGS")
+        _ = shell(serial, "cmd deviceidle whitelist +\(appPackage)")
+        // Launching once takes the app out of the "stopped" state so it gets BOOT_COMPLETED.
+        _ = shell(serial, "am start -n \(appPackage)/.MainActivity")
+    }
+
     /// Grants or revokes the app's notification access (no settings screen needed).
     @discardableResult
     static func setNotificationAccess(_ serial: String, allowed: Bool) -> Bool {

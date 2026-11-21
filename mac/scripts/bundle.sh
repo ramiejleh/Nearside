@@ -17,6 +17,10 @@ if [[ ! -f "$APK" ]]; then
   exit 1
 fi
 
+# The APK's versionCode, from Gradle's output-metadata.json beside it: the Mac updates a phone
+# whose installed app is older than this.
+APK_VERSION="$(plutil -extract elements.0.versionCode raw "$(dirname "$APK")/output-metadata.json" 2>/dev/null || echo 0)"
+
 cd "$MAC_DIR"
 swift build -c release --product Nearside
 BIN="$(swift build -c release --product Nearside --show-bin-path)/Nearside"
@@ -41,6 +45,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <key>CFBundleIconFile</key><string>AppIcon</string>
   <key>CFBundleShortVersionString</key><string>$VERSION</string>
   <key>CFBundleVersion</key><string>1</string>
+  <key>NearsidePhoneAppVersion</key><integer>$APK_VERSION</integer>
   <key>LSMinimumSystemVersion</key><string>14.0</string>
   <!-- Menu-bar app: no Dock icon or menus until a phone-app window opens. -->
   <key>LSUIElement</key><true/>

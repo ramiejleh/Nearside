@@ -25,6 +25,10 @@ struct PanelView: View {
                         SetupPrompt(openSetup: openSetup)
                     case .searching, .connected:
                         if let other = engine.inUseOn, engine.state != .connected { InUseElsewhere(phoneName: engine.phoneName, other: other) { engine.useHere() } }
+                        if let problem = engine.phoneAppProblem {
+                            PhoneAppProblemBanner(problem: problem, phoneName: engine.phoneName,
+                                                  working: engine.reinstallingPhoneApp) { engine.reinstallPhoneApp() }
+                        }
                         if !engine.transfers.isEmpty { TransfersView(engine: engine) }
                         HistoryView(engine: engine, highlighted: highlighted)
                     }
@@ -223,6 +227,52 @@ struct InUseElsewhere: View {
         .padding(.horizontal, 14)
         .padding(.vertical, 10)
         .background(.quaternary.opacity(0.4))
+    }
+}
+
+/// The phone app couldn't be updated to the one in this Mac app.
+struct PhoneAppProblemBanner: View {
+    let problem: SyncEngine.PhoneAppProblem
+    let phoneName: String
+    let working: Bool
+    let reinstall: () -> Void
+    @State private var confirming = false
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "exclamationmark.arrow.triangle.2.circlepath")
+                .font(.system(size: 18))
+                .foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Nearside on \(phoneName) needs updating").font(.system(size: 12.5, weight: .semibold))
+                Text(detail).font(.system(size: 11)).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 4)
+            if case .otherSignature = problem {
+                if working {
+                    ProgressView().controlSize(.small)
+                } else {
+                    Button("Reinstall…") { confirming = true }
+                        .controlSize(.small)
+                }
+            }
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
+        .background(.quaternary.opacity(0.4))
+        .confirmationDialog("Reinstall Nearside on \(phoneName)?", isPresented: $confirming) {
+            Button("Reinstall", action: reinstall)
+        } message: {
+            Text("The phone app is removed and installed again. Its permissions are set up again automatically; nothing on your Mac changes.")
+        }
+    }
+
+    private var detail: String {
+        switch problem {
+        case .otherSignature: "It was installed from a different build, so it can't be updated in place."
+        case .failed(let message): "The update didn't work: \(message) It's tried again next time Nearside starts."
+        }
     }
 }
 
