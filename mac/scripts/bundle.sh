@@ -2,13 +2,14 @@
 # Builds Nearside.app (menu-bar only) with the Android APK embedded.
 #   mac/scripts/bundle.sh            → mac/build/Nearside.app
 # Requires the APK to be built first: (cd android && ./gradlew assembleDebug)
+# release.sh sets APK (the release APK) and VERSION; normal builds use the defaults.
 set -euo pipefail
 
 MAC_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 REPO_DIR="$(dirname "$MAC_DIR")"
-APK="$REPO_DIR/android/app/build/outputs/apk/debug/app-debug.apk"
+APK="${APK:-$REPO_DIR/android/app/build/outputs/apk/debug/app-debug.apk}"
 APP="$MAC_DIR/build/Nearside.app"
-VERSION="0.1.0"
+VERSION="${VERSION:-0.1.0}"
 
 if [[ ! -f "$APK" ]]; then
   echo "error: APK not found at $APK" >&2
