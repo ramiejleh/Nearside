@@ -125,6 +125,9 @@ class DisplayServer(
             Log.d("display socket unavailable ($e); phone apps disabled"); return
         }
         listening = true
+        // An app in a window opened again on the phone (its icon, Recents…): it goes to the phone.
+        TaskEvents.onRestartAttempt = { task -> sessions.values.firstOrNull { it.owns(task) }?.openedOnPhone() }
+        TaskEvents.register()
         Thread({
             while (true) {
                 val socket = try { server.accept() } catch (e: IOException) { continue }

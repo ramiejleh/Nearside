@@ -236,6 +236,11 @@ final class AppWindowController: NSObject, NSWindowDelegate {
                 let parts = spec.split(separator: "x").compactMap { Double($0) }
                 if parts.count == 2 { window.setContentSize(NSSize(width: parts[0], height: parts[1])) }
                 Trace.log("test size \(spec)")
+                // NEARSIDE_TEST_CLOSE_AFTER: then close (the app goes back to the phone at that size's config).
+                if let wait = Double(ProcessInfo.processInfo.environment["NEARSIDE_TEST_CLOSE_AFTER"] ?? "") {
+                    try? await Task.sleep(for: .seconds(wait))
+                    window.close()
+                }
                 return
             }
             if mode == "close" {

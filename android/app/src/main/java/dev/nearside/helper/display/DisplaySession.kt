@@ -190,6 +190,22 @@ class DisplaySession(
     }
 
     /** Polled: which task is ours, and did it leave (closed, or moved to the phone)? */
+    fun owns(task: Int) = !closed && !taskGone && taskId == task
+
+    /**
+     * Something started this window's app again. Android brings an existing task to the front on
+     * the display it's on — ours — so tapping its icon on the phone did nothing there. If the
+     * phone is in use (screen on), that was the person on the phone: the app goes to the phone,
+     * and the window says so (the task poller reports the move).
+     */
+    fun openedOnPhone() {
+        val power = FakeContext.instance.getSystemService(android.os.PowerManager::class.java)
+        if (power?.isInteractive != true) return Log.d("display session $id: task $taskId restarted with the phone's screen off; staying")
+        Log.d("display session $id: task $taskId opened on the phone; moving it there")
+        Hidden.moveTask(taskId, 0, onTop = true)
+        watcher.execute { runCatching { watchTasks() } } // tell the Mac now, not at the next poll
+    }
+
     private fun watchTasks() {
         if (closed) return
         val tasks = Hidden.rootTasks()
