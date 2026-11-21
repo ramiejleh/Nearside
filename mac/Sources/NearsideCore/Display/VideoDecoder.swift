@@ -67,21 +67,31 @@ public final class VideoDecoder: @unchecked Sendable {
 
     public func decode(annexB: Data, gen: UInt32, ptsMicros: Int64, receivedMicros: Int64) {
         guard gen == self.gen, let session, let format else { return }
-        // Start codes → 4-byte lengths; parameter sets already live in the format description.
-        var sample = Data(capacity: annexB.count + 16)
-        for nal in Self.nalUnits(annexB) where !(32...34).contains(Self.nalType(nal)) {
-            sample.appendBE(UInt32(nal.count))
-            sample.append(nal)
-        }
-        guard !sample.isEmpty else { return }
+        // Start codes → 4-byte lengths, written straight into the block VideoToolbox decodes from
+        // (one copy); parameter sets already live in the format description.
         var block: CMBlockBuffer?
-        let length = sample.count
-        guard CMBlockBufferCreateWithMemoryBlock(allocator: nil, memoryBlock: nil, blockLength: length, blockAllocator: nil,
-                                                 customBlockSource: nil, offsetToData: 0, dataLength: length, flags: 0,
-                                                 blockBufferOut: &block) == noErr, let block else { return }
-        _ = sample.withUnsafeBytes {
-            CMBlockBufferReplaceDataBytes(with: $0.baseAddress!, blockBuffer: block, offsetIntoDestination: 0, dataLength: length)
+        let length: Int = annexB.withUnsafeBytes { raw in
+            let bytes = raw.bindMemory(to: UInt8.self)
+            let nals = Self.nalRanges(bytes).filter { !(32...34).contains(Int(bytes[$0.lowerBound] >> 1 & 0x3f)) }
+            let length = nals.reduce(0) { $0 + 4 + $1.count }
+            guard length > 0,
+                  CMBlockBufferCreateWithMemoryBlock(allocator: nil, memoryBlock: nil, blockLength: length, blockAllocator: nil,
+                                                     customBlockSource: nil, offsetToData: 0, dataLength: length,
+                                                     flags: kCMBlockBufferAssureMemoryNowFlag, blockBufferOut: &block) == noErr,
+                  let block else { return 0 }
+            var out: UnsafeMutablePointer<CChar>?
+            guard CMBlockBufferGetDataPointer(block, atOffset: 0, lengthAtOffsetOut: nil, totalLengthOut: nil,
+                                              dataPointerOut: &out) == noErr, let out else { return 0 }
+            var at = UnsafeMutableRawPointer(out)
+            for nal in nals {
+                let n = UInt32(nal.count).bigEndian
+                withUnsafeBytes(of: n) { at.copyMemory(from: $0.baseAddress!, byteCount: 4) }
+                at.advanced(by: 4).copyMemory(from: bytes.baseAddress! + nal.lowerBound, byteCount: nal.count)
+                at = at.advanced(by: 4 + nal.count)
+            }
+            return length
         }
+        guard length > 0, let block else { return }
         var timing = CMSampleTimingInfo(duration: .invalid, presentationTimeStamp: CMTime(value: ptsMicros, timescale: 1_000_000),
                                         decodeTimeStamp: .invalid)
         var size = length
@@ -98,6 +108,27 @@ public final class VideoDecoder: @unchecked Sendable {
     }
 
     static func nalType(_ nal: Data) -> Int { Int((nal.first ?? 0) >> 1 & 0x3f) }
+
+    /// Where each NAL unit of an Annex-B byte stream is (start codes left out), without copying.
+    static func nalRanges(_ bytes: UnsafeBufferPointer<UInt8>) -> [Range<Int>] {
+        var ranges: [Range<Int>] = []
+        var i = 0, start = -1
+        while i + 2 < bytes.count {
+            if bytes[i] == 0, bytes[i + 1] == 0, bytes[i + 2] == 1 {
+                if start >= 0 {
+                    var end = i
+                    if end > start, bytes[end - 1] == 0 { end -= 1 }
+                    if end > start { ranges.append(start..<end) }
+                }
+                i += 3
+                start = i
+            } else {
+                i += 1
+            }
+        }
+        if start >= 0, start < bytes.count { ranges.append(start..<bytes.count) }
+        return ranges
+    }
 
     /// NAL units of an Annex-B byte stream (start codes 00 00 01 / 00 00 00 01 removed).
     static func nalUnits(_ data: Data) -> [Data] {

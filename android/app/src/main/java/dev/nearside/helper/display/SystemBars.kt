@@ -35,7 +35,7 @@ object SystemBars {
     private const val REMOVE = 2
     private const val FINISH = 3
     private const val TYPE_STATUS_BAR_ADDITIONAL = 2041
-    private const val IDLE_MS = 10 * 60_000L
+
 
     /** The phone's bars in px, from the window manager (0 if unknown). */
     class Bars(val top: Int, val bottom: Int)
@@ -50,7 +50,7 @@ object SystemBars {
         Bars(height("statusBars"), height("navigationBars")).also { Log.d("system bars: top ${it.top} px, bottom ${it.bottom} px") }
     }
 
-    private var host: Process? = null
+    /** The host's Binder while it runs (it's in the app's process: `am instrument` itself exits). */
     private var binder: IBinder? = null
     /** Our token for the host: it ends when we do. */
     private val token = Binder()
@@ -67,30 +67,49 @@ object SystemBars {
             if (displays.isEmpty()) finishLater() // in case no window comes
         }
         // Hand it our token as soon as it's up, so it ends with us even if no window comes.
-        Thread({ synchronized(this) { if (binder == null) awaitHost(start = false) } }, "bars-prewarm").start()
+        Thread({ synchronized(this) { awaitHost(start = false) } }, "bars-prewarm").start()
     }
 
     /** No windows left: finish the host after a while (a new window in the meantime keeps it). */
     @Synchronized
     fun finishLater() {
         finishing?.cancel(false)
-        finishing = timer.schedule({ finishIfUnused() }, IDLE_MS, java.util.concurrent.TimeUnit.MILLISECONDS)
+        finishing = timer.schedule({ finishIfUnused() }, idleMs, java.util.concurrent.TimeUnit.MILLISECONDS)
+    }
+
+    /** 10 minutes, or `debug.nearside.bars_idle_s` (tests). */
+    private val idleMs: Long by lazy {
+        runCatching {
+            val p = Runtime.getRuntime().exec(arrayOf("getprop", "debug.nearside.bars_idle_s"))
+            p.inputStream.bufferedReader().readText().trim().also { p.waitFor() }.toLong() * 1000
+        }.getOrDefault(10 * 60_000L)
     }
 
     @Synchronized
     private fun finishIfUnused() {
-        if (displays.isNotEmpty() || host?.isAlive != true) return
-        val b = binder ?: awaitHost(start = false)
-        if (b != null) transact(b, FINISH) {}
+        if (displays.isNotEmpty()) return
+        val b = running() ?: return
+        transact(b, FINISH) {}
         binder = null
         Log.d("system bars host finished (unused)")
     }
 
+    /** The running host's Binder (asking the app if we don't have it), or null if none runs. */
+    private fun running(): IBinder? =
+        binder?.takeIf { it.isBinderAlive } ?: runCatching { fetchHost() }.getOrNull()?.also(::adopt)
+
+    private fun adopt(b: IBinder) {
+        binder = b
+        b.linkToDeath({ synchronized(this) { if (binder === b) { binder = null; Log.d("system bars host gone") } } }, 0)
+        // A restarted host has none: give back the displays' bars.
+        for ((id, bars) in displays) add(b, id, bars)
+    }
+
     @Synchronized
     private fun start() {
-        if (host?.isAlive == true) return
+        if (running() != null) return
         runCatching {
-            host = ProcessBuilder("am", "instrument", "-w", "--no-restart", "--no-hidden-api-checks", HOST).redirectErrorStream(true).start().also { p ->
+            ProcessBuilder("am", "instrument", "-w", "--no-restart", "--no-hidden-api-checks", HOST).redirectErrorStream(true).start().also { p ->
                 Thread({ p.inputStream.bufferedReader().forEachLine { Log.d("system bars host: $it") } }, "bars-host").start()
             }
             Log.d("system bars host starting")
@@ -106,7 +125,7 @@ object SystemBars {
         if (phone.top <= 0) return null
         finishing?.cancel(false)
         val bars = Bars(phone.top * dpi / phoneDpi, phone.bottom * dpi / phoneDpi)
-        val host = binder ?: awaitHost()
+        val host = awaitHost()
         val added = host != null && add(host, id, bars)
         if (added) displays[id] = bars else if (displays.isEmpty()) finishLater()
         return if (added) bars else null
@@ -168,17 +187,12 @@ object SystemBars {
 
     /** The host's Binder, once it's up (it starts with the app's process: seconds); null if it doesn't come. */
     private fun awaitHost(start: Boolean = true): IBinder? {
-        if (host?.isAlive != true) { if (start) start() else return null }
+        running()?.let { return it }
+        if (start) start()
         val deadline = System.currentTimeMillis() + 10_000
         while (System.currentTimeMillis() < deadline) {
             val b = runCatching { fetchHost() }.onFailure { Log.d("system bars: provider: ${it.cause ?: it}") }.getOrNull()
-            if (b != null) {
-                binder = b
-                b.linkToDeath({ synchronized(this) { if (binder === b) { binder = null; Log.d("system bars host gone") } } }, 0)
-                // A restarted host has none: give back the displays' bars.
-                for ((id, bars) in displays) add(b, id, bars)
-                return b
-            }
+            if (b != null) { adopt(b); return b }
             Thread.sleep(250)
         }
         Log.d("system bars host didn't come up")

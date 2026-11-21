@@ -110,6 +110,8 @@ public struct JitterBuffer {
     public private(set) var playing = false
     public private(set) var underruns = 0
     public private(set) var dropped = 0
+    /// The phone said silence follows: running dry then isn't a network hiccup.
+    private var ending = false
 
     /// All in frames.
     public init(channels: Int, minTarget: Int, maxTarget: Int, slack: Int, step: Int, calm: Int, window: Int) {
@@ -134,7 +136,12 @@ public struct JitterBuffer {
 
     public var buffered: Int { count / channels }
 
+    /// Silence follows (the phone stops sending): play out what's here, then wait without
+    /// counting it as an underrun (that would grow the delay for nothing).
+    public mutating func endOfSound() { ending = true }
+
     public mutating func write(_ new: [Float]) {
+        ending = false
         for sample in new {
             if count == samples.count { read = (read + 1) % samples.count; count -= 1 }
             samples[(read + count) % samples.count] = sample
@@ -164,6 +171,7 @@ public struct JitterBuffer {
         if n < wanted {
             (out + n).update(repeating: 0, count: wanted - n)
             playing = false
+            if ending { ending = false; return } // the sound ended: not the network's fault
             underruns += 1
             target = min(target + step, maxTarget)
             playedSinceUnderrun = 0
@@ -195,7 +203,13 @@ public struct JitterBuffer {
 /// A window's sound on the Mac: Opus from the phone, decoded and played through the default
 /// output with a small jitter buffer. Video is never held back for it.
 public final class AudioPlayer: @unchecked Sendable {
+    /// Guards the buffer, engine and counters; the real-time render callback takes it, so it's
+    /// only ever held briefly (decoding has its own lock).
     private let lock = NSLock()
+    private let decodeLock = NSLock()
+    /// Counts packets and silences: the engine pauses if nothing came in the 2 s after a silence.
+    private var activity = 0
+    private var enginePaused = false
     private var decoder: OpusDecoder?
     private var buffer: JitterBuffer?
     private var engine: AVAudioEngine?
@@ -239,8 +253,10 @@ public final class AudioPlayer: @unchecked Sendable {
             lastArrival = receivedMicros
             lastPts = ptsMicros
         }
-        guard let samples = lock.withLock({ decoder?.decode(packet) }) else { return }
+        let decoder = lock.withLock { () -> OpusDecoder? in activity += 1; return self.decoder }
+        guard let samples = decodeLock.withLock({ decoder?.decode(packet) }) else { return }
         let loudest = samples.reduce(Float(0)) { max($0, abs($1)) }
+        resumeEngineIfPaused()
         let report = lock.withLock { () -> String? in
             buffer?.write(samples)
             packets += 1
@@ -250,6 +266,35 @@ public final class AudioPlayer: @unchecked Sendable {
             return "\(packets) packets, gaps >60 ms \(lateArrivals) (max \(maxGap / 1000) ms), peak \(String(format: "%.2f", peak)), buffered \(b.buffered * 1000 / max(decoder?.sampleRate ?? 1, 1)) ms (target \(b.target * 1000 / max(decoder?.sampleRate ?? 1, 1))), underruns \(b.underruns), dropped \(b.dropped) frames"
         }
         if let report { Trace.log("audio \(report)") }
+    }
+
+    /// The phone went quiet: let the buffer play out, and pause the engine if it stays quiet (a
+    /// running engine keeps the Mac's audio hardware busy rendering silence).
+    public func silence() {
+        let mark = lock.withLock { () -> Int in
+            buffer?.endOfSound()
+            lastArrival = 0
+            activity += 1
+            return activity
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in
+            guard let self else { return }
+            let engine = lock.withLock { () -> AVAudioEngine? in
+                guard activity == mark, !enginePaused, let engine = self.engine else { return nil }
+                enginePaused = true
+                return engine
+            }
+            engine?.pause()
+        }
+    }
+
+    private func resumeEngineIfPaused() {
+        let engine = lock.withLock { () -> AVAudioEngine? in
+            guard enginePaused, let engine = self.engine else { return nil }
+            enginePaused = false
+            return engine
+        }
+        if let engine { try? engine.start() }
     }
 
     private func start(sampleRate: Int, channels: Int) {

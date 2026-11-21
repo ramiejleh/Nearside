@@ -42,7 +42,9 @@ struct Packet {
 /// One wireless-debugging connection to a phone.
 public final class AdbConnection: @unchecked Sendable {
     static let version: UInt32 = 0x0100_0001
-    static let maxPayload = 1024 * 1024
+    /// The largest packet the phone may send us. Every stream shares the one connection, so a
+    /// large video packet holds up audio and control behind it: 256 KiB at most.
+    static let maxPayload = 256 * 1024
     /// What we implement, as adb's "features". With `delayed_ack` (adbd on Android 14+) each
     /// stream gets a byte window, so several writes are in flight instead of one per round trip.
     static let features = "shell_v2,cmd,stat_v2,ls_v2,fixed_push_mkdir,abb_exec,delayed_ack"
@@ -170,6 +172,7 @@ public final class AdbConnection: @unchecked Sendable {
             all.forEach { $0.receivedClose() }
         }
         thread.name = "adb-reader"
+        thread.qualityOfService = .userInteractive // phone-app video, input replies and sound pass here
         thread.start()
     }
 }
@@ -300,7 +303,7 @@ public final class AdbStream: @unchecked Sendable {
         }
         if inbound.isEmpty { return nil }
         let data = inbound
-        inbound.removeAll(keepingCapacity: true)
+        inbound = Data() // the caller owns `data` now (keeping its capacity would copy it)
         let (writes, bytes, remote) = (unackedWrites, unackedBytes, remoteID)
         unackedWrites = 0
         unackedBytes = 0

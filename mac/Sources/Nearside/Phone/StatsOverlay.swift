@@ -50,6 +50,7 @@ final class StatsOverlay: NSView {
 
     @objc private func apply() {
         isHidden = !Self.enabled
+        renderer.countsPresented = Self.enabled
         timer?.invalidate()
         timer = nil
         guard Self.enabled else { return }

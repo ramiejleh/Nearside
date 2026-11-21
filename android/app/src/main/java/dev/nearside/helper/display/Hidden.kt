@@ -142,19 +142,30 @@ object Hidden {
     /** A root task as the system reports it. */
     data class RootTask(val taskId: Int, val displayId: Int, val packageName: String?, val visible: Boolean)
 
-    private fun rootTask(info: Any): RootTask {
-        fun field(name: String): Any? = generateSequence<Class<*>>(info.javaClass) { it.superclass }
-            .firstNotNullOfOrNull { c -> runCatching { c.getDeclaredField(name).apply { isAccessible = true } }.getOrNull() }
-            ?.get(info)
-        val component = (field("baseActivity") ?: field("topActivity")) as? ComponentName
-        return RootTask(field("taskId") as Int, field("displayId") as Int, component?.packageName,
-            field("visible") as? Boolean ?: (field("isVisible") as? Boolean ?: false))
+    /** Fields found per (class, name), or [NO_FIELD]: looked up once, not on every read (misses throw). */
+    private val fields = java.util.concurrent.ConcurrentHashMap<Pair<Class<*>, String>, Any>()
+    private val NO_FIELD = Any()
+
+    private fun field(info: Any, name: String): Any? {
+        val f = fields.getOrPut(info.javaClass to name) {
+            generateSequence<Class<*>>(info.javaClass) { it.superclass }
+                .firstNotNullOfOrNull { c -> runCatching { c.getDeclaredField(name).apply { isAccessible = true } }.getOrNull() }
+                ?: NO_FIELD
+        }
+        return (f as? java.lang.reflect.Field)?.get(info)
     }
+
+    private fun rootTask(info: Any): RootTask {
+        val component = (field(info, "baseActivity") ?: field(info, "topActivity")) as? ComponentName
+        return RootTask(field(info, "taskId") as Int, field(info, "displayId") as Int, component?.packageName,
+            field(info, "visible") as? Boolean ?: (field(info, "isVisible") as? Boolean ?: false))
+    }
+
+    private val getAllRootTaskInfos by lazy { activityTasks.javaClass.getMethod("getAllRootTaskInfos") }
 
     /** Every root task, on every display. */
     fun rootTasks(): List<RootTask> = runCatching {
-        (activityTasks.javaClass.getMethod("getAllRootTaskInfos").invoke(activityTasks) as List<*>)
-            .filterNotNull().map(::rootTask)
+        (getAllRootTaskInfos.invoke(activityTasks) as List<*>).filterNotNull().map(::rootTask)
     }.onFailure { Log.d("getAllRootTaskInfos failed: ${it.cause ?: it}") }.getOrDefault(emptyList())
 
     /** Ends a task (as swiping it away in Recents does). */

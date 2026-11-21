@@ -42,6 +42,8 @@ class DisplaySession(
         private val displays = java.util.concurrent.ConcurrentHashMap.newKeySet<Int>()
         fun isOurs(displayId: Int) = displayId in displays
         private const val LAUNCH_TIMEOUT_MS = 10_000L
+        private const val FPS_DROP_DELAY_MS = 3_000L
+        private val SECURE_FLAG = Regex("\\bfl=[^\\n]*\\bSECURE\\b")
     }
 
     private var w = open.width
@@ -86,7 +88,7 @@ class DisplaySession(
         val surface = try { newEncoder() } catch (e: Exception) { throw EncoderBusy(e) }
         // On the virtual device (own clipboard and keyboard, works locked), else a plain display.
         device = PhoneDevice.create("Nearside ${id.take(8)}")
-        display = device?.createDisplay("nearside-$id", w, h, dpi, surface, FLAGS)
+        display = device?.createDisplay("nearside-$id", w, h, dpi, fps, surface, FLAGS)
             ?: run { device?.close(); device = null; null }
             ?: Hidden.displayManager.createVirtualDisplay("nearside-$id", w, h, dpi, surface, FLAGS)
         Log.d("display session $id: display $displayId ${w}x$h@$dpi for $target${device?.let { " (virtual device ${it.deviceId})" } ?: ""}")
@@ -102,7 +104,13 @@ class DisplaySession(
         if (device == null) audio.stop()
         Thread(::encodeLoop, "display-$id-video").start()
         launch()
-        watcher.scheduleWithFixedDelay({ runCatching { watchTasks() } }, 300, 500, TimeUnit.MILLISECONDS)
+        // Task changes arrive as events (tasksChanged); this is the fallback: often while the app
+        // is opening, then every 3 s (10 s while hidden).
+        watcher.scheduleWithFixedDelay({
+            val opening = SystemClock.uptimeMillis() - openedAt < LAUNCH_TIMEOUT_MS && taskId == -1
+            val polls = ++fallbackPolls
+            if (opening || (polls % 6 == 0 && (!suspended || polls % 20 == 0))) runCatching { watchTasks() }
+        }, 300, 500, TimeUnit.MILLISECONDS)
         watcher.scheduleWithFixedDelay({ logStats() }, 5, 5, TimeUnit.SECONDS)
         watcher.scheduleWithFixedDelay({ runCatching { sleepWhenLongHidden() } }, 5, 5, TimeUnit.SECONDS)
     }
@@ -112,6 +120,7 @@ class DisplaySession(
     fun attachControl(conn: DisplayWire.Conn) {
         ctl?.close()
         ctl = conn
+        receiverChanged()
         Thread({ controlLoop(conn) }, "display-$id-ctl").start()
         if (Thermal.moderate) sendThermal()
         if (taskId != -1) sendTask()
@@ -124,7 +133,18 @@ class DisplaySession(
         catchingUp = false // a new stream: nothing in flight
         awaitingKey = true
         lastConfig?.let { conn.send(DisplayWire.CONFIG, it) }
+        receiverChanged()
         requestKeyframe()
+    }
+
+    /** Someone receives the video: a Mac with this window's control and video streams. */
+    private val receiving get() = ctl != null && video?.isClosed == false
+    @Volatile private var receiverGoneApplied = false
+
+    /** The Mac came or went: no one to encode for while it's away (the grace period). */
+    private fun receiverChanged() {
+        receiverGoneApplied = !receiving
+        applyBudget()
     }
 
     fun attachAudio(conn: DisplayWire.Conn) {
@@ -143,6 +163,7 @@ class DisplaySession(
             conn.close()
             if (ctl === conn && !closed) {
                 ctl = null
+                receiverChanged()
                 // The Mac may come back (Wi-Fi blip, sleep): keep the app where it is for a while.
                 Log.d("display session $id: Mac gone; keeping it for ${GRACE_MS / 1000} s")
                 watcher.schedule({ if (ctl == null && !closed) close(toPhone = true) }, GRACE_MS, TimeUnit.MILLISECONDS)
@@ -155,6 +176,7 @@ class DisplaySession(
             DisplayWire.TOUCH -> if (b.remaining() >= 14) {
                 touch(b.get().toInt(), b.get().toInt(), b.int, b.float, b.float, if (b.remaining() >= 8) b.long else 0)
             }
+            DisplayWire.TOUCHES -> if (b.remaining() >= 13) touches(b)
             DisplayWire.SCROLL -> if (b.remaining() >= 20) scroll(b.int, b.float, b.float, b.float, b.float)
             DisplayWire.MOUSE -> if (b.remaining() >= 13) mouse(b.get().toInt(), b.int, b.float, b.float)
             DisplayWire.KEY -> if (b.remaining() >= 6) keyboard?.press(b.short.toInt() and 0xffff, b.int)
@@ -321,22 +343,38 @@ class DisplaySession(
     //
     // An app window with FLAG_SECURE (banking apps) is drawn black into our display. The Mac
     // notices a black picture and asks; only then is the window list read (`dumpsys window`
-    // costs ~100 ms of system_server time, too much to poll), and again every 3 s while it stays
-    // black, so the window can say why it's black (and that it's no longer).
+    // costs ~100 ms of system_server time, too much to poll), and again while it stays black, so
+    // the window can say why it's black (and that it's no longer): after 3 s, then less and less
+    // often (up to every 30 s), and not while the window is hidden (the Mac sees nothing then).
 
     @Volatile private var secure = false
+    @Volatile private var stillBlack = false
     private var blackCheck: java.util.concurrent.ScheduledFuture<*>? = null
+    private var blackDelay = 3L
 
     @Synchronized
     private fun black(isBlack: Boolean) {
         blackCheck?.cancel(false)
         blackCheck = null
+        stillBlack = isBlack
         if (isBlack) {
-            blackCheck = watcher.scheduleWithFixedDelay({ runCatching { checkSecure() } }, 0, 3, TimeUnit.SECONDS)
+            blackDelay = 3
+            checkSecureLater(0)
         } else if (secure) {
             secure = false
             ctl?.send(DisplayWire.SECURE, byteArrayOf(0))
         }
+    }
+
+    @Synchronized
+    private fun checkSecureLater(delay: Long) {
+        blackCheck = watcher.schedule({
+            if (!stillBlack || closed) return@schedule
+            if (!suspended) runCatching { checkSecure() }
+            synchronized(this) {
+                if (stillBlack) { checkSecureLater(blackDelay); blackDelay = minOf(blackDelay * 2, 30) }
+            }
+        }, delay, TimeUnit.SECONDS)
     }
 
     private fun checkSecure() {
@@ -344,7 +382,7 @@ class DisplaySession(
         val text = p.inputStream.bufferedReader().readText().also { p.waitFor() }
         // Per window: "mDisplayId=<id> …", "fl=… SECURE …", "isVisible=true".
         val found = text.split("  Window #").any { w ->
-            w.contains("mDisplayId=$displayId ") && Regex("\\bfl=[^\\n]*\\bSECURE\\b").containsMatchIn(w) && w.contains("isVisible=true")
+            w.contains("mDisplayId=$displayId ") && SECURE_FLAG.containsMatchIn(w) && w.contains("isVisible=true")
         }
         if (found == secure) return
         secure = found
@@ -388,7 +426,16 @@ class DisplaySession(
         Thread.sleep(400) // the app's relayout
     }.onFailure { Log.d("display session $id: couldn't match the phone's size: $it") }
 
-    /** Polled: which task is ours, and did it leave (closed, or moved to the phone)? */
+    private var fallbackPolls = 0
+    private val watchQueued = java.util.concurrent.atomic.AtomicBoolean(false)
+
+    /** A task changed somewhere on the phone: look again, once for a burst of changes. */
+    fun tasksChanged() {
+        if (closed || !watchQueued.compareAndSet(false, true)) return
+        watcher.schedule({ watchQueued.set(false); runCatching { watchTasks() } }, 100, TimeUnit.MILLISECONDS)
+    }
+
+    /** Which task is ours, and did it leave (closed, or moved to the phone)? */
     private fun watchTasks() {
         if (closed) return
         if (isHome) return watchHome()
@@ -411,6 +458,7 @@ class DisplaySession(
             // Back on an app's first screen sends it to the background (Android 12+) instead of
             // closing it; on our display nothing is behind it, so the window would just go black.
             hiddenPolls = if (task.visible) 0 else hiddenPolls + 1
+            if (hiddenPolls == 1) watcher.schedule({ runCatching { watchTasks() } }, 500, TimeUnit.MILLISECONDS) // still?
             if (hiddenPolls < 2) return
             taskGone = true
             Log.d("display session $id: task $taskId went to the background")
@@ -435,10 +483,17 @@ class DisplaySession(
             setInteger(MediaFormat.KEY_COLOR_FORMAT, MediaCodecInfo.CodecCapabilities.COLOR_FormatSurface)
             setInteger(MediaFormat.KEY_BIT_RATE, budgetKbps() * 1000)
             setInteger(MediaFormat.KEY_BITRATE_MODE, MediaCodecInfo.EncoderCapabilities.BITRATE_MODE_CBR)
-            setInteger(MediaFormat.KEY_FRAME_RATE, fps)
-            setFloat(MediaFormat.KEY_I_FRAME_INTERVAL, 10f)
+            // The rate this window gets (its budget), so the encoder spreads bits and plans its
+            // clocks for it (lower for windows not in use: less power).
+            val rate = budgetFps()
+            setInteger(MediaFormat.KEY_FRAME_RATE, rate)
+            setInteger(MediaFormat.KEY_OPERATING_RATE, rate)
+            // Keyframes come on demand (a new stream, a resize, catching up, SYNC): a periodic one
+            // is only a burst that delays the frames behind it.
+            setFloat(MediaFormat.KEY_I_FRAME_INTERVAL, 60f)
             setLong(MediaFormat.KEY_REPEAT_PREVIOUS_FRAME_AFTER, 100_000)
-            setInteger(MediaFormat.KEY_PRIORITY, 0)
+            setInteger(MediaFormat.KEY_PRIORITY, 0) // real time
+            setInteger(MediaFormat.KEY_LATENCY, 1) // each frame out as soon as it's encoded (as scrcpy)
             setInteger(MediaFormat.KEY_MAX_B_FRAMES, 0)
             setInteger(MediaFormat.KEY_PREPEND_HEADER_TO_SYNC_FRAMES, 1)
             setInteger(MediaFormat.KEY_COLOR_STANDARD, MediaFormat.COLOR_STANDARD_BT709)
@@ -454,46 +509,58 @@ class DisplaySession(
         return surface
     }
 
+    private val info = MediaCodec.BufferInfo() // the encode thread's
+
     private fun encodeLoop() {
-        val info = MediaCodec.BufferInfo()
         while (!closed) {
             val c = codec ?: break
             val myGen = gen
+            if (!receiving && !receiverGoneApplied) receiverChanged() // the video stream broke
             // A resize swaps the codec under us; the old one then throws, which is fine.
-            val data = try {
-                val index = c.dequeueOutputBuffer(info, 50_000)
-                if (index < 0) continue
+            val index = try { c.dequeueOutputBuffer(info, if (suspended) 500_000 else 50_000) } catch (e: IllegalStateException) { continue }
+            if (index < 0) continue
+            try {
                 val buf = c.getOutputBuffer(index) ?: continue
-                ByteArray(info.size).also { buf.get(it); c.releaseOutputBuffer(index, false) }
+                buf.position(info.offset).limit(info.offset + info.size)
+                send(buf, myGen)
             } catch (e: IllegalStateException) {
                 continue
-            }
-            if (info.flags and MediaCodec.BUFFER_FLAG_CODEC_CONFIG != 0) {
-                val config = ByteBuffer.allocate(8 + data.size).putInt(myGen).putShort(w.toShort())
-                    .putShort(h.toShort()).put(data).array()
-                lastConfig = config
-                video?.send(DisplayWire.CONFIG, config)
-                continue
-            }
-            val key = info.flags and MediaCodec.BUFFER_FLAG_KEY_FRAME != 0
-            // Catching up: nothing new goes out until the backlog has arrived; then the next
-            // keyframe restarts the picture (frames after a gap can't be decoded without one).
-            if (catchingUp && SystemClock.uptimeMillis() - catchStart > 2000) {
-                catchingUp = false // the last ack never came (a dropped stream?): carry on
-                requestKeyframe()
-            }
-            if (catchingUp) { awaitingKey = true; continue }
-            if (awaitingKey && !key) continue
-            awaitingKey = false
-            val frame = ByteBuffer.allocate(21 + data.size).putInt(myGen).putLong(info.presentationTimeUs)
-                .putLong(System.nanoTime() / 1000).put(if (key) 1 else 0).put(data).array()
-            video?.let {
-                lastSentPts = info.presentationTimeUs
-                it.send(DisplayWire.FRAME, frame)
-                framesSent++
-                bytesSent += frame.size
+            } finally {
+                runCatching { c.releaseOutputBuffer(index, false) }
             }
         }
+    }
+
+    /** Header of a FRAME packet (gen, pts, encoded time, key), reused. */
+    private val frameHeader = ByteBuffer.allocate(21)
+
+    /** One output buffer of the encoder, sent straight from it (one copy, see Conn.sendFrame). */
+    private fun send(buf: ByteBuffer, myGen: Int) {
+        if (info.flags and MediaCodec.BUFFER_FLAG_CODEC_CONFIG != 0) {
+            val config = ByteBuffer.allocate(8 + buf.remaining()).putInt(myGen).putShort(w.toShort())
+                .putShort(h.toShort()).put(buf).array()
+            lastConfig = config
+            video?.send(DisplayWire.CONFIG, config)
+            return
+        }
+        val key = info.flags and MediaCodec.BUFFER_FLAG_KEY_FRAME != 0
+        // Catching up: nothing new goes out until the backlog has arrived; then the next
+        // keyframe restarts the picture (frames after a gap can't be decoded without one).
+        if (catchingUp && SystemClock.uptimeMillis() - catchStart > 2000) {
+            catchingUp = false // the last ack never came (a dropped stream?): carry on
+            requestKeyframe()
+        }
+        if (catchingUp) { awaitingKey = true; return }
+        if (awaitingKey && !key) return
+        awaitingKey = false
+        val v = video ?: return
+        val size = buf.remaining()
+        frameHeader.clear()
+        frameHeader.putInt(myGen).putLong(info.presentationTimeUs).putLong(System.nanoTime() / 1000).put(if (key) 1 else 0)
+        lastSentPts = info.presentationTimeUs
+        v.sendFrame(DisplayWire.FRAME, frameHeader.array(), buf)
+        framesSent++
+        bytesSent += 6 + 21 + size
     }
 
     @Volatile private var awaitingKey = false
@@ -557,8 +624,11 @@ class DisplaySession(
         else -> baseKbps * 6 / 10
     } * congestion * heat).toInt().coerceAtLeast(500)
 
-    /** Not encoding: hidden, or a hot phone (severe) keeps only the window in use going. */
-    private val suspended get() = visibility == DisplayWire.VIS_HIDDEN ||
+    /**
+     * Not encoding: hidden, no Mac receiving (it went; the grace period), or a hot phone (severe)
+     * keeps only the window in use going.
+     */
+    private val suspended get() = visibility == DisplayWire.VIS_HIDDEN || !receiving ||
         (Thermal.severe && visibility != DisplayWire.VIS_FOCUSED)
 
     fun thermalChanged() {
@@ -645,7 +715,14 @@ class DisplaySession(
     private fun applyBudget() {
         if (closed) return
         sleepWhenLongHidden()
-        if (!suspended && budgetFps() != encoderFps) return replaceEncoder()
+        val want = budgetFps()
+        if (!suspended && want != encoderFps) {
+            // A lower rate right after a focus change waits a moment: clicking between windows
+            // would otherwise swap encoders (and send keyframes) each time. Raising it doesn't wait.
+            val since = SystemClock.uptimeMillis() - focusChangedAt
+            if (want > encoderFps || since >= FPS_DROP_DELAY_MS) return replaceEncoder()
+            watcher.schedule({ applyBudget() }, FPS_DROP_DELAY_MS - since + 50, TimeUnit.MILLISECONDS)
+        }
         runCatching {
             codec?.setParameters(Bundle().apply {
                 putInt(MediaCodec.PARAMETER_KEY_SUSPEND, if (suspended) 1 else 0)
@@ -685,12 +762,12 @@ class DisplaySession(
         Log.d("display session $id: hidden ${(now - suspendedSince) / 1000} s and silent; letting the display sleep")
     }
 
-    /** 2 minutes, or `debug.nearside.sleep_after_s` (tests). */
+    /** 30 s, or `debug.nearside.sleep_after_s` (tests). */
     private val sleepAfterMs: Long by lazy {
         runCatching {
             val p = Runtime.getRuntime().exec(arrayOf("getprop", "debug.nearside.sleep_after_s"))
             p.inputStream.bufferedReader().readText().trim().also { p.waitFor() }.toLong() * 1000
-        }.getOrDefault(120_000L)
+        }.getOrDefault(30_000L)
     }
 
     /** A new encoder for the display at the current size and budget. */
@@ -701,13 +778,18 @@ class DisplaySession(
         old?.let { runCatching { it.stop() }; it.release() }
     }
 
+    @Volatile private var focusChangedAt = 0L
+
     private fun setVisibility(level: Int) {
         if (level == visibility) return
         val wasSuspended = suspended
+        val encoder = gen
         visibility = level
+        focusChangedAt = SystemClock.uptimeMillis()
         server.rebalance() // applies every window's budget, this one's too
         Log.d("display session $id: ${listOf("focused", "hidden", "visible").getOrElse(level) { "?" }} → ${if (suspended) "suspended" else "${budgetFps()} fps, ${budgetKbps()} kbps"}")
-        if (wasSuspended && !suspended) requestKeyframe()
+        // Shown again: the picture restarts from a keyframe (a new encoder starts with one).
+        if (wasSuspended && !suspended && gen == encoder) requestKeyframe()
     }
 
     @Synchronized
@@ -785,6 +867,29 @@ class DisplaySession(
                 lift(index, eventTime(macMicros))
             }
             3 -> cancelFingers()
+        }
+    }
+
+    /**
+     * Several fingers in one packet. All moving (each step of a pinch or rotate): one MOVE with
+     * every finger's new place, not one half-updated MOVE per finger. Otherwise one by one.
+     */
+    private fun touches(b: ByteBuffer) {
+        val touchGen = b.int
+        val micros = b.long
+        val n = b.get().toInt() and 0xff
+        if (n > 10 || b.remaining() < n * 10) return
+        val list = List(n) { Triple(b.get().toInt(), b.get().toInt(), b.float to b.float) }
+        if (touchGen != gen) return
+        if (list.all { it.first == 2 } && list.all { t -> fingers.any { it.id == t.second } }) {
+            for ((_, pointer, xy) in list) {
+                val f = fingers.first { it.id == pointer }
+                f.x = xy.first.coerceIn(-2f, 3f) * w
+                f.y = xy.second.coerceIn(-2f, 3f) * h
+            }
+            injectFingers(MotionEvent.ACTION_MOVE, eventTime(micros))
+        } else {
+            for ((action, pointer, xy) in list) touch(action, pointer, touchGen, xy.first, xy.second, micros)
         }
     }
 

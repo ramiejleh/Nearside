@@ -77,6 +77,22 @@ struct AudioTests {
         #expect(buffer.target == 6) // grew by a step
     }
 
+    @Test func silenceFromThePhoneIsNotAnUnderrun() {
+        var buffer = JitterBuffer(channels: 1, minTarget: 4, maxTarget: 8, slack: 6, step: 2, calm: 100, window: 1000)
+        var out = [Float](repeating: 9, count: 3)
+        buffer.write([1, 2, 3, 4])
+        buffer.endOfSound() // the phone: silence follows
+        out.withUnsafeMutableBufferPointer { buffer.read(into: $0.baseAddress!, frames: 3) }
+        out.withUnsafeMutableBufferPointer { buffer.read(into: $0.baseAddress!, frames: 3) }
+        #expect(out == [4, 0, 0]) // played out, then quiet
+        #expect(buffer.underruns == 0 && buffer.target == 4 && !buffer.playing)
+        // Sound again: a real dropout after it counts as before.
+        buffer.write([5, 6, 7, 8])
+        out.withUnsafeMutableBufferPointer { buffer.read(into: $0.baseAddress!, frames: 3) }
+        out.withUnsafeMutableBufferPointer { buffer.read(into: $0.baseAddress!, frames: 3) }
+        #expect(buffer.underruns == 1)
+    }
+
     @Test func jitterTargetGrowsOnUnderrunsAndShrinksWhenCalm() {
         var buffer = JitterBuffer(channels: 1, minTarget: 4, maxTarget: 8, slack: 4, step: 4, calm: 12, window: 1000)
         var out = [Float](repeating: 0, count: 4)

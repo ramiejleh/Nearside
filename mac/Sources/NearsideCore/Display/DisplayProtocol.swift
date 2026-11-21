@@ -34,6 +34,8 @@ public enum DisplayWire {
     static let share: UInt8 = 0x46
     /// Mac → phone: u8 0 = the window's sound stays on the phone (sent right after OPEN).
     static let sound: UInt8 = 0x47
+    /// Mac → phone: several fingers at once (pinch, rotate), so the phone moves them together.
+    static let touches: UInt8 = 0x48
 
     /// OPEN target for a window opened from a notification: its key in hex (keys hold any characters).
     public static func notificationTarget(_ key: String) -> String {
@@ -76,7 +78,7 @@ public enum DisplayWire {
         case frame(gen: UInt32, ptsMicros: Int64, encodedMicros: Int64, keyframe: Bool, data: Data)
         /// The audio stream's format (Opus).
         case audioConfig(sampleRate: Int, channels: Int)
-        /// One Opus packet (20 ms).
+        /// One Opus packet (20 ms); empty: silence follows (the phone sends nothing until there's sound).
         case audio(ptsMicros: Int64, data: Data)
     }
 
@@ -124,6 +126,17 @@ public enum DisplayWire {
         var b = Data([action.rawValue, pointer])
         b.appendBE(gen); b.appendBE(x.bitPattern); b.appendBE(y.bitPattern); b.appendBE(micros)
         return packet(touch, b)
+    }
+
+    /// TOUCHES: u32 gen, u64 Mac µs, u8 n, n × (u8 action, u8 pointer, f32 x, f32 y).
+    static func touches(_ list: [(action: TouchAction, pointer: UInt8, x: Float, y: Float)], gen: UInt32, micros: UInt64) -> Data {
+        var b = Data()
+        b.appendBE(gen); b.appendBE(micros); b.append(UInt8(list.count))
+        for t in list {
+            b.append(t.action.rawValue); b.append(t.pointer)
+            b.appendBE(t.x.bitPattern); b.appendBE(t.y.bitPattern)
+        }
+        return packet(touches, b)
     }
 
     /// A mouse wheel: h/v in wheel notches (Android's AXIS_HSCROLL/AXIS_VSCROLL, + = right/up).
@@ -244,7 +257,7 @@ public enum DisplayWire {
             let rate = Int(p.readBE(UInt32.self, at: s)), channels = Int(p[s + 4])
             guard (8000...96000).contains(rate), (1...2).contains(channels) else { return nil }
             return .audioConfig(sampleRate: rate, channels: channels)
-        case audio where p.count > 8:
+        case audio where p.count >= 8:
             return .audio(ptsMicros: Int64(bitPattern: p.readBE(UInt64.self, at: s)), data: p.subdata(in: s + 8..<p.endIndex))
         default:
             return nil

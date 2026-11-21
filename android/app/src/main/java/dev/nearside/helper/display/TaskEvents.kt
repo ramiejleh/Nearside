@@ -23,6 +23,8 @@ object TaskEvents {
 
     /** Called with the task's id, off the main thread. */
     @Volatile var onRestartAttempt: ((taskId: Int) -> Unit)? = null
+    /** Any other task change (created, moved, removed, to the front…), on a Binder thread: return quickly. */
+    @Volatile var onTasksChanged: (() -> Unit)? = null
 
     private val restartCode by lazy {
         Class.forName("$DESCRIPTOR\$Stub").getDeclaredField("TRANSACTION_onActivityRestartAttempt")
@@ -32,7 +34,10 @@ object TaskEvents {
     private val binder = object : Binder() {
         override fun onTransact(code: Int, data: Parcel, reply: Parcel?, flags: Int): Boolean {
             if (code == INTERFACE_TRANSACTION) { reply?.writeString(DESCRIPTOR); return true }
-            if (code != restartCode) return true // the many other events: not ours
+            if (code != restartCode) { // the others: just "something changed", windows look again
+                if (code in FIRST_CALL_TRANSACTION..LAST_CALL_TRANSACTION) onTasksChanged?.invoke()
+                return true
+            }
             runCatching {
                 data.enforceInterface(DESCRIPTOR)
                 // onActivityRestartAttempt(in RunningTaskInfo task, boolean homeTaskVisible, …)

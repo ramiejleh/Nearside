@@ -66,6 +66,9 @@ final class TCPSocket: Channel, @unchecked Sendable {
         setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, &one, socklen_t(MemoryLayout<Int32>.size))
         setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &one, socklen_t(MemoryLayout<Int32>.size))
         setsockopt(fd, SOL_SOCKET, SO_KEEPALIVE, &one, socklen_t(MemoryLayout<Int32>.size))
+        // Wi-Fi priority (WMM) for interactive video: phone-app input and acks go out first.
+        var service = NET_SERVICE_TYPE_VI
+        setsockopt(fd, SOL_SOCKET, SO_NET_SERVICE_TYPE, &service, socklen_t(MemoryLayout<Int32>.size))
         // Data sent to a phone that vanished (Wi-Fi off, out of range) fails within ~20 s, so a
         // clip or notification never disappears into a dead link for long.
         var dropAfter: Int32 = 20

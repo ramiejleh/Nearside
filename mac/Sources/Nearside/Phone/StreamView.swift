@@ -5,7 +5,7 @@ import CoreVideo
 import Metal
 import QuartzCore
 
-/// Draws a phone app's frames with Metal, from any thread.
+/// Draws a phone app's frames with Metal, on its own thread.
 ///
 /// Wi-Fi delivers frames in bunches (12 % of receive gaps > 25 ms), and drawn the moment they
 /// arrived with vsync off, two frames often landed in one screen refresh: only 62 % of refreshes
@@ -15,6 +15,11 @@ import QuartzCore
 ///  - Responsive: vsync off, paced to the display link: a frame arriving when this refresh
 ///    already has one waits for the next (at most 2 waiting, trimmed if it stays behind):
 ///    82 %, +~16 ms.
+///
+/// Drawing happens on one render thread fed through a `LatestBox`: waiting for a free drawable
+/// only ever holds that thread (it used to hold the decoder, so decoded frames backed up inside
+/// VideoToolbox and the delay never came back down; and the main thread, on resizes), and a frame
+/// still waiting when a newer one arrives is dropped rather than shown late.
 final class MetalRenderer: @unchecked Sendable {
     let layer = CAMetalLayer()
     private let queue: MTLCommandQueue
@@ -32,6 +37,13 @@ final class MetalRenderer: @unchecked Sendable {
     private var ticking = false
     /// Settings → Phone apps → Motion ("PhoneApps.motion": smooth | responsive), when the window opens.
     let smooth = UserDefaults.standard.string(forKey: "PhoneApps.motion") != "responsive"
+    /// Frames for the render thread.
+    private let box = LatestBox<VideoDecoder.Frame>()
+    /// Count frames reaching the screen (only while the statistics overlay shows them).
+    var countsPresented = false
+    /// Responsive: the display link may pause while no frames come; a frame calls this (any thread).
+    var onWantsTicks: (() -> Void)?
+    private var idleTicks = 0
 
     /// Top rows of each frame not to show (an app's empty band; see PhoneDisplaySize).
     var cropPixels: Int {
@@ -49,27 +61,39 @@ final class MetalRenderer: @unchecked Sendable {
         layer.framebufferOnly = true
         layer.displaySyncEnabled = smooth // responsive: paced to the display instead (show/tick)
         layer.maximumDrawableCount = 2
+        layer.isOpaque = true // nothing behind it to blend with
         layer.colorspace = CGColorSpace(name: CGColorSpace.sRGB)
         layer.backgroundColor = CGColor(gray: 0, alpha: 1)
         CVMetalTextureCacheCreate(nil, nil, device, nil, &textureCache)
+        let thread = Thread { [box, weak self] in
+            while let frame = box.take() { self?.draw(frame) }
+        }
+        thread.name = "phone-render"
+        thread.qualityOfService = .userInteractive
+        thread.start()
     }
+
+    deinit { box.close() }
 
     /// The newest frame, if any.
     var lastFrame: VideoDecoder.Frame? { lock.withLock { latest } }
 
     func show(_ frame: VideoDecoder.Frame) {
-        let now: Bool = pace.withLock {
-            // Smooth: vsync paces. Without a display link yet (not on screen): draw at once.
-            guard !smooth, ticking else { return true }
-            if !shownThisRefresh, waiting.isEmpty { shownThisRefresh = true; return true }
+        let (now, wakeLink): (Bool, Bool) = pace.withLock {
+            // Smooth: vsync paces. No ticks (display link paused, or not on screen yet): draw at
+            // once, and wake the link.
+            if smooth { return (true, false) }
+            guard ticking else { return (true, true) }
+            if !shownThisRefresh, waiting.isEmpty { shownThisRefresh = true; return (true, false) }
             waiting.append(frame)
             if waiting.count > 2 { waiting.removeFirst() } // too far behind: skip the oldest
-            return false
+            return (false, false)
         }
         if now {
             lock.withLock { latest = frame }
-            draw(frame)
+            box.put(frame)
         }
+        if wakeLink { onWantsTicks?() }
     }
 
     /// A new screen refresh (the view's display link, main thread): the oldest waiting frame.
@@ -80,35 +104,38 @@ final class MetalRenderer: @unchecked Sendable {
             // Still a frame behind after a while: drop one, back to drawing on arrival.
             backlogTicks = waiting.count > 1 ? backlogTicks + 1 : 0
             if backlogTicks > 30, waiting.count > 1 { waiting.removeFirst(); backlogTicks = 0 }
+            idleTicks = waiting.isEmpty ? idleTicks + 1 : 0
             guard !waiting.isEmpty else { return nil }
             shownThisRefresh = true
             return waiting.removeFirst()
         }
         guard let next else { return }
-        DispatchQueue.global(qos: .userInteractive).async { [self] in
-            lock.withLock { latest = next }
-            draw(next)
-        }
+        lock.withLock { latest = next }
+        box.put(next)
     }
 
-    /// The window left the screen: no ticks, so draw on arrival again.
-    func stopTicking() { pace.withLock { ticking = false; waiting.removeAll() } }
+    /// No frame for a while (a still picture, a hidden window): the display link can pause;
+    /// frames then draw on arrival until it runs again.
+    var isIdle: Bool { pace.withLock { idleTicks > 10 } }
+
+    /// The window left the screen, or the display link paused: draw on arrival.
+    func stopTicking() { pace.withLock { ticking = false; waiting.removeAll(); idleTicks = 0 } }
 
     /// Frames that reached the screen since the last call (the statistics overlay).
     private var presented = 0
     func takePresented() -> Int { pace.withLock { defer { presented = 0 }; return presented } }
 
+    /// Draws the last frame again (a resize, a new crop), on the render thread.
     func redraw() {
-        if let frame = lastFrame { draw(frame) }
+        if let frame = lastFrame { box.put(frame) }
     }
 
+    /// Render thread only.
     private func draw(_ frame: VideoDecoder.Frame) {
-        lock.lock() // one frame at a time (decoder thread vs. a resize redraw on main)
-        defer { lock.unlock() }
         guard let cache = textureCache, let drawable = layer.nextDrawable() else { return }
         let image = frame.image
         let w = CVPixelBufferGetWidth(image), h = CVPixelBufferGetHeight(image)
-        let cropRows = min(max(crop, 0), h / 2)
+        let cropRows = min(max(lock.withLock { crop }, 0), h / 2)
         var top = Float(cropRows) / Float(h) // the shown part of the texture starts here
         var luma: CVMetalTexture?, chroma: CVMetalTexture?
         CVMetalTextureCacheCreateTextureFromImage(nil, cache, image, nil, .r8Unorm, w, h, 0, &luma)
@@ -133,9 +160,11 @@ final class MetalRenderer: @unchecked Sendable {
         encoder.endEncoding()
         buffer.present(drawable)
         let pts = frame.ptsMicros
-        drawable.addPresentedHandler { [weak self] d in
-            if d.presentedTime > 0, let self { self.pace.withLock { self.presented += 1 } }
-            Trace.log("presented \(pts) at \(Int64(d.presentedTime * 1000))")
+        if countsPresented || Trace.enabled {
+            drawable.addPresentedHandler { [weak self] d in
+                if d.presentedTime > 0, let self { self.pace.withLock { self.presented += 1 } }
+                Trace.log("presented \(pts) at \(Int64(d.presentedTime * 1000))")
+            }
         }
         Trace.log("drawn \(pts)")
         if Trace.enabled { saveSnapshotSoon(frame, cropRows: cropRows) }
@@ -153,7 +182,7 @@ final class MetalRenderer: @unchecked Sendable {
         snapshotPending = true
         let work = DispatchWorkItem { [self] in
             guard let path = Trace.path, let frame = lastFrame else { return }
-            lock.withLock { snapshotPending = false }
+            snapshotPending = false
             // As shown: without the cropped top rows (CIImage's origin is bottom-left).
             let full = CIImage(cvPixelBuffer: frame.image)
             let image = full.cropped(to: CGRect(x: 0, y: 0, width: full.extent.width, height: full.extent.height - CGFloat(cropRows)))
@@ -241,19 +270,31 @@ final class StreamView: NSView {
         return true
     }
 
-    /// Paces drawing to the screen this window is on (see MetalRenderer).
+    /// Responsive: paces drawing to the screen this window is on (see MetalRenderer). Smooth
+    /// mode needs no display link (vsync paces it), so it has none.
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
         displayLink?.invalidate()
         displayLink = nil
         renderer.stopTicking()
-        guard window != nil else { return }
+        guard window != nil, !renderer.smooth else { return }
         let link = displayLink(target: self, selector: #selector(refresh(_:)))
+        // The stream's rate: a ProMotion screen needn't run at 120 Hz for it.
+        link.preferredFrameRateRange = CAFrameRateRange(minimum: 30, maximum: 60, preferred: 60)
         link.add(to: .main, forMode: .common)
         displayLink = link
+        renderer.onWantsTicks = { [weak self] in
+            DispatchQueue.main.async { self?.displayLink?.isPaused = false }
+        }
     }
 
-    @objc private func refresh(_ link: CADisplayLink) { renderer.tick() }
+    @objc private func refresh(_ link: CADisplayLink) {
+        renderer.tick()
+        if renderer.isIdle { // nothing to pace: stop ticking 60 times a second
+            link.isPaused = true
+            renderer.stopTicking()
+        }
+    }
 
     required init?(coder: NSCoder) { fatalError("not used") }
 

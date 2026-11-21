@@ -17,6 +17,7 @@ final class PasteboardWatcher {
         timer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated { self?.poll() }
         }
+        timer?.tolerance = 0.1 // lets macOS fold it into other wake-ups
     }
 
     /// Writes text without reporting it back as a new copy.

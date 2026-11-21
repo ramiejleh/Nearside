@@ -54,6 +54,8 @@ object DisplayWire {
     const val SHARE = 0x46
     /** u8 0: the window's sound plays on the phone, not the Mac (sent right after OPEN). */
     const val SOUND = 0x47
+    /** Several fingers at once (pinch, rotate): u32 gen, u64 Mac µs, u8 n, n × (u8 action, u8 pointer, f32 x, f32 y). */
+    const val TOUCHES = 0x48
     // Phone window, Mac → phone: RECENTS (no body), TASK_FRONT / TASK_REMOVE (i32 task), DOCK (utf8
     // packages, one per line). Phone → Mac: TASKS (utf8 JSON [{id, pkg}], top first), SNAPSHOT
     // (i32 task + JPEG).
@@ -92,7 +94,10 @@ object DisplayWire {
     /** One stream to the Mac. Writes are serialised; a failed write closes it. */
     class Conn(private val socket: LocalSocket) {
         private val input = DataInputStream(socket.inputStream.buffered())
-        private val output = DataOutputStream(socket.outputStream.buffered(256 * 1024))
+        private val raw = socket.outputStream
+        private val output = DataOutputStream(raw.buffered(256 * 1024))
+        /** For [sendFrame]: reused, so a frame costs one copy and no allocation. */
+        private var scratch = ByteArray(0)
         @Volatile var isClosed = false
             private set
 
@@ -113,6 +118,32 @@ object DisplayWire {
                     output.writeByte(type); output.writeByte(0); output.writeInt(payload.size)
                     output.write(payload)
                     output.flush()
+                }
+            } catch (e: IOException) {
+                close()
+            }
+        }
+
+        /**
+         * A packet whose body is [header] then [body] (an encoder's output buffer, read from its
+         * position to its limit): copied once into a reused array and written straight to the
+         * socket, not through the buffer.
+         */
+        fun sendFrame(type: Int, header: ByteArray, body: java.nio.ByteBuffer) {
+            if (isClosed) return
+            try {
+                synchronized(output) {
+                    output.flush() // anything smaller still waiting goes first
+                    val n = body.remaining()
+                    val total = 6 + header.size + n
+                    if (scratch.size < total) scratch = ByteArray(total + total / 4)
+                    val s = scratch
+                    s[0] = type.toByte(); s[1] = 0
+                    val length = header.size + n
+                    s[2] = (length ushr 24).toByte(); s[3] = (length ushr 16).toByte(); s[4] = (length ushr 8).toByte(); s[5] = length.toByte()
+                    System.arraycopy(header, 0, s, 6, header.size)
+                    body.get(s, 6 + header.size, n)
+                    raw.write(s, 0, total)
                 }
             } catch (e: IOException) {
                 close()
@@ -158,6 +189,7 @@ class DisplayServer(
         listening = true
         // An app in a window opened again on the phone (its icon, Recents…): it goes to the phone.
         TaskEvents.onRestartAttempt = { task -> sessions.values.firstOrNull { it.owns(task) }?.openedOnPhone(task) }
+        TaskEvents.onTasksChanged = { sessions.values.forEach { it.tasksChanged() } }
         Thermal.onChange = {
             rebalance()
             sessions.values.forEach { it.thermalChanged() }
@@ -227,7 +259,10 @@ class DisplayServer(
 
     private fun control(conn: DisplayWire.Conn, sid: String) {
         val (type, body) = conn.read() ?: return conn.close()
-        conn.setTimeout(0)
+        // The Mac pings at least every 5 s: 15 s of silence means it's gone (it may have vanished
+        // without closing anything: Wi-Fi off, asleep), and the session's grace period starts.
+        // Without this the display stayed awake until adbd noticed, minutes later.
+        conn.setTimeout(15_000)
         val existing = sessions[sid]
         when {
             type == DisplayWire.RESUME && existing != null && !existing.isClosed -> existing.attachControl(conn)

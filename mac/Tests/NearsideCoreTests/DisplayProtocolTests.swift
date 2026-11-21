@@ -76,6 +76,19 @@ struct DisplayProtocolTests {
         #expect(p.readBE(UInt64.self, at: 20) == 123_456)
     }
 
+    @Test func touchesCarryEveryFingerInOnePacket() {
+        let p = DisplayWire.touches([(.move, 2, 0.25, 0.5), (.move, 3, 0.75, 0.5)], gen: 9, micros: 1000)
+        #expect(p.prefix(2) == Data([DisplayWire.touches, 0]))
+        #expect(p.readBE(UInt32.self, at: 2) == 4 + 8 + 1 + 2 * 10)
+        #expect(p.readBE(UInt32.self, at: 6) == 9)
+        #expect(p.readBE(UInt64.self, at: 10) == 1000)
+        #expect(p[18] == 2)
+        #expect(p[19] == DisplayWire.TouchAction.move.rawValue && p[20] == 2)
+        #expect(Float(bitPattern: p.readBE(UInt32.self, at: 21)) == 0.25)
+        #expect(p[29] == DisplayWire.TouchAction.move.rawValue && p[30] == 3)
+        #expect(Float(bitPattern: p.readBE(UInt32.self, at: 31)) == 0.75)
+    }
+
     @Test func displaySizeKeepsOneDpPerPoint() {
         let phone = PhoneDisplaySize.forWindow(CGSize(width: 400, height: 880), scale: 2)
         #expect(phone.width == 800 && phone.height == 1760 && phone.dpi == 320)

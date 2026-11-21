@@ -125,6 +125,29 @@ its task moved there) and the display is encoded and streamed to the Mac.
 - **Locked phone:** displays are always-unlocked and keep a wake lock of their own, so apps work
   with the phone locked in a pocket; the Mac asks for Touch ID first.
 
+## Battery and idling
+
+Nearside should cost the phone nothing while nothing is open, and little while a window is.
+
+- **Nothing open:** the helper only waits. The Mac sends a TCP keepalive every 15 minutes
+  (every 10 s only while windows are open), and its writes to a vanished phone fail within
+  ~20 s. Task events, the app list and the system-bars host all start on first use; the
+  host (an instrumentation joining the app's process) finishes ten minutes after the last
+  window. While the phone can't be found, the Mac looks less and less often (3 s up to a
+  minute) and tries again at once on a network change or wake.
+- **Reconnects:** one shell command prepares the helper; permissions are applied once per
+  launch; the authorisation is renewed daily, never while windows are open.
+- **Phone app:** nothing is built or sent while no Mac is connected; each app icon goes once
+  per connection; restarts back off if the app keeps dying.
+- **Windows:** sound isn't sent while silent (an empty AUDIO packet marks the silence); task
+  changes come as events (a 3 s fallback poll, 10 s when hidden); hidden windows suspend
+  their encoder and their display sleeps after 30 s of silence; no encoding while no Mac is
+  receiving; the secure-window check backs off and stops while hidden.
+- **The Mac's pings** (they keep the phone's Wi-Fi awake for instant input) are fast (40 ms)
+  only for the window in use while the pointer is over it or within 10 s of input; 1 s for
+  other visible windows, 5 s for hidden ones. The phone ends a window's control stream after
+  15 s of silence, so a Mac that vanished releases the display within ~45 s.
+
 ## Android behaviour worth knowing
 
 Measured on a Pixel 9 Pro with Android 17; earlier versions may differ.

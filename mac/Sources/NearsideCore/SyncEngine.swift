@@ -98,6 +98,7 @@ public final class SyncEngine {
     /// so while it can't be found the gap grows from 3 s to a minute; a network change or the Mac
     /// waking up tries again at once. While another Mac has the phone, once a minute.
     @ObservationIgnored private var nextAttempt = Date.distantPast
+    @ObservationIgnored private var ticks = 0
     @ObservationIgnored private var failedAttempts = 0
     @ObservationIgnored private let network = NWPathMonitor()
     /// The phone's permissions, applied on the first connection of each launch (and after the
@@ -215,7 +216,10 @@ public final class SyncEngine {
     }
 
     private func tick() {
-        if state == .connected, mirrorNotifications { notifications.reconcile() }
+        // Notifications cleared on this Mac: every 15 s is soon enough (each look is two calls to
+        // the notification service).
+        ticks += 1
+        if state == .connected, mirrorNotifications, ticks % 5 == 0 { notifications.reconcile() }
         // Only ever talk to the phone pinned during the user-run pairing flow; no discovery
         // of "whatever phone is around" (that would let a look-alike device be adopted).
         guard link.isIdle, !preparing, !isPairing, state == .searching || state == .connected,

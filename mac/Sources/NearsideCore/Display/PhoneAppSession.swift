@@ -55,7 +55,7 @@ public final class PhoneAppSession: @unchecked Sendable {
     private let kbps: Int
     /// The window's sound plays on the Mac (else it stays on the phone).
     private let soundOnMac: Bool
-    private let writer = DispatchQueue(label: "phone-app-control")
+    private let writer = DispatchQueue(label: "phone-app-control", qos: .userInteractive)
     private let decoder = VideoDecoder()
     /// phone µs − Mac µs, from the lowest-RTT ping so far (for latency stats).
     private var clockOffset: Int64?
@@ -137,10 +137,10 @@ public final class PhoneAppSession: @unchecked Sendable {
             if stale { ctl.close(); vid.close(); return true }
             if let hint = lock.withLock({ layoutHint }) { try ctl.write(DisplayWire.utf8(DisplayWire.layout, hint)) }
             if let dock = lock.withLock({ dock }) { try ctl.write(DisplayWire.utf8(DisplayWire.dock, dock.joined(separator: "\n"))) }
-            DispatchQueue.main.async { [self] in startPinging() }
-            Thread { [self] in readControl(ctl, ctlStart) }.start()
-            Thread { [self] in readVideo(vid, vidStart) }.start()
-            if soundOnMac { Thread { [self] in openAudio(adb, ticket) }.start() }
+            DispatchQueue.main.async { [self] in reconsiderPinging(force: true) }
+            Self.interactive { [self] in readControl(ctl, ctlStart) }
+            Self.interactive { [self] in readVideo(vid, vidStart) }
+            if soundOnMac { Self.interactive { [self] in openAudio(adb, ticket) } }
             return true
         } catch {
             return false
@@ -290,6 +290,13 @@ public final class PhoneAppSession: @unchecked Sendable {
         Thread.sleep(forTimeInterval: Double(bytes) * 8 / (kbps * 1000))
     }
 
+    /// A reader thread at interactive priority (frames, input replies and sound must not wait).
+    private static func interactive(_ body: @escaping @Sendable () -> Void) {
+        let thread = Thread(block: body)
+        thread.qualityOfService = .userInteractive
+        thread.start()
+    }
+
     /// The sound: optional (a phone without the virtual device keeps it on its speaker and closes
     /// this stream), so it never holds up or ends the session.
     private func openAudio(_ adb: AdbConnection, _ ticket: Data) {
@@ -314,7 +321,8 @@ public final class PhoneAppSession: @unchecked Sendable {
                     NSLog("Nearside: phone app \(target): sound \(rate) Hz × \(channels)")
                     player.configure(sampleRate: rate, channels: channels)
                 case let .audio(pts, data):
-                    player.play(data, ptsMicros: pts, receivedMicros: monotonicMicros())
+                    if data.isEmpty { player.silence() }
+                    else { player.play(data, ptsMicros: pts, receivedMicros: monotonicMicros()) }
                 default: break
                 }
             }
@@ -352,30 +360,41 @@ public final class PhoneAppSession: @unchecked Sendable {
     // MARK: - Input and window events
 
     private func send(_ packet: Data) {
-        guard let stream = lock.withLock({ control }) else { return }
+        guard let stream = lock.withLock({ () -> AdbStream? in lastSentMicros = monotonicMicros(); return control }) else { return }
         writer.async { try? stream.write(packet) }
     }
 
     /// x/y normalised (0…1) within the video; `time` is the Mac event's (NSEvent.timestamp, s).
     public func touch(_ action: DisplayWire.TouchAction, pointer: UInt8 = 0, x: Float, y: Float,
                       time: TimeInterval = ProcessInfo.processInfo.systemUptime) {
+        noteInput()
         let gen = lock.withLock { self.gen }
         let y = displayY(y)
         Trace.log("touch \(action) p\(pointer) \(x) \(y) gen \(gen)")
         send(DisplayWire.touch(action, pointer: pointer, gen: gen, x: x, y: y, micros: UInt64(max(0, time) * 1_000_000)))
     }
 
+    /// Fingers that changed together (a pinch step): one packet, so the phone moves them as one.
     public func touches(_ touches: [PointerGestures.Touch], time: TimeInterval) {
-        for t in touches { touch(t.action, pointer: t.pointer, x: t.x, y: t.y, time: time) }
+        guard touches.count > 1 else {
+            for t in touches { touch(t.action, pointer: t.pointer, x: t.x, y: t.y, time: time) }
+            return
+        }
+        noteInput()
+        let gen = lock.withLock { self.gen }
+        let list = touches.map { (action: $0.action, pointer: $0.pointer, x: $0.x, y: displayY($0.y)) }
+        send(DisplayWire.touches(list, gen: gen, micros: UInt64(max(0, time) * 1_000_000)))
     }
 
     /// A mouse wheel at x/y (normalised); h/v in notches, + = right/up.
     public func scroll(x: Float, y: Float, h: Float, v: Float) {
+        noteInput()
         send(DisplayWire.scroll(gen: lock.withLock { gen }, x: x, y: displayY(y), h: h, v: v))
     }
 
     /// The mouse pointer itself: hover, and the right button.
     public func mouse(_ action: DisplayWire.MouseAction, x: Float, y: Float) {
+        noteInput(pointerInside: action != .exit)
         send(DisplayWire.mouse(action, gen: lock.withLock { gen }, x: x, y: displayY(y)))
     }
 
@@ -396,10 +415,10 @@ public final class PhoneAppSession: @unchecked Sendable {
 
     // MARK: Keyboard
 
-    public func keys(_ keys: [KeyMap.Key]) { keys.forEach { send(DisplayWire.key($0)) } }
+    public func keys(_ keys: [KeyMap.Key]) { noteInput(); keys.forEach { send(DisplayWire.key($0)) } }
 
     /// Typed text (the Mac's layout already applied).
-    public func text(_ text: String) { send(DisplayWire.utf8(DisplayWire.text, text)) }
+    public func text(_ text: String) { noteInput(); send(DisplayWire.utf8(DisplayWire.text, text)) }
 
     /// ⌘V: the Mac's clipboard text (nil: paste what the phone has).
     public func paste(_ text: String?) { send(DisplayWire.utf8(DisplayWire.paste, text ?? "")) }
@@ -442,26 +461,53 @@ public final class PhoneAppSession: @unchecked Sendable {
     public func setVisibility(_ visibility: Visibility) {
         send(DisplayWire.packet(DisplayWire.visibility, Data([visibility.rawValue])))
         DispatchQueue.main.async { [self] in
-            let shown = visibility != .hidden
-            guard shown != visible else { return }
-            visible = shown
-            startPinging()
+            level = visibility
+            reconsiderPinging()
         }
     }
 
-    /// While the window is visible, a ping every 40 ms keeps the phone's Wi-Fi out of power save:
-    /// idle, it dozes within ~100 ms and the next touch then waits for its next wake-up (measured:
-    /// round trip p95 177 ms pinging once a second, 111 ms at 100 ms, 17 ms at 50 ms). Hidden, once
-    /// a second is enough to keep the session alive.
-    private var visible = true
+    // MARK: - Ping
+    //
+    // A ping every 40 ms keeps the phone's Wi-Fi out of power save: idle, it dozes within ~100 ms
+    // and the next touch then waits for its next wake-up (measured: round trip p95 177 ms pinging
+    // once a second, 111 ms at 100 ms, 17 ms at 50 ms). That costs the phone's battery, so it's
+    // only done while the window is likely to get input next (PingPolicy); otherwise the pings
+    // just keep the session alive (the phone gives up on a Mac silent for 15 s).
 
-    @MainActor private func startPinging() {
+    @MainActor private var level: Visibility = .focused
+    @MainActor private var pointerInside = false
+    @MainActor private var lastInput: TimeInterval = 0
+    @MainActor private var pingInterval: TimeInterval = 0
+    /// When anything last went to the phone (µs): a ping right after is redundant.
+    private var lastSentMicros: Int64 = 0
+
+    @MainActor private func reconsiderPinging(force: Bool = false) {
+        let want = PingPolicy.interval(level: level, pointerInside: pointerInside,
+                                       sinceInput: ProcessInfo.processInfo.systemUptime - lastInput)
+        guard force || want != pingInterval else { return }
+        pingInterval = want
         pinger?.invalidate()
         guard !lock.withLock({ closing }) else { return }
-        pinger = Timer.scheduledTimer(withTimeInterval: visible ? 0.04 : 1, repeats: true) { [weak self] _ in
-            self?.send(DisplayWire.ping(UInt64(monotonicMicros())))
+        pinger = Timer.scheduledTimer(withTimeInterval: want, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated { self?.pingTick() }
         }
-        pinger?.tolerance = 0.005
+        pinger?.tolerance = want < 1 ? 0.005 : want / 10
+    }
+
+    @MainActor private func pingTick() {
+        reconsiderPinging() // input may have gone quiet: slower
+        let now = monotonicMicros()
+        if pingInterval < 1, now - lock.withLock({ lastSentMicros }) < 35_000 { return } // input kept it awake
+        send(DisplayWire.ping(UInt64(now)))
+    }
+
+    /// Input, or the pointer coming in or leaving (nil: unchanged): pinging may need to speed up.
+    private func noteInput(pointerInside inside: Bool? = nil) {
+        DispatchQueue.main.async { [self] in
+            lastInput = ProcessInfo.processInfo.systemUptime
+            if let inside { pointerInside = inside }
+            reconsiderPinging()
+        }
     }
 
     // MARK: - Black pictures
@@ -555,3 +601,16 @@ public final class PhoneAppSession: @unchecked Sendable {
 }
 
 private final class TicketBox: @unchecked Sendable { var value: Data? }
+
+/// How often a window pings the phone. Fast pings keep the phone's Wi-Fi awake so a touch gets
+/// there at once, at a cost to its battery: so only for the window in use (focused) while the
+/// pointer is over it or something was typed or touched in the last 10 s.
+public enum PingPolicy {
+    public static func interval(level: PhoneAppSession.Visibility, pointerInside: Bool, sinceInput: TimeInterval) -> TimeInterval {
+        switch level {
+        case .hidden: 5
+        case .visible: 1
+        case .focused: pointerInside || sinceInput < 10 ? 0.04 : 1
+        }
+    }
+}

@@ -21,6 +21,7 @@ class AudioStreamer(private val name: String) {
         const val KBPS = 128
         /** 20 ms: Opus's usual frame. */
         const val FRAME_MS = 20
+        const val SILENCE_AFTER_MS = 300L
     }
 
     private var device: Any? = null
@@ -30,6 +31,9 @@ class AudioStreamer(private val name: String) {
     @Volatile private var conn: DisplayWire.Conn? = null
     /** When something on the display last made a sound (uptime ms). */
     @Volatile var lastSoundAt = 0L
+    /** Not sending: silent for [SILENCE_AFTER_MS] (see the loop). */
+    private var quiet = false
+    private var emptyReads = 0
         private set
     @Volatile private var stopped = false
     /** null until [start] has run; then whether sound is captured. */
@@ -104,9 +108,24 @@ class AudioStreamer(private val name: String) {
             while (!stopped) {
                 // Blocks until a frame's worth is there: the capture paces the loop.
                 val n = read.invoke(cap, frame, 0, frame.size) as Int
-                if (n <= 0) { if (n < 0) break else continue }
-                for (i in 0 until n) if (frame[i] > 64 || frame[i] < -64) { lastSoundAt = SystemClock.uptimeMillis(); break }
-                val pts = SystemClock.uptimeMillis() * 1000 - FRAME_MS * 1000L
+                if (n < 0) break
+                // Nothing (the display is asleep: its audio device stops): don't spin, wait a frame.
+                if (n == 0) { Thread.sleep(if (++emptyReads > 10) 100L else FRAME_MS.toLong()); continue }
+                emptyReads = 0
+                val now = SystemClock.uptimeMillis()
+                for (i in 0 until n) if (frame[i] > 64 || frame[i] < -64) { lastSoundAt = now; break }
+                val pts = now * 1000 - FRAME_MS * 1000L
+                // Silence isn't sent: after a moment of it (the sound's tail goes out first), one
+                // empty packet tells the Mac to let its buffer run dry, then nothing until there's
+                // sound again (otherwise 50 packets a second keep the phone's Wi-Fi awake for nothing).
+                if (now - lastSoundAt > SILENCE_AFTER_MS) {
+                    if (!quiet) {
+                        quiet = true
+                        if (capturing == true) conn?.takeIf { !it.isClosed }?.send(DisplayWire.AUDIO, ByteBuffer.allocate(8).putLong(pts).array())
+                    }
+                    continue
+                }
+                quiet = false
                 val index = codec.dequeueInputBuffer(10_000)
                 if (index >= 0) {
                     val input = codec.getInputBuffer(index)!!

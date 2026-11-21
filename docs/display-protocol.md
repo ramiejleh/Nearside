@@ -50,6 +50,7 @@ stream; control packets are read up to 1 MiB. Unknown or short packets are ignor
 | 0x45 | NOTIFICATION | utf8 notification key to open in this window |
 | 0x46 | SHARE | utf8 names (one per line) of files already pushed, to share into the app |
 | 0x47 | SOUND | u8 0 = the window's sound stays on the phone (sent right after OPEN) |
+| 0x48 | TOUCHES | u32 gen, u64 event µs, u8 n, n × (u8 action, u8 pointer, f32 x, f32 y): fingers that changed together (pinch, rotate) |
 
 ## Phone → Mac
 
@@ -68,7 +69,7 @@ stream; control packets are read up to 1 MiB. Unknown or short packets are ignor
 | 0x30 | CONFIG | video | u32 gen, u16 w, u16 h, HEVC parameter sets |
 | 0x31 | FRAME | video | u32 gen, u64 pts µs, u64 encode µs, u8 keyframe, HEVC data |
 | 0x32 | AUDIO_CONFIG | audio | u32 sample rate, u8 channels |
-| 0x33 | AUDIO | audio | u64 pts µs, one 20 ms Opus packet |
+| 0x33 | AUDIO | audio | u64 pts µs, one 20 ms Opus packet; no packet: silence follows (nothing is sent until there's sound) |
 
 `gen` increases with every resize; input carrying an old `gen` is dropped, so a touch meant for
 the previous size never lands in the wrong place.
