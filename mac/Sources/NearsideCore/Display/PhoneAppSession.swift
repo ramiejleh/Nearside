@@ -21,6 +21,8 @@ public final class PhoneAppSession: @unchecked Sendable {
     public var onFrame: (@Sendable (VideoDecoder.Frame) -> Void)?
     /// State changes, on the main thread.
     public var onState: (@MainActor @Sendable (State) -> Void)?
+    /// The phone is warm and the quality reduced (true), or back to normal, on the main thread.
+    public var onThermal: (@MainActor @Sendable (Bool) -> Void)?
     /// The video's pixel size (it changes after a resize), on the main thread.
     public var onVideoSize: (@MainActor @Sendable (CGSize) -> Void)?
 
@@ -150,6 +152,8 @@ public final class PhoneAppSession: @unchecked Sendable {
             switch message {
             case .taskGone(let reason): set(.gone(reason))
             case .error(_, let text): fail(text.isEmpty ? "The app couldn't be opened." : text)
+            case .thermal(let reduced):
+                if let onThermal { Task { @MainActor in onThermal(reduced) } }
             case let .pong(t0, phone):
                 let now = monotonicMicros(), rtt = now - Int64(t0)
                 lock.withLock {

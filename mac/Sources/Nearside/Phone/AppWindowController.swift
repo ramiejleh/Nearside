@@ -84,6 +84,10 @@ final class AppWindowController: NSObject, NSWindowDelegate {
 
         session.onFrame = { [renderer] frame in renderer.show(frame) }
         session.onState = { [weak self] state in self?.render(state) }
+        session.onThermal = { [weak self] reduced in
+            NSLog("Nearside: phone \(reduced ? "warm: quality reduced" : "cool again")")
+            self?.window.subtitle = reduced ? "Lower quality: your phone is warm" : ""
+        }
         session.onVideoSize = { [weak self] size in
             guard let self else { return }
             stream.videoSize = CGSize(width: size.width, height: size.height - CGFloat(cropPixels)) // what's shown

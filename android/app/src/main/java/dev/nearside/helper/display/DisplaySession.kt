@@ -95,6 +95,7 @@ class DisplaySession(
         ctl?.close()
         ctl = conn
         Thread({ controlLoop(conn) }, "display-$id-ctl").start()
+        if (Thermal.moderate) sendThermal()
         if (taskId != -1) sendTask()
     }
 
@@ -362,15 +363,32 @@ class DisplaySession(
 
     @Volatile private var visibility = DisplayWire.VIS_FOCUSED
 
-    private fun budgetFps(): Int = when (visibility) {
+    /** Warm phone (moderate): everything 30 % lower. */
+    private val heat get() = if (Thermal.moderate) 0.7 else 1.0
+
+    private fun budgetFps(): Int = (when (visibility) {
         DisplayWire.VIS_FOCUSED -> fps
         else -> minOf(fps, 30)
-    }
+    } * heat).toInt().coerceAtLeast(10)
 
     private fun budgetKbps(): Int = (when (visibility) {
         DisplayWire.VIS_FOCUSED -> kbps
         else -> kbps * 6 / 10
-    } * congestion).toInt().coerceAtLeast(500)
+    } * congestion * heat).toInt().coerceAtLeast(500)
+
+    /** Not encoding: hidden, or a hot phone (severe) keeps only the window in use going. */
+    private val suspended get() = visibility == DisplayWire.VIS_HIDDEN ||
+        (Thermal.severe && visibility != DisplayWire.VIS_FOCUSED)
+
+    fun thermalChanged() {
+        applyBudget()
+        if (!suspended) requestKeyframe() // may have been suspended until now
+        sendThermal()
+        Log.d("display session $id: phone ${if (Thermal.moderate) "warm" else "cool"} → " +
+            if (suspended) "suspended" else "${budgetFps()} fps, ${budgetKbps()} kbps")
+    }
+
+    private fun sendThermal() = ctl?.send(DisplayWire.THERMAL, byteArrayOf(if (Thermal.moderate) 1 else 0))
 
     // MARK: Congestion
     //
@@ -433,10 +451,10 @@ class DisplaySession(
     @Synchronized
     private fun applyBudget() {
         if (closed) return
-        if (visibility != DisplayWire.VIS_HIDDEN && budgetFps() != encoderFps) return replaceEncoder()
+        if (!suspended && budgetFps() != encoderFps) return replaceEncoder()
         runCatching {
             codec?.setParameters(Bundle().apply {
-                putInt(MediaCodec.PARAMETER_KEY_SUSPEND, if (visibility == DisplayWire.VIS_HIDDEN) 1 else 0)
+                putInt(MediaCodec.PARAMETER_KEY_SUSPEND, if (suspended) 1 else 0)
                 putInt(MediaCodec.PARAMETER_KEY_VIDEO_BITRATE, budgetKbps() * 1000)
             })
         }.onFailure { Log.d("display session $id: budget not applied: $it") }
@@ -452,11 +470,11 @@ class DisplaySession(
 
     private fun setVisibility(level: Int) {
         if (level == visibility) return
-        val wasHidden = visibility == DisplayWire.VIS_HIDDEN
+        val wasSuspended = suspended
         visibility = level
         applyBudget()
-        Log.d("display session $id: ${listOf("focused", "hidden", "visible").getOrElse(level) { "?" }} → ${if (level == DisplayWire.VIS_HIDDEN) "suspended" else "${budgetFps()} fps, ${budgetKbps()} kbps"}")
-        if (wasHidden && level != DisplayWire.VIS_HIDDEN) requestKeyframe()
+        Log.d("display session $id: ${listOf("focused", "hidden", "visible").getOrElse(level) { "?" }} → ${if (suspended) "suspended" else "${budgetFps()} fps, ${budgetKbps()} kbps"}")
+        if (wasSuspended && !suspended) requestKeyframe()
     }
 
     @Synchronized

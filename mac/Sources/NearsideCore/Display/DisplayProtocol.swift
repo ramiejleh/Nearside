@@ -17,6 +17,7 @@ public enum DisplayWire {
     static let maxControlBody = 1024 * 1024 - 16
     // phone → Mac
     static let task: UInt8 = 0x20, taskGone: UInt8 = 0x21, pong: UInt8 = 0x22, error: UInt8 = 0x23
+    static let thermal: UInt8 = 0x24
     static let config: UInt8 = 0x30, frame: UInt8 = 0x31
     static let audioConfig: UInt8 = 0x32, audio: UInt8 = 0x33
 
@@ -38,6 +39,8 @@ public enum DisplayWire {
         case taskGone(GoneReason)
         case pong(t0: UInt64, phoneMicros: UInt64)
         case error(code: UInt8, message: String)
+        /// Quality is reduced (or back to normal) because the phone is warm.
+        case thermal(reduced: Bool)
         case config(gen: UInt32, width: Int, height: Int, parameterSets: Data)
         case frame(gen: UInt32, ptsMicros: Int64, encodedMicros: Int64, keyframe: Bool, data: Data)
         /// The audio stream's format (Opus).
@@ -180,6 +183,8 @@ public enum DisplayWire {
             return .pong(t0: p.readBE(UInt64.self, at: s), phoneMicros: p.readBE(UInt64.self, at: s + 8))
         case error where p.count >= 1:
             return .error(code: p[s], message: String(decoding: p.suffix(from: s + 1), as: UTF8.self))
+        case thermal where p.count >= 1:
+            return .thermal(reduced: p[s] != 0)
         case config where p.count >= 8:
             return .config(gen: p.readBE(UInt32.self, at: s), width: Int(p.readBE(UInt16.self, at: s + 4)),
                            height: Int(p.readBE(UInt16.self, at: s + 6)), parameterSets: p.subdata(in: s + 8..<p.endIndex))
