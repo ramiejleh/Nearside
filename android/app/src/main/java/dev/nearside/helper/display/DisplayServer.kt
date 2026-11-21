@@ -45,7 +45,7 @@ object DisplayWire {
     const val VIS_FOCUSED = 0; const val VIS_HIDDEN = 1; const val VIS_VISIBLE = 2
     const val MOUSE_HOVER = 0; const val MOUSE_EXIT = 1; const val MOUSE_SECONDARY_DOWN = 2; const val MOUSE_SECONDARY_UP = 3
     const val GONE_EXITED = 0; const val GONE_MOVED = 1
-    const val ERR_NOT_FOUND = 1; const val ERR_LAUNCH = 2; const val ERR_NO_SESSION = 3
+    const val ERR_NOT_FOUND = 1; const val ERR_LAUNCH = 2; const val ERR_NO_SESSION = 3; const val ERR_BUSY = 4
     const val VERSION = 1
     private const val MAX_PACKET = 1024 * 1024 // control packets are small; a paste can be long
 
@@ -138,7 +138,10 @@ class DisplayServer(
         // An app in a window opened again on the phone (its icon, Recents…): it goes to the phone.
         TaskEvents.onRestartAttempt = { task -> sessions.values.firstOrNull { it.owns(task) }?.openedOnPhone() }
         TaskEvents.register()
-        Thermal.onChange = { sessions.values.forEach { it.thermalChanged() } }
+        Thermal.onChange = {
+            rebalance()
+            sessions.values.forEach { it.thermalChanged() }
+        }
         Thermal.start()
         Thread({
             while (true) {
@@ -222,11 +225,14 @@ class DisplayServer(
                 } catch (t: Throwable) {
                     Log.d("display session $sid failed to start: $t")
                     sessions.remove(sid)
-                    conn.send(DisplayWire.ERROR, byteArrayOf(DisplayWire.ERR_LAUNCH.toByte()) + "couldn't start: $t".toByteArray())
+                    val (code, text) = if (t is DisplaySession.EncoderBusy) DisplayWire.ERR_BUSY to "Your phone can't show more apps at once."
+                        else DisplayWire.ERR_LAUNCH to "couldn't start: $t"
+                    conn.send(DisplayWire.ERROR, byteArrayOf(code.toByte()) + text.toByteArray())
                     return conn.close()
                 }
                 session.attachControl(conn)
                 onSessionsChanged(sessions.size)
+                rebalance()
             }
             else -> {
                 conn.send(DisplayWire.ERROR, byteArrayOf(DisplayWire.ERR_NO_SESSION.toByte()) + "no such session".toByteArray())
@@ -238,6 +244,25 @@ class DisplayServer(
     fun ended(session: DisplaySession) {
         sessions.remove(session.id)
         onSessionsChanged(sessions.size)
+        rebalance()
+    }
+
+    /**
+     * The phone's one hardware encoder block, shared: about 440 Mpx/s measured (three phone-sized
+     * windows at 57 fps), less when warm. Windows in use get their full rate; the others on screen
+     * split what's left (30 fps at most, 5 at least, in steps so encoders aren't swapped for small
+     * changes); hidden ones take nothing.
+     */
+    @Synchronized
+    fun rebalance() {
+        val budget = PIXEL_BUDGET * (if (Thermal.moderate) 0.7 else 1.0)
+        val encoding = sessions.values.filter { it.isEncoding }
+        val (focused, others) = encoding.partition { it.isFocused }
+        val left = budget - focused.sumOf { it.pixels.toDouble() * it.focusedFps }
+        val pixels = others.sumOf { it.pixels.toDouble() }
+        val share = if (pixels <= 0) 30 else STEPS.firstOrNull { it * pixels <= left } ?: STEPS.last()
+        sessions.values.forEach { it.setShare(share) }
+        if (others.isNotEmpty()) Log.d("budget: ${focused.size} in use, ${others.size} on screen at $share fps")
     }
 
     /** Ends every session, apps back to the phone (the phone's "Stop" button, or a new Mac). */
@@ -251,5 +276,7 @@ class DisplayServer(
 
     companion object {
         const val SOCKET = "nearside-display"
+        const val PIXEL_BUDGET = 440e6
+        private val STEPS = listOf(30, 20, 15, 10, 5)
     }
 }

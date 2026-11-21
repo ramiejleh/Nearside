@@ -88,6 +88,7 @@ final class PhoneWindowManager {
 
     private func closed(_ controller: AppWindowController) {
         windows.removeAll { $0 === controller }
+        focusOrder.removeAll { $0 === controller }
         showDockIcon(for: windows.last)
         // Let the close finish before the Dock icon goes (switching policy mid-close drops focus).
         DispatchQueue.main.async { [weak self] in self?.updateActivationPolicy() }
@@ -122,7 +123,21 @@ final class PhoneWindowManager {
 
     /// The Dock (and ⌘-Tab) icon follows the phone app in front: all windows share Nearside's
     /// one Dock tile, so it shows that app's icon with a small Nearside badge.
-    func focused(_ controller: AppWindowController) { showDockIcon(for: controller) }
+    func focused(_ controller: AppWindowController) {
+        showDockIcon(for: controller)
+        focusOrder.removeAll { $0 === controller }
+        focusOrder.append(controller)
+    }
+
+    /// Windows by when they were last in use, oldest first.
+    private var focusOrder: [AppWindowController] = []
+
+    func leastRecentlyUsed(except controller: AppWindowController) -> AppWindowController? {
+        let order = windows.sorted { a, b in
+            (focusOrder.firstIndex { $0 === a } ?? -1) < (focusOrder.firstIndex { $0 === b } ?? -1)
+        }
+        return order.first { $0 !== controller }
+    }
 
     private var dockIconApp: String?
 

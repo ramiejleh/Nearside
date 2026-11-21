@@ -127,7 +127,9 @@ final class AppWindowController: NSObject, NSWindowDelegate {
                                             reopen: { [weak self] in self?.reopen() },
                                             close: { [weak self] in self?.window.close() },
                                             unlock: { PhoneWindowManager.shared?.unlock() },
-                                            openOnPhone: { [weak self] in self?.openOnPhone() })
+                                            openOnPhone: { [weak self] in self?.openOnPhone() },
+                                            oldest: new == .busy ? PhoneWindowManager.shared?.leastRecentlyUsed(except: self)?.app.label : nil,
+                                            closeOldest: { [weak self] in self?.closeOldestAndRetry() })
         overlay.isHidden = new == .showing && !locked && !secure
         // Test hook: NEARSIDE_TEST_OVERLAY=<png> saves what the window shows over the app.
         if let path = ProcessInfo.processInfo.environment["NEARSIDE_TEST_OVERLAY"], !overlay.isHidden {
@@ -336,6 +338,13 @@ final class AppWindowController: NSObject, NSWindowDelegate {
 
     @objc func goBack(_ sender: Any?) { if !locked { session.back() } }
 
+    /// Busy: closes the least recently used other window, then opens this app again.
+    private func closeOldestAndRetry() {
+        guard let oldest = PhoneWindowManager.shared?.leastRecentlyUsed(except: self) else { return }
+        oldest.window.close()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in self?.reopen() } // its encoder is freed
+    }
+
     /// The app, in front on the phone; the window closes.
     private func openOnPhone() {
         session.openOnPhone()
@@ -488,6 +497,9 @@ struct AppWindowOverlay: View {
     var close: () -> Void = {}
     var unlock: () -> Void = {}
     var openOnPhone: () -> Void = {}
+    /// Busy: the least recently used other window's app, and closing it (then this one opens).
+    var oldest: String? = nil
+    var closeOldest: () -> Void = {}
 
     var body: some View {
         ZStack {
@@ -528,6 +540,18 @@ struct AppWindowOverlay: View {
                         .font(.headline)
                     HStack {
                         Button(reason == .movedToPhone ? "Bring Back" : "Reopen", action: reopen).keyboardShortcut(.defaultAction)
+                        Button("Close Window", action: close)
+                    }
+                case .busy:
+                    Image(systemName: "square.stack.3d.up.slash")
+                        .font(.system(size: 34, weight: .light)).foregroundStyle(.secondary)
+                    Text("Your phone can't show more apps at once").font(.headline).multilineTextAlignment(.center)
+                    if let oldest {
+                        Text("Close \(oldest), the app you used longest ago, to open \(label).")
+                            .font(.subheadline).foregroundStyle(.secondary).multilineTextAlignment(.center)
+                    }
+                    HStack {
+                        if let oldest { Button("Close \(oldest)", action: closeOldest).keyboardShortcut(.defaultAction) }
                         Button("Close Window", action: close)
                     }
                 case .failed(let message):

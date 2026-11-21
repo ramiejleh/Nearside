@@ -69,8 +69,11 @@ class DisplaySession(
     private val audio = AudioStreamer("display-$id")
     private var hasAudio = false
 
+    /** The phone wouldn't make another video encoder (too many windows). */
+    class EncoderBusy(cause: Throwable) : Exception(cause)
+
     fun start() {
-        val surface = newEncoder()
+        val surface = try { newEncoder() } catch (e: Exception) { throw EncoderBusy(e) }
         // On the virtual device (own clipboard and keyboard, works locked), else a plain display.
         device = PhoneDevice.create("Nearside ${id.take(8)}")
         display = device?.createDisplay("nearside-$id", w, h, dpi, surface, FLAGS)
@@ -403,10 +406,25 @@ class DisplaySession(
     /** Warm phone (moderate): everything 30 % lower. */
     private val heat get() = if (Thermal.moderate) 0.7 else 1.0
 
-    private fun budgetFps(): Int = (when (visibility) {
-        DisplayWire.VIS_FOCUSED -> fps
-        else -> minOf(fps, 30)
-    } * heat).toInt().coerceAtLeast(10)
+    private fun budgetFps(): Int = when (visibility) {
+        DisplayWire.VIS_FOCUSED -> (fps * heat).toInt()
+        else -> minOf((minOf(fps, 30) * heat).toInt(), shareFps)
+    }.coerceAtLeast(5)
+
+    /** What the server's pixel budget leaves this window when it isn't the one in use. */
+    @Volatile private var shareFps = 60
+
+    /** For the server's budget. */
+    val pixels get() = w.toLong() * h
+    val isFocused get() = visibility == DisplayWire.VIS_FOCUSED
+    val isEncoding get() = !closed && !suspended
+    val focusedFps get() = (fps * heat).toInt()
+
+    /** The server's share for this window (frames per second when not in use); applies it. */
+    fun setShare(fpsShare: Int) {
+        shareFps = fpsShare
+        applyBudget()
+    }
 
     private fun budgetKbps(): Int = (when (visibility) {
         DisplayWire.VIS_FOCUSED -> kbps
@@ -418,7 +436,6 @@ class DisplaySession(
         (Thermal.severe && visibility != DisplayWire.VIS_FOCUSED)
 
     fun thermalChanged() {
-        applyBudget()
         if (!suspended) requestKeyframe() // may have been suspended until now
         sendThermal()
         Log.d("display session $id: phone ${if (Thermal.moderate) "warm" else "cool"} → " +
@@ -509,7 +526,7 @@ class DisplaySession(
         if (level == visibility) return
         val wasSuspended = suspended
         visibility = level
-        applyBudget()
+        server.rebalance() // applies every window's budget, this one's too
         Log.d("display session $id: ${listOf("focused", "hidden", "visible").getOrElse(level) { "?" }} → ${if (suspended) "suspended" else "${budgetFps()} fps, ${budgetKbps()} kbps"}")
         if (wasSuspended && !suspended) requestKeyframe()
     }
@@ -532,6 +549,7 @@ class DisplaySession(
         display.surface = surface
         old?.let { runCatching { it.stop() }; it.release() }
         Log.d("display session $id: resized to ${w}x$h@$dpi")
+        watcher.execute { server.rebalance() } // more or fewer pixels (not under this lock: the server takes it)
     }
 
     // MARK: - Input

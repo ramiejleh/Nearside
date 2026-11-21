@@ -14,6 +14,8 @@ public final class PhoneAppSession: @unchecked Sendable {
         /// The app left the window: closed on the phone, or opened there.
         case gone(DisplayWire.GoneReason)
         case failed(String)
+        /// The phone couldn't make another video encoder: too many windows.
+        case busy
         case closed
     }
 
@@ -155,6 +157,7 @@ public final class PhoneAppSession: @unchecked Sendable {
         func handle(_ message: DisplayWire.Message) {
             switch message {
             case .taskGone(let reason): set(.gone(reason))
+            case .error(4, _): set(.busy)
             case .error(_, let text): fail(text.isEmpty ? "The app couldn't be opened." : text)
             case .secure(let on):
                 if let onSecure { Task { @MainActor in onSecure(on) } }
@@ -261,7 +264,7 @@ public final class PhoneAppSession: @unchecked Sendable {
             control?.close(); video?.close(); audio?.close()
             control = nil; video = nil; audio = nil
             switch state {
-            case .gone, .failed, .closed: return false
+            case .gone, .failed, .busy, .closed: return false
             default: return true
             }
         }
