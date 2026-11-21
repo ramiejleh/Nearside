@@ -236,11 +236,16 @@ struct LauncherView: View {
                     .padding(.vertical, 14)
                 }
                 .onChange(of: model.selection) { _, i in
-                    withAnimation(.easeOut(duration: 0.12)) { proxy.scrollTo(i) }
+                    // The cell's stable id: section + app (see sectionView).
+                    let ids = sections.flatMap { s in s.apps.map { Self.cellID(s, $0) } }
+                    guard ids.indices.contains(i) else { return }
+                    withAnimation(.easeOut(duration: 0.12)) { proxy.scrollTo(ids[i]) }
                 }
             }
         }
     }
+
+    private static func cellID(_ section: Section, _ app: PhoneApp) -> String { "\(section.id)/\(app.id)" }
 
     private func sectionView(_ section: Section, start: Int) -> some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -251,8 +256,10 @@ struct LauncherView: View {
             LazyVGrid(columns: Array(repeating: GridItem(.fixed(86), spacing: 2), count: Self.columns),
                       alignment: .leading, spacing: 4) {
                 ForEach(Array(section.apps.enumerated()), id: \.element.id) { i, app in
+                    // Named by section + app, never by position: opening an app adds it to Recents,
+                    // which shifted every position, and the lazy grid then drew stale cells twice.
                     LauncherCell(app: app, icon: library.icon(app), selected: model.selection == start + i)
-                        .id(start + i)
+                        .id(Self.cellID(section, app))
                         .onTapGesture { open(app) }
                         .contextMenu {
                             Button("Open") { open(app) }
