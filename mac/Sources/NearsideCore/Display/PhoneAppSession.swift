@@ -172,6 +172,7 @@ public final class PhoneAppSession: @unchecked Sendable {
         while true {
             if pending.isEmpty {
                 guard let data = try? stream.read() else { break }
+                Self.throttleForTesting(data.count)
                 pending = reader.feed(data)
             }
             let now = monotonicMicros()
@@ -192,6 +193,7 @@ public final class PhoneAppSession: @unchecked Sendable {
                     } else {
                         Trace.log("recv \(pts)")
                     }
+                    send(DisplayWire.ack(ptsMicros: pts)) // the phone's congestion control
                     decoder.decode(annexB: data, gen: gen, ptsMicros: pts, receivedMicros: now)
                 default: break
                 }
@@ -199,6 +201,14 @@ public final class PhoneAppSession: @unchecked Sendable {
             if reader.failed { break }
         }
         streamEnded(stream)
+    }
+
+    /// Test hook: NEARSIDE_TEST_VIDEO_KBPS=<n> reads video no faster than that (a slow network).
+    private static let testKbps = Double(ProcessInfo.processInfo.environment["NEARSIDE_TEST_VIDEO_KBPS"] ?? "")
+
+    private static func throttleForTesting(_ bytes: Int) {
+        guard let kbps = testKbps, kbps > 0 else { return }
+        Thread.sleep(forTimeInterval: Double(bytes) * 8 / (kbps * 1000))
     }
 
     /// The sound: optional (a phone without the virtual device keeps it on its speaker and closes

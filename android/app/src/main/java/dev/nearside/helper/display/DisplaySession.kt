@@ -101,6 +101,8 @@ class DisplaySession(
     fun attachVideo(conn: DisplayWire.Conn) {
         video?.close()
         video = conn
+        catchingUp = false // a new stream: nothing in flight
+        awaitingKey = true
         lastConfig?.let { conn.send(DisplayWire.CONFIG, it) }
         requestKeyframe()
     }
@@ -143,6 +145,7 @@ class DisplaySession(
                 resize(b.short.toInt() and 0xffff, b.short.toInt() and 0xffff, b.short.toInt() and 0xffff)
             }
             DisplayWire.NAV -> if (b.remaining() >= 1) nav(b.get().toInt())
+            DisplayWire.ACK -> if (b.remaining() >= 8) acked(b.long)
             DisplayWire.PING -> if (b.remaining() >= 8) {
                 val t0 = b.long
                 ctl?.send(DisplayWire.PONG, ByteBuffer.allocate(16).putLong(t0).putLong(System.nanoTime() / 1000).array())
@@ -312,9 +315,19 @@ class DisplaySession(
                 continue
             }
             val key = info.flags and MediaCodec.BUFFER_FLAG_KEY_FRAME != 0
+            // Catching up: nothing new goes out until the backlog has arrived; then the next
+            // keyframe restarts the picture (frames after a gap can't be decoded without one).
+            if (catchingUp && SystemClock.uptimeMillis() - catchStart > 2000) {
+                catchingUp = false // the last ack never came (a dropped stream?): carry on
+                requestKeyframe()
+            }
+            if (catchingUp) { awaitingKey = true; continue }
+            if (awaitingKey && !key) continue
+            awaitingKey = false
             val frame = ByteBuffer.allocate(21 + data.size).putInt(myGen).putLong(info.presentationTimeUs)
                 .putLong(System.nanoTime() / 1000).put(if (key) 1 else 0).put(data).array()
             video?.let {
+                lastSentPts = info.presentationTimeUs
                 it.send(DisplayWire.FRAME, frame)
                 framesSent++
                 bytesSent += frame.size
@@ -322,6 +335,7 @@ class DisplaySession(
         }
     }
 
+    @Volatile private var awaitingKey = false
     @Volatile private var framesSent = 0
     @Volatile private var bytesSent = 0L
 
@@ -329,8 +343,9 @@ class DisplaySession(
         val frames = framesSent; val bytes = bytesSent
         framesSent = 0; bytesSent = 0
         if (frames == 0 && touchesOk == 0 && touchesFailed == 0) return
-        Log.d("display session $id: $frames frames, ${bytes * 8 / 5000} kbps, touches ok $touchesOk failed $touchesFailed, " +
-            "video ${if (video == null) "detached" else "attached"}")
+        Log.d("display session $id: $frames frames, ${bytes * 8 / 5000} kbps (budget ${budgetKbps()}), " +
+            "lag max ${lagMax / 1000} ms, touches ok $touchesOk failed $touchesFailed, video ${if (video == null) "detached" else "attached"}")
+        lagMax = 0
         touchesOk = 0; touchesFailed = 0
     }
 
@@ -352,9 +367,59 @@ class DisplaySession(
         else -> minOf(fps, 30)
     }
 
-    private fun budgetKbps(): Int = when (visibility) {
+    private fun budgetKbps(): Int = (when (visibility) {
         DisplayWire.VIS_FOCUSED -> kbps
         else -> kbps * 6 / 10
+    } * congestion).toInt().coerceAtLeast(500)
+
+    // MARK: Congestion
+    //
+    // The Mac acks every frame it receives; frame timestamps are on this phone's clock, so
+    // now − pts of an acked frame is how far behind the window is (capture → Mac). The video
+    // stream's adb window (2 MiB) would otherwise hide seconds of backlog from the sender.
+
+    /** 0.1…1: the share of the budget's bitrate the network takes. */
+    @Volatile private var congestion = 1.0
+    @Volatile private var catchingUp = false
+    @Volatile private var lastSentPts = 0L
+    @Volatile private var lastCut = 0L
+    @Volatile private var healthySince = 0L
+    @Volatile private var lagMax = 0L
+    @Volatile private var catchStart = 0L
+
+    private fun acked(pts: Long) {
+        val lag = System.nanoTime() / 1000 - pts
+        val now = SystemClock.uptimeMillis()
+        lagMax = maxOf(lagMax, lag)
+        when {
+            lag > 200_000 && !catchingUp -> {
+                // Behind: stop sending until what's in flight has arrived, then start again from
+                // a keyframe at a lower bitrate (drops the backlog instead of showing it late).
+                catchingUp = true
+                catchStart = now
+                if (now - lastCut > 1000) {
+                    congestion = maxOf(congestion * 0.7, 0.1)
+                    lastCut = now
+                    applyBudget()
+                }
+                healthySince = 0
+                Log.d("display session $id: ${lag / 1000} ms behind; dropping frames, bitrate ${budgetKbps()} kbps")
+            }
+            catchingUp && pts >= lastSentPts -> {
+                catchingUp = false // everything sent has arrived
+                requestKeyframe()
+                Log.d("display session $id: caught up")
+            }
+            lag < 80_000 && !catchingUp -> {
+                if (healthySince == 0L) healthySince = now
+                if (congestion < 1 && now - healthySince > 2000) {
+                    congestion = minOf(congestion * 1.1, 1.0)
+                    healthySince = now
+                    applyBudget()
+                }
+            }
+            else -> healthySince = 0
+        }
     }
 
     /** The frame-rate cap the current encoder was made with. */

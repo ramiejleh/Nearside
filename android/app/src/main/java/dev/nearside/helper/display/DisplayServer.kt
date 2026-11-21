@@ -24,6 +24,8 @@ object DisplayWire {
     const val NAV = 0x14; const val PING = 0x15; const val VISIBILITY = 0x16; const val CLOSE = 0x17
     const val SYNC = 0x18; const val SCROLL = 0x19; const val MOUSE = 0x1A
     const val KEY = 0x1B; const val TEXT = 0x1C; const val LAYOUT = 0x1D; const val PASTE = 0x1E
+    /** ACK: u64 pts of a video frame the Mac received. */
+    const val ACK = 0x1F
     // phone → Mac (control stream)
     const val TASK = 0x20; const val TASK_GONE = 0x21; const val PONG = 0x22; const val ERROR = 0x23
     // phone → Mac (video stream)

@@ -11,6 +11,8 @@ public enum DisplayWire {
     static let nav: UInt8 = 0x14, ping: UInt8 = 0x15, visibility: UInt8 = 0x16, close: UInt8 = 0x17
     static let sync: UInt8 = 0x18, scroll: UInt8 = 0x19, mouse: UInt8 = 0x1A
     static let key: UInt8 = 0x1B, text: UInt8 = 0x1C, layout: UInt8 = 0x1D, paste: UInt8 = 0x1E
+    /// A video frame arrived (its pts): the phone measures how far behind the stream is.
+    static let ack: UInt8 = 0x1F
     /// The helper reads control packets up to 1 MiB; a longer paste is cut.
     static let maxControlBody = 1024 * 1024 - 16
     // phone → Mac
@@ -121,6 +123,11 @@ public enum DisplayWire {
         var s = Substring(string)
         while s.utf8.count > maxControlBody { s = s.dropLast(max(1, s.count / 10)) }
         return packet(type, Data(s.utf8))
+    }
+
+    static func ack(ptsMicros: Int64) -> Data {
+        var b = Data(); b.appendBE(UInt64(bitPattern: ptsMicros))
+        return packet(ack, b)
     }
 
     static func ping(_ t0: UInt64) -> Data {
