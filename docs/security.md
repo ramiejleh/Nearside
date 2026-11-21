@@ -34,6 +34,11 @@ Out of scope: an attacker who has already unlocked the Mac as you, or who has ro
   Mac's token, which was written over the pinned Wi-Fi connection into a folder only the shell
   user can read. The Mac reads it back and compares locally; the token is never sent to an
   unproven device. A device that fails is not tried again until it's plugged in again.
+- Residual risk on the cable, stated plainly: adb's USB auth signs whatever challenge the device
+  sends before it can be proven (stock adb does the same). Someone with your phone plugged into
+  their own computer and a device in your Mac's USB port could relay one challenge and get adb
+  on your phone over their cable. The signature can't be reused on Wi-Fi (TLS 1.3 signs
+  differently), and nothing of yours is sent to their device.
 
 ## Mac ⇄ helper
 

@@ -39,8 +39,9 @@ without clicking:
 
 | Variable | Effect |
 |---|---|
-| `NEARSIDE_OPEN_APP` | Open windows on launch: comma-separated `pkg`, `pkg/activity` or `phone` |
+| `NEARSIDE_OPEN_APP` | Open windows on launch: comma-separated `pkg`, `pkg/activity` or `phone` (the phone window) |
 | `NEARSIDE_OPEN_APP_DELAY` | Seconds to wait before opening |
+| `NEARSIDE_OPEN_APP_GAP` | Seconds between the windows in `NEARSIDE_OPEN_APP` (default 4) |
 | `NEARSIDE_OPEN_NOTIFICATION` | Open a notification key in a window |
 | `NEARSIDE_TRACE` | Write a trace (frames, delays, audio, stats) to this file, and the shown picture to `<file>.png` once a second |
 | `NEARSIDE_TEST_INPUT` | Drive a window: `tap`, `click`, `scroll`, `wheel`, `pinch`, `mouse`, `type`, `keys`, `copy`, `paste`, `resize`, `size`, `hide`, `close`, `drop` |

@@ -108,14 +108,20 @@ public final class PhoneAppSession: @unchecked Sendable {
             box.value = await requestTicket()
             semaphore.signal()
         }
-        guard semaphore.wait(timeout: .now() + 5) == .success, let ticket = box.value,
-              let adb = Native.current() else { return false }
+        guard semaphore.wait(timeout: .now() + 5) == .success, let ticket = box.value else {
+            NSLog("Nearside: phone app \(target): no ticket from the phone (its helper didn't answer)")
+            return false
+        }
+        guard let adb = Native.current() else { NSLog("Nearside: phone app \(target): not connected"); return false }
         do {
             let ctl = try adb.open(Self.socket, window: 256 * 1024)
             try ctl.write(DisplayWire.hello(role: .control, session: id, ticket: ticket, token: token))
             // Nothing goes out (no app name, no input) and nothing is shown until the other end
             // proves it's our helper, not something squatting the socket name.
-            guard let ctlStart = awaitServer(ctl, role: .control, ticket: ticket) else { ctl.close(); return false }
+            guard let ctlStart = awaitServer(ctl, role: .control, ticket: ticket) else {
+                NSLog("Nearside: phone app \(target): the phone's display server didn't answer")
+                ctl.close(); return false
+            }
             if resume {
                 try ctl.write(DisplayWire.packet(DisplayWire.resume))
             } else {
@@ -143,6 +149,7 @@ public final class PhoneAppSession: @unchecked Sendable {
             if soundOnMac { Self.interactive { [self] in openAudio(adb, ticket) } }
             return true
         } catch {
+            NSLog("Nearside: phone app \(target): connecting failed (\(error))")
             return false
         }
     }
@@ -597,7 +604,10 @@ public final class PhoneAppSession: @unchecked Sendable {
         if changed, let onState { Task { @MainActor in onState(new) } }
     }
 
-    private func fail(_ message: String) { set(.failed(message)) }
+    private func fail(_ message: String) {
+        NSLog("Nearside: phone app \(target): failed: \(message)")
+        set(.failed(message))
+    }
 }
 
 private final class TicketBox: @unchecked Sendable { var value: Data? }

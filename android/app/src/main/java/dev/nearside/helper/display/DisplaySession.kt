@@ -296,7 +296,8 @@ class DisplaySession(
         val pkg = key.split('|').getOrNull(1)?.takeIf { it.matches(Regex("[A-Za-z0-9_.]+")) }
             ?: return fail(DisplayWire.ERR_NOT_FOUND, "not a notification")
         val existing = Hidden.rootTasks().firstOrNull { it.packageName == pkg && it.displayId != displayId }
-        existing?.let { server.releaseSoundOn(it.displayId) }
+        // Android lets go of the old window's claim a moment after it's released: move after that.
+        if (existing != null && server.releaseSoundOn(existing.displayId)) Thread.sleep(300)
         if (existing != null && Hidden.moveTask(existing.taskId, displayId, onTop = true)) {
             Log.d("display session $id: moved task ${existing.taskId} ($pkg) here for a notification")
         }
@@ -324,7 +325,8 @@ class DisplaySession(
         val pkg = component?.packageName ?: target
         // A running app is moved over, keeping its state, rather than started again.
         val existing = Hidden.rootTasks().firstOrNull { it.packageName == pkg && it.displayId != displayId }
-        existing?.let { server.releaseSoundOn(it.displayId) }
+        // Android lets go of the old window's claim a moment after it's released: move after that.
+        if (existing != null && server.releaseSoundOn(existing.displayId)) Thread.sleep(300)
         if (existing != null && Hidden.moveTask(existing.taskId, displayId, onTop = true)) {
             Log.d("display session $id: moved task ${existing.taskId} ($pkg) here")
             return
@@ -479,6 +481,8 @@ class DisplaySession(
             return
         }
         taskGone = true
+        // Moved elsewhere (into Home, another window, back onto the phone): its sound follows it.
+        if (task != null && !isHome) releaseSound()
         val reason = if (task != null) DisplayWire.GONE_MOVED else DisplayWire.GONE_EXITED
         Log.d("display session $id: task $taskId ${if (task != null) "moved to display ${task.displayId}" else "ended"}")
         ctl?.send(DisplayWire.TASK_GONE, byteArrayOf(reason.toByte()))
@@ -1039,20 +1043,22 @@ class DisplaySession(
 
     // MARK: - Closing
 
+    /** Its app is moving or moved to another window (see DisplayServer.releaseSoundOn). */
+    @Synchronized
+    fun releaseSound(): Boolean {
+        if (closed || !hasAudio) return false
+        hasAudio = false
+        audio.stop()
+        Log.d("display session $id: sound released (its app is moving to another window)")
+        return true
+    }
+
     /**
      * Ends the session. With [toPhone], the app moves back to the phone *under* whatever is showing
      * there, so it waits in Recents instead of popping up (releasing the display alone would put it
      * on top). Then the display and encoder go.
      */
     @Synchronized
-    /** Its app is moving to another window (see DisplayServer.releaseSoundOn). */
-    fun releaseSound() {
-        if (!hasAudio) return
-        hasAudio = false
-        audio.stop()
-        Log.d("display session $id: sound released (its app is moving to another window)")
-    }
-
     fun close(toPhone: Boolean, onTop: Boolean = false) {
         if (closed) return
         closed = true

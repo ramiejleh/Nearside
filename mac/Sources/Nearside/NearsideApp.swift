@@ -200,7 +200,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // NEARSIDE_OPEN_APP_DELAY=<s>: open later (with another app in front by then).
             let delay = Double(ProcessInfo.processInfo.environment["NEARSIDE_OPEN_APP_DELAY"] ?? "") ?? 1
             try? await Task.sleep(for: .seconds(delay))
+            // NEARSIDE_OPEN_APP_GAP=<s>: between windows (default 4).
+            let gap = Double(ProcessInfo.processInfo.environment["NEARSIDE_OPEN_APP_GAP"] ?? "") ?? 4
             for package in list.split(separator: ",").map(String.init) {
+                if package == "phone" {
+                    _ = await engine.phoneApps()
+                    statusItem?.phoneApps.openPhoneWindow()
+                    try? await Task.sleep(for: .seconds(gap))
+                    continue
+                }
                 // "pkg/activity" opens that activity even if it isn't in the launcher (test screens).
                 let parts = package.split(separator: "/", maxSplits: 1).map(String.init)
                 let direct = parts.count == 2 ? PhoneApp(package: parts[0], activity: parts[1], label: "Test") : nil
@@ -211,7 +219,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     continue
                 }
                 statusItem?.openPhoneApp(app)
-                try? await Task.sleep(for: .seconds(4))
+                try? await Task.sleep(for: .seconds(gap))
             }
         }
     }

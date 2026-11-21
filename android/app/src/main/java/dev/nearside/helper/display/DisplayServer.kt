@@ -2,6 +2,7 @@ package dev.nearside.helper.display
 
 import android.net.LocalServerSocket
 import android.net.LocalSocket
+import android.os.SystemClock
 import dev.nearside.helper.Log
 import java.io.DataInputStream
 import java.io.DataOutputStream
@@ -196,12 +197,20 @@ class DisplayServer(
             else { watching?.cancel(false); null }
     }
 
+    /** A window being opened since (uptime ms; 0: none): a start that never finishes is a hang too. */
+    @Volatile private var openingSince = 0L
+
     private fun watch() {
         if (dumped || sessions.isEmpty()) return
-        val stuck = sessions.values.filter { it.stuckFor(10_000) }
+        val stuck = sessions.values.filter { it.stuckFor(10_000) }.map { it.id }
         if (stuck.isEmpty()) return
+        dumpStacks("control stuck for ${stuck.joinToString()}")
+    }
+
+    private fun dumpStacks(why: String) {
+        if (dumped) return
         dumped = true
-        Log.d("watchdog: control stuck for ${stuck.joinToString { it.id }}; all threads:")
+        Log.d("watchdog: $why; all threads:")
         for ((thread, stack) in Thread.getAllStackTraces()) {
             Log.d("  \"${thread.name}\" ${thread.state}")
             stack.take(25).forEach { Log.d("      at $it") }
@@ -296,11 +305,16 @@ class DisplayServer(
             type == DisplayWire.RESUME && existing != null && !existing.isClosed -> existing.attachControl(conn)
             type == DisplayWire.OPEN && existing == null -> {
                 val open = DisplayWire.Open.parse(body) ?: return conn.close()
+                // Opening never takes 10 s: if it does, say where every thread is (one shot, off
+                // the server's lock, so a stuck lock can't hide it).
+                val started = SystemClock.uptimeMillis().also { openingSince = it }
+                watchdog.schedule({ if (openingSince == started) dumpStacks("opening a window takes over 10 s") }, 10, TimeUnit.SECONDS)
                 // Just after the helper starts, the app restarts once (SystemBars): give it a moment.
                 for (i in 0 until 50) { if (canNotify()) break; Thread.sleep(200) }
                 if (!canNotify()) {
                     conn.send(DisplayWire.ERROR, byteArrayOf(DisplayWire.ERR_LAUNCH.toByte()) +
                         "Nearside on your phone isn't running. Open it once, then try again.".toByteArray())
+                    openingSince = 0L
                     return conn.close()
                 }
                 // One phone window: our home screen is a single task, and a second window (or one
@@ -322,6 +336,8 @@ class DisplayServer(
                         else DisplayWire.ERR_LAUNCH to "couldn't start: $t"
                     conn.send(DisplayWire.ERROR, byteArrayOf(code.toByte()) + text.toByteArray())
                     return conn.close()
+                } finally {
+                    openingSince = 0L
                 }
                 session.attachControl(conn)
                 onSessionsChanged(sessions.size)
@@ -341,9 +357,8 @@ class DisplayServer(
      * to come back, say), the new window's claim is ignored, and once the old one lets go the
      * sound plays on the phone's speaker. (A home window keeps its sound: its other apps use it.)
      */
-    fun releaseSoundOn(displayId: Int) {
-        sessions.values.firstOrNull { it.displayId == displayId && !it.isHome }?.releaseSound()
-    }
+    fun releaseSoundOn(displayId: Int): Boolean =
+        sessions.values.firstOrNull { it.displayId == displayId && !it.isHome }?.releaseSound() ?: false
 
     fun ended(session: DisplaySession) {
         sessions.remove(session.id)
