@@ -34,26 +34,26 @@ an encrypted link on your own network.
 
 ## Features
 
-### 📋 Clipboard, both ways
+### Clipboard, both ways
 Copy on the phone, paste on the Mac — and back. Automatically, without opening anything on the
 phone. A searchable history in the menu bar puts any earlier clip back on both clipboards, and
 a small card tells you when something arrives. Items password managers mark as concealed are
 never recorded.
 
-### 🔔 Notifications
+### Notifications
 Your phone's notifications appear as native macOS notifications, with their buttons and inline
 replies. Dismiss one on either device and it's gone on both. **Open on Mac** opens a
 notification's app in a Mac window, right where the notification points.
 
-### 💬 Text messages
+### Text messages
 Read and send SMS in a Messages window on the Mac.
 
-### 📁 Files
+### Files
 Drag files onto the menu-bar icon to send them to the phone; use **Send to Mac** in Android's
 share sheet to put files in your Mac's Downloads. Drop files onto a phone app's window to share
 them straight into that app.
 
-### 📱 Phone apps on your Mac
+### Phone apps on your Mac
 Any app on your phone, in its own native Mac window — or a whole second phone with its own home
 screen:
 
