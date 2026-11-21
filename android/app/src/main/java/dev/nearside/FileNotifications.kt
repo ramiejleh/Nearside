@@ -23,7 +23,7 @@ object FileNotifications {
             PendingIntent.FLAG_IMMUTABLE,
         )
         val notification = Notification.Builder(context, CHANNEL)
-            .setSmallIcon(android.R.drawable.stat_sys_download_done)
+            .setSmallIcon(R.drawable.ic_notification)
             .setContentTitle("Received from your Mac")
             .setContentText("$name · in Downloads/Nearside")
             .setContentIntent(open)

@@ -1,5 +1,7 @@
 // Draws Nearside's app icon (macOS icon grid: an 824 pt rounded square on a 1024 canvas) and
 // writes an .icns. Run from the repo:  swift mac/scripts/make-icon.swift mac/Resources/AppIcon.icns
+// The logo's geometry is shared: change it here, in mac/Sources/Nearside/Logo.swift and in the
+// phone app's android/app/src/main/res/drawable/ic_launcher_foreground.xml and ic_notification.xml.
 import AppKit
 
 let out = CommandLine.arguments.dropFirst().first ?? "AppIcon.icns"

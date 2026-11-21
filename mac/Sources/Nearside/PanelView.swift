@@ -61,12 +61,7 @@ struct PanelView: View {
 
     private var header: some View {
         HStack(spacing: 10) {
-            Image(systemName: "link")
-                .font(.system(size: 13, weight: .bold))
-                .foregroundStyle(.white)
-                .frame(width: 26, height: 26)
-                .background(LinearGradient(colors: [.green, .teal], startPoint: .topLeading, endPoint: .bottomTrailing),
-                            in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+            LogoTile(size: 26)
             Text(showingSettings ? "Settings" : "Nearside")
                 .font(.system(size: 14, weight: .semibold))
                 .contentTransition(.opacity)

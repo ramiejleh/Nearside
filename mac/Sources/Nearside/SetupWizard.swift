@@ -81,13 +81,19 @@ struct SetupWizard: View {
 
     private var header: some View {
         HStack(spacing: 16) {
-            Image(systemName: icon)
-                .font(.system(size: 26, weight: .semibold))
-                .foregroundStyle(.white)
-                .frame(width: 56, height: 56)
-                .background(LinearGradient(colors: [.green, .teal], startPoint: .topLeading, endPoint: .bottomTrailing),
-                            in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-                .contentTransition(.symbolEffect(.replace))
+            Group {
+                if page == .welcome {
+                    LogoTile(size: 56)
+                } else {
+                    // Later pages: their symbol on the logo's tile.
+                    Image(systemName: icon)
+                        .font(.system(size: 26, weight: .semibold))
+                        .foregroundStyle(.white)
+                        .frame(width: 56, height: 56)
+                        .background(Color(nsColor: Logo.tileColor), in: RoundedRectangle(cornerRadius: 12.6, style: .continuous))
+                        .contentTransition(.symbolEffect(.replace))
+                }
+            }
             VStack(alignment: .leading, spacing: 4) {
                 Text(title).font(.title2.weight(.bold))
                 Text(subtitle).font(.callout).foregroundStyle(.secondary)

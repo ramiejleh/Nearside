@@ -293,12 +293,9 @@ final class StatusItemController: NSObject {
     /// Phone glyph plus the count of unseen phone clips; re-runs whenever those change.
     private func updateIcon() {
         withObservationTracking {
-            let symbol = switch engine.state {
-            case .connected: "smartphone"
-            case .searching, .needsSetup: "antenna.radiowaves.left.and.right.slash"
-            }
-            let image = NSImage(systemSymbolName: symbol, accessibilityDescription: "Nearside")
-            image?.isTemplate = true
+            // The logo's mark: solid when connected, outlined when the phone isn't reachable.
+            let image = Logo.menuBarMark(height: 13, outlined: engine.state != .connected)
+            image.accessibilityDescription = engine.state == .connected ? "Nearside, connected" : "Nearside, not connected"
             item.button?.image = image
             let unseen = engine.unseenIDs.count
             item.button?.title = unseen > 0 ? " \(unseen)" : ""

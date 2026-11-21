@@ -30,7 +30,7 @@ object InUseNotification {
             context, 0, Intent(context, StopReceiver::class.java), PendingIntent.FLAG_IMMUTABLE,
         )
         val notification = Notification.Builder(context, CHANNEL)
-            .setSmallIcon(android.R.drawable.ic_menu_view)
+            .setSmallIcon(dev.nearside.R.drawable.ic_notification)
             .setContentTitle(if (open == 1) "An app is open on your Mac" else "$open apps are open on your Mac")
             .setContentText("They can be used from your Mac while this phone is locked.")
             .setOngoing(true)

@@ -13,7 +13,7 @@ import android.widget.LinearLayout
 import android.widget.TextView
 import dev.nearside.link.HelperConnection
 
-/** PoC status screen: one glance tells whether each moving part is alive. */
+/** Status screen: one glance tells whether each moving part is alive. */
 class MainActivity : Activity() {
     private val handler = Handler(Looper.getMainLooper())
     private lateinit var statusView: TextView
@@ -31,7 +31,7 @@ class MainActivity : Activity() {
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(pad, pad * 2, pad, pad)
-            addView(TextView(context).apply { text = "Nearside PoC"; textSize = 24f })
+            addView(TextView(context).apply { text = "Nearside"; textSize = 24f })
             addView(statusView)
             addView(button("Disable battery optimisation") {
                 startActivity(
