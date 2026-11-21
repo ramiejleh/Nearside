@@ -202,9 +202,29 @@ class DisplaySession(
         val power = FakeContext.instance.getSystemService(android.os.PowerManager::class.java)
         if (power?.isInteractive != true) return Log.d("display session $id: task $taskId restarted with the phone's screen off; staying")
         Log.d("display session $id: task $taskId opened on the phone; moving it there")
+        matchPhone()
         Hidden.moveTask(taskId, 0, onTop = true)
         watcher.execute { runCatching { watchTasks() } } // tell the Mac now, not at the next poll
     }
+
+    /**
+     * Before an app goes back to the phone, give it the phone's size (in dp) here and let it lay
+     * itself out. Apps that handle size changes themselves don't all undo a layout when moved:
+     * YouTube, made wide in a window, kept its tablet layout on the phone until it was killed —
+     * yet it does switch back when its window shrinks. After this the move changes nothing but
+     * density, which they handle.
+     */
+    private fun matchPhone() = runCatching {
+        val metrics = android.util.DisplayMetrics()
+        @Suppress("DEPRECATION")
+        Hidden.displayManager.getDisplay(android.view.Display.DEFAULT_DISPLAY).getRealMetrics(metrics)
+        val nw = (metrics.widthPixels.toLong() * dpi / metrics.densityDpi).toInt() and 1.inv()
+        val nh = (metrics.heightPixels.toLong() * dpi / metrics.densityDpi).toInt() and 1.inv()
+        if (nw == w && nh == h) return@runCatching
+        display.resize(nw, nh, dpi)
+        Log.d("display session $id: phone-sized (${nw}x$nh@$dpi) before going back")
+        Thread.sleep(400) // the app's relayout
+    }.onFailure { Log.d("display session $id: couldn't match the phone's size: $it") }
 
     private fun watchTasks() {
         if (closed) return
@@ -541,6 +561,7 @@ class DisplaySession(
         // start making noise there.
         if (hasAudio && Media.pause(onOurs.mapNotNull { it.packageName }.toSet())) Thread.sleep(150)
         audio.stop()
+        if (toPhone && onOurs.isNotEmpty()) matchPhone()
         if (toPhone) onOurs.forEach { Hidden.moveTask(it.taskId, 0, onTop = false) }
         runCatching { awake?.release() }
         runCatching { keyboard?.close() }
