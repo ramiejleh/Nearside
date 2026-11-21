@@ -31,8 +31,8 @@ import java.util.concurrent.TimeUnit
  *
  * Only a process the activity manager knows may add windows on Android 17, and providing insets
  * needs the shell's STATUS_BAR_SERVICE: so this runs in its own process of our app as an
- * instrumentation started by the helper (`am instrument --no-hidden-api-checks`), holding the
- * shell's permissions. Shell and apps can't reach each other's sockets (SELinux), so the helper
+ * instrumentation started by the helper (`am instrument --no-hidden-api-checks`), borrowing two of
+ * the shell's permissions while it adds a window. Shell and apps can't reach each other's sockets (SELinux), so the helper
  * gets [binder] from [SystemBarsProvider] and calls it (shell uid only); it ends when the helper goes.
  */
 @SuppressLint("PrivateApi", "WrongConstant")
@@ -62,7 +62,6 @@ class SystemBarsHost : Instrumentation() {
     }
 
     override fun onStart() {
-        uiAutomation.adoptShellPermissionIdentity()
         context.getSystemService(DisplayManager::class.java).registerDisplayListener(object : DisplayManager.DisplayListener {
             override fun onDisplayAdded(displayId: Int) {}
             override fun onDisplayChanged(displayId: Int) {}
@@ -89,7 +88,6 @@ class SystemBarsHost : Instrumentation() {
         instance = null
         binder = null
         onMain { windows.keys.toList().forEach(::remove) }
-        uiAutomation.dropShellPermissionIdentity()
         finish(0, Bundle())
     }
 
@@ -107,8 +105,14 @@ class SystemBarsHost : Instrumentation() {
         failure?.let { throw it }
     }
 
+    /** Only the two shell permissions a bar window needs, and only while adding it. */
     private fun add(displayId: Int, top: Int, bottom: Int) {
         remove(displayId)
+        uiAutomation.adoptShellPermissionIdentity("android.permission.INTERNAL_SYSTEM_WINDOW", "android.permission.STATUS_BAR_SERVICE")
+        try { addWindow(displayId, top, bottom) } finally { uiAutomation.dropShellPermissionIdentity() }
+    }
+
+    private fun addWindow(displayId: Int, top: Int, bottom: Int) {
         val display = context.getSystemService(DisplayManager::class.java).getDisplay(displayId) ?: error("no display $displayId")
         val window = context.createDisplayContext(display).createWindowContext(TYPE_STATUS_BAR_ADDITIONAL, null)
         val params = WindowManager.LayoutParams(1, 1, TYPE_STATUS_BAR_ADDITIONAL,
