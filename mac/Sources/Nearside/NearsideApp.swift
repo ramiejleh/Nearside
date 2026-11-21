@@ -127,7 +127,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard let list = ProcessInfo.processInfo.environment["NEARSIDE_OPEN_APP"] else { return }
         Task { @MainActor in
             while engine.state != .connected { try? await Task.sleep(for: .milliseconds(300)) }
-            try? await Task.sleep(for: .seconds(1))
+            // NEARSIDE_OPEN_APP_DELAY=<s>: open later (with another app in front by then).
+            let delay = Double(ProcessInfo.processInfo.environment["NEARSIDE_OPEN_APP_DELAY"] ?? "") ?? 1
+            try? await Task.sleep(for: .seconds(delay))
             for package in list.split(separator: ",").map(String.init) {
                 // "pkg/activity" opens that activity even if it isn't in the launcher (test screens).
                 let parts = package.split(separator: "/", maxSplits: 1).map(String.init)

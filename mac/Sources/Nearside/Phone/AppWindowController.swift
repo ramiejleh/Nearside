@@ -100,7 +100,7 @@ final class AppWindowController: NSObject, NSWindowDelegate {
 
     func show() {
         window.makeKeyAndOrderFront(nil)
-        NSApp.activate()
+        PhoneWindowManager.bringToFront()
     }
 
     // MARK: - States

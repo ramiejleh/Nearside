@@ -97,7 +97,25 @@ final class PhoneWindowManager {
         let wanted: NSApplication.ActivationPolicy = windows.isEmpty ? .accessory : .regular
         guard NSApp.activationPolicy() != wanted else { return }
         NSApp.setActivationPolicy(wanted)
-        if wanted == .regular { NSApp.activate() } // otherwise the menu bar may not switch over
+        if wanted == .regular { Self.bringToFront() } // otherwise the menu bar may not switch over
+    }
+
+    /**
+     * Makes Nearside the active app, so a phone app opens in front. Since macOS 14
+     * `NSApp.activate()` only asks, and it's refused while another app is in front (the launcher
+     * panel doesn't activate us, and Touch ID and the connection take a moment): the window
+     * opened behind and needed a click on the Dock icon (user report). The older call still
+     * brings us forward (verified on macOS 27 with Finder in front); if a later macOS ignores it
+     * too, LaunchServices is asked to open us, as a Dock click does.
+     */
+    static func bringToFront() {
+        NSApp.activate(ignoringOtherApps: true) // deprecated, but the only call that isn't just a request
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+            guard !NSApp.isActive else { return }
+            let configuration = NSWorkspace.OpenConfiguration()
+            configuration.activates = true
+            NSWorkspace.shared.openApplication(at: Bundle.main.bundleURL, configuration: configuration)
+        }
     }
 
     // MARK: - Dock icon
