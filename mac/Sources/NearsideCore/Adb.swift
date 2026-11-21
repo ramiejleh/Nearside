@@ -165,24 +165,27 @@ public enum Adb {
     }
 
     static let phoneInbox = "/sdcard/Download/Nearside"
+    /// Files dropped on a phone-app window: the Nearside app serves them to the app (DroppedFiles).
+    static let appShareFolder = "/sdcard/Android/data/dev.nearside/files/shared"
 
     /// Single-quotes a string for the phone's shell.
     static func shellQuote(_ s: String) -> String {
         "'" + s.replacingOccurrences(of: "'", with: "'\\''") + "'"
     }
 
-    /// Pushes a file into Download/Nearside, renaming "x.pdf" to "x (2).pdf" if it exists.
-    /// Returns the name it got on the phone, or an error message.
-    static func push(_ serial: String, file: URL) -> Swift.Result<String, PushError> {
-        _ = shell(serial, "mkdir -p \(shellQuote(phoneInbox))")
+    /// Pushes a file into Download/Nearside (or `folder`), renaming "x.pdf" to "x (2).pdf" if it
+    /// exists. Returns the name it got on the phone, or an error message.
+    static func push(_ serial: String, file: URL, to folder: String = phoneInbox) -> Swift.Result<String, PushError> {
+        // The app makes its own folder (one the shell made there would be closed to the app).
+        if folder == phoneInbox { _ = shell(serial, "mkdir -p \(shellQuote(folder))") }
         let name = FileNames.safe(file.lastPathComponent)
         var candidate = name
         var n = 2
-        while shell(serial, "test -e \(shellQuote("\(phoneInbox)/\(candidate)"))").ok, n < 1000 {
+        while shell(serial, "test -e \(shellQuote("\(folder)/\(candidate)"))").ok, n < 1000 {
             candidate = FileNames.numbered(name, n)
             n += 1
         }
-        let remote = "\(phoneInbox)/\(candidate)"
+        let remote = "\(folder)/\(candidate)"
         guard let adb = Native.current() else { return .failure(PushError(message: "not connected")) }
         do {
             // Dated now (not the Mac's modification date) so it shows at the top of Downloads.
@@ -190,8 +193,10 @@ public enum Adb {
         } catch {
             return .failure(PushError(message: "\(error)"))
         }
-        let uri = URL(fileURLWithPath: remote).absoluteString
-        _ = shell(serial, "am broadcast -a android.intent.action.MEDIA_SCANNER_SCAN_FILE -d \(shellQuote(uri))")
+        if folder == phoneInbox { // shows in Downloads (app drops are the app's own files)
+            let uri = URL(fileURLWithPath: remote).absoluteString
+            _ = shell(serial, "am broadcast -a android.intent.action.MEDIA_SCANNER_SCAN_FILE -d \(shellQuote(uri))")
+        }
         return .success(candidate)
     }
 

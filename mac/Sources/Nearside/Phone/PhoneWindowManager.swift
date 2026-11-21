@@ -66,6 +66,11 @@ final class PhoneWindowManager {
         }
     }
 
+    /// Files dropped on a window that its app couldn't take (the phone window just beeps).
+    func shareFailed(package: String, accepts: Bool) {
+        if let window = windows.first(where: { $0.app.package == package }) { window.shareFailed(accepts: accepts) } else { NSSound.beep() }
+    }
+
     /// A phone notification's "Open on Mac": in its app's window (opening one if needed), where
     /// the notification opens as tapping it on the phone would.
     func openNotification(key: String, package: String, label: String) {

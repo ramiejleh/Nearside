@@ -213,6 +213,27 @@ final class StreamView: NSView {
 
     private var displayLink: CADisplayLink?
 
+    // MARK: Dropped files: shared to the app in the window
+
+    var onDropFiles: (([URL]) -> Void)? {
+        didSet { if onDropFiles == nil { unregisterDraggedTypes() } else { registerForDraggedTypes([.fileURL]) } }
+    }
+
+    private func droppedFiles(_ info: NSDraggingInfo) -> [URL] {
+        info.draggingPasteboard.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) as? [URL] ?? []
+    }
+
+    override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
+        droppedFiles(sender).isEmpty ? [] : .copy
+    }
+
+    override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
+        let urls = droppedFiles(sender)
+        guard !urls.isEmpty, let onDropFiles else { return false }
+        onDropFiles(urls)
+        return true
+    }
+
     /// Paces drawing to the screen this window is on (see MetalRenderer).
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()

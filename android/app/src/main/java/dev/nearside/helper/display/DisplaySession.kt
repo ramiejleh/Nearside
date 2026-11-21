@@ -166,6 +166,7 @@ class DisplaySession(
             }
             DisplayWire.NAV -> if (b.remaining() >= 1) nav(b.get().toInt())
             DisplayWire.NOTIFICATION -> if (!isHome) utf8(b).let { key -> watcher.execute { openNotification(key) } }
+            DisplayWire.SHARE -> utf8(b).lines().filter { it.isNotBlank() }.take(50).let { names -> watcher.execute { shareInto(names) } }
             DisplayWire.RECENTS -> if (isHome) watcher.execute { runCatching { sendRecents() } }
             DisplayWire.TASK_FRONT -> if (isHome && b.remaining() >= 4) b.int.let { t -> if (onDisplay(t)) Hidden.taskToFront(t) }
             DisplayWire.TASK_REMOVE -> if (isHome && b.remaining() >= 4) b.int.let { t -> if (onDisplay(t) && t != homeTask) Hidden.removeTask(t) }
@@ -266,6 +267,16 @@ class DisplaySession(
                 launchApp(pkg)
             }
         }, 2, TimeUnit.SECONDS)
+    }
+
+    /** Files dropped on the window: the app on top of the display gets them, as a share. */
+    private fun shareInto(names: List<String>) {
+        val apps = Hidden.rootTasks().filter { it.displayId == displayId && it.taskId != homeTask && it.packageName != null }
+        val top = apps.firstOrNull { it.visible } ?: apps.firstOrNull()
+            ?: return Log.d("display session $id: dropped files, but no app to give them to")
+        AppLink.deliver(org.json.JSONObject().put("t", "share-into").put("pkg", top.packageName)
+            .put("display", displayId).put("names", org.json.JSONArray(names)))
+        Log.d("display session $id: ${names.size} file(s) shared to ${top.packageName}")
     }
 
     private fun launchApp(target: String) {

@@ -50,6 +50,8 @@ object DisplayWire {
      */
     const val NOTIFICATION_TARGET = "notification:"
     const val NOTIFICATION = 0x45
+    /** Files dropped on the window (utf8 names, one per line, already in the app's shared folder): shared to the app on top. */
+    const val SHARE = 0x46
     // Phone window, Mac → phone: RECENTS (no body), TASK_FRONT / TASK_REMOVE (i32 task), DOCK (utf8
     // packages, one per line). Phone → Mac: TASKS (utf8 JSON [{id, pkg}], top first), SNAPSHOT
     // (i32 task + JPEG).

@@ -152,6 +152,10 @@ final class AppWindowController: NSObject, NSWindowDelegate {
             showVideoSize()
         }
         stream.session = session
+        stream.onDropFiles = { [weak self, weak engine] urls in
+            guard let self, let engine, !locked else { return }
+            engine.shareFiles(urls, into: session)
+        }
         window.initialFirstResponder = stream
         session.setKeyboardLayout(Self.keyboardLayout())
         NotificationCenter.default.addObserver(self, selector: #selector(keyboardLayoutChanged),
@@ -308,6 +312,16 @@ final class AppWindowController: NSObject, NSWindowDelegate {
                 Trace.log("test type sent")
                 return
             }
+            if mode == "drop", let path = ProcessInfo.processInfo.environment["NEARSIDE_TEST_FILE"] {
+                // A dropped file (as from Finder), then Back after a while (dismisses the share screen).
+                try? await Task.sleep(for: .seconds(2))
+                stream.onDropFiles?([URL(fileURLWithPath: path)])
+                Trace.log("test drop sent")
+                try? await Task.sleep(for: .seconds(8))
+                session.back()
+                Trace.log("test drop: back")
+                return
+            }
             if mode == "size", let spec = ProcessInfo.processInfo.environment["NEARSIDE_TEST_SIZE"],
                let first = PhoneSize(rawValue: spec) {
                 // Size names: switch, optionally to a second (NEARSIDE_TEST_SIZE2) 8 s later, then
@@ -401,6 +415,13 @@ final class AppWindowController: NSObject, NSWindowDelegate {
             touch(.up, 0.5, 0.3)
             NSLog("Nearside: test input sent")
         }
+    }
+
+    /// Dropped files the app couldn't take: said in the title bar for a few seconds.
+    func shareFailed(accepts: Bool) {
+        window.subtitle = accepts ? "Couldn't share the files with \(app.label)" : "\(app.label) can't open files like these"
+        NSSound.beep()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 5) { [weak self] in self?.window.subtitle = "" }
     }
 
     /// A notification of this window's app: it opens here, as tapping it would.

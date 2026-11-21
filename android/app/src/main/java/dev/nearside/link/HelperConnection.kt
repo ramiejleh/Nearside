@@ -41,6 +41,7 @@ object HelperConnection {
     internal fun attached(h: IHelper, appContext: Context) {
         context = appContext
         helper = h
+        dev.nearside.phone.DroppedFiles.prepare(appContext)
         Status.lastEvent = "linked to helper"
         runCatching {
             h.asBinder().linkToDeath({
@@ -70,6 +71,10 @@ object HelperConnection {
             "file-received" -> context?.let { FileNotifications.received(it, msg.optString("name")) }
             "sms-threads", "sms-thread", "sms-send", "sms-read" -> context?.let { SmsBridge.handle(it, msg) }
             "notif-open" -> NotificationMirror.instance?.open(msg.optString("key"), msg.optInt("display", -1))
+            "share-into" -> context?.let { c ->
+                val names = msg.optJSONArray("names")?.let { a -> (0 until a.length()).map { a.optString(it) } }.orEmpty()
+                Thread { dev.nearside.phone.DroppedFiles.share(c, names, msg.optString("pkg"), msg.optInt("display", -1)) }.start()
+            }
             "display-state" -> context?.let { InUseNotification.update(it, msg.optInt("open")) }
             "notif-action" -> NotificationMirror.instance?.runAction(
                 msg.optString("key"),

@@ -132,6 +132,10 @@ final class PhoneWindowController: NSObject, NSWindowDelegate {
         session.onTasks = { [weak self] tasks in self?.recentsModel.tasks = tasks }
         session.onSnapshot = { [weak self] task, jpeg in self?.recentsModel.snapshots[task] = NSImage(data: jpeg) }
         stream.session = session
+        stream.onDropFiles = { [weak self, weak engine] urls in // to the app on top
+            guard let self, let engine, !locked else { return }
+            engine.shareFiles(urls, into: session)
+        }
         window.initialFirstResponder = stream
         session.setKeyboardLayout(AppWindowController.keyboardLayout())
         session.setDock(dock())

@@ -229,6 +229,7 @@ final class StatusItemController: NSObject {
 
         updateIcon()
         engine.onPhoneAppsStop = { [weak self] in self?.phoneApps.closeAll() }
+        engine.onShareFailed = { [weak self] pkg, accepts in self?.phoneApps.shareFailed(package: pkg, accepts: accepts) }
         engine.onOpenNotificationOnMac = { [weak self] key, pkg, app in
             self?.phoneApps.openNotification(key: key, package: pkg, label: app)
         }

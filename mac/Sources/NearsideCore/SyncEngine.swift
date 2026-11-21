@@ -231,6 +231,8 @@ public final class SyncEngine {
             }
         case "apps-stop":
             onPhoneAppsStop?()
+        case "display-share-failed":
+            if let pkg = message["pkg"] as? String { onShareFailed?(pkg, message["accepts"] as? Bool ?? false) }
         case "clip":
             guard state == .connected, let text = message["text"] as? String, !text.isEmpty else { return }
             pasteboard.write(text)
@@ -287,6 +289,34 @@ public final class SyncEngine {
             }
         }
     }
+
+    /// Files dropped on a phone-app window: pushed (shown as transfers), then shared to the app in it.
+    public func shareFiles(_ urls: [URL], into session: PhoneAppSession) {
+        guard state == .connected, let serial = adbSerial else { return }
+        let jobs = urls.map { url in (url, Transfer(id: UUID(), name: url.lastPathComponent, direction: .toPhone, status: .inProgress)) }
+        for (_, transfer) in jobs { addTransfer(transfer) }
+        Task {
+            var names: [String] = []
+            for (url, transfer) in jobs {
+                var isDirectory: ObjCBool = false
+                guard FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory), !isDirectory.boolValue else {
+                    setStatus(transfer.id, .failed("Folders can't be sent yet"))
+                    continue
+                }
+                switch await Task.detached(operation: { Adb.push(serial, file: url, to: Adb.appShareFolder) }).value {
+                case .success(let name):
+                    setStatus(transfer.id, .done(nil))
+                    names.append(name)
+                case .failure(let error):
+                    setStatus(transfer.id, .failed(Self.friendly(error.message)))
+                }
+            }
+            if !names.isEmpty { session.share(names) }
+        }
+    }
+
+    /// The app in a window couldn't take dropped files: (package, whether it takes that kind at all).
+    public var onShareFailed: ((String, Bool) -> Void)?
 
     /// The phone shared a file with us: pull it into ~/Downloads.
     private func receiveFile(_ message: [String: Any]) {

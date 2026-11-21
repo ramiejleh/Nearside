@@ -30,6 +30,8 @@ public enum DisplayWire {
     static let recents: UInt8 = 0x41, taskFront: UInt8 = 0x42, taskRemove: UInt8 = 0x43, dock: UInt8 = 0x44
     /// Mac → phone: open a notification (utf8 key) in this window, as tapping it would.
     static let notification: UInt8 = 0x45
+    /// Mac → phone: files dropped on the window (utf8 names, one per line, already pushed).
+    static let share: UInt8 = 0x46
 
     /// OPEN target for a window opened from a notification: its key in hex (keys hold any characters).
     public static func notificationTarget(_ key: String) -> String {

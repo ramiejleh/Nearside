@@ -357,6 +357,11 @@ public final class PhoneAppSession: @unchecked Sendable {
         send(DisplayWire.utf8(DisplayWire.notification, key))
     }
 
+    /// Files already pushed to the app's shared folder: the app in the window gets them as a share.
+    public func share(_ names: [String]) {
+        send(DisplayWire.utf8(DisplayWire.share, names.joined(separator: "\n")))
+    }
+
     /// Kept, and sent again after a reconnect.
     public func setKeyboardLayout(_ hint: String) {
         lock.withLock { layoutHint = hint }

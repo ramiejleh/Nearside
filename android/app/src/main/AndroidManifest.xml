@@ -109,6 +109,12 @@
             android:authorities="dev.nearside.link"
             android:exported="true"
             android:permission="android.permission.INTERACT_ACROSS_USERS_FULL" />
+        <!-- Files dropped on a Mac window, served to the app they're shared with (a grant each). -->
+        <provider
+            android:name=".phone.DroppedFiles"
+            android:authorities="dev.nearside.dropped"
+            android:exported="false"
+            android:grantUriPermissions="true" />
         <!-- Hands the helper SystemBarsHost's Binder; in the host's process. -->
         <provider
             android:name=".phone.SystemBarsProvider"
