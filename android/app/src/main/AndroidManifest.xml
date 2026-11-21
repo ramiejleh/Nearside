@@ -110,4 +110,8 @@
             android:exported="true"
             android:permission="android.permission.INTERACT_ACROSS_USERS_FULL" />
     </application>
+    <!-- Probe (throwaway): system-bar insets for our displays, with the shell's permissions. -->
+    <instrumentation
+        android:name=".helper.probe.InsetsInstrumentation"
+        android:targetPackage="dev.nearside" />
 </manifest>
