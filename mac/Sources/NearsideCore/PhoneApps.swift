@@ -142,8 +142,8 @@ extension SyncEngine {
     }
 
     /// A session showing `app` in a window of `width`×`height` pixels (start it to connect).
-    public func makePhoneAppSession(_ app: PhoneApp, width: Int, height: Int, dpi: Int, cropPixels: Int = 0) -> PhoneAppSession {
-        PhoneAppSession(target: app.id, width: width, height: height, dpi: dpi, cropPixels: cropPixels, token: Token.value) { [weak self] in
+    public func makePhoneAppSession(_ app: PhoneApp, width: Int, height: Int, dpi: Int) -> PhoneAppSession {
+        PhoneAppSession(target: app.id, width: width, height: height, dpi: dpi, token: Token.value) { [weak self] in
             await self?.displayTicket()
         }
     }
@@ -161,26 +161,21 @@ public enum PhoneDisplaySize {
         return (Int(w) & ~1, Int(h) & ~1, max(Int((160 * scale * shrink).rounded()), 72))
     }
 
-    /// The same, for an app that leaves `cropTopDp` empty at the top (Instagram keeps the phone's
-    /// status-bar height free in any window): the display is that much taller and its top
-    /// `cropPixels` rows aren't shown, so the app's real content fills the window.
-    public static func forWindow(_ points: CGSize, scale: CGFloat, cropTopDp: Int)
-        -> (width: Int, height: Int, dpi: Int, cropPixels: Int) {
-        let s = forWindow(CGSize(width: points.width, height: points.height + CGFloat(max(cropTopDp, 0))), scale: scale)
-        let crop = min(Int((Double(max(cropTopDp, 0)) * Double(s.dpi) / 160).rounded()), s.height / 2)
-        return (s.width, s.height, s.dpi, crop)
-    }
-
     /// The display for a size: `dp` at the phone's own density (so an app moving between the
     /// phone and a window, or between sizes, only ever changes size, never density: YouTube kept a
-    /// density-changed layout until killed), plus `cropTopDp` above that isn't shown.
-    public static func forPreset(_ dp: CGSize, density: Int, cropTopDp: Int = 0)
-        -> (width: Int, height: Int, dpi: Int, cropPixels: Int) {
+    /// density-changed layout until killed). The phone gives it its status and gesture bars, and
+    /// the window hides the status bar (see `shownDp`).
+    public static func forPreset(_ dp: CGSize, density: Int) -> (width: Int, height: Int, dpi: Int) {
         let scale = Double(density) / 160
-        let crop = Int((Double(max(cropTopDp, 0)) * scale).rounded()) & ~1
         let w = Int((dp.width * scale).rounded()) & ~1
-        let h = (Int((dp.height * scale).rounded()) & ~1) + crop
-        return (min(w, 4096), min(h, 4096), density, crop)
+        let h = Int((dp.height * scale).rounded()) & ~1
+        return (min(w, 4096), min(h, 4096), density)
+    }
+
+    /// What a window shows of a display `dp` in size: all but the phone's status bar at the top
+    /// (the phone draws it there so apps lay out as on the phone, but there's nothing in it).
+    public static func shownDp(_ dp: CGSize, statusBarDp: Int) -> CGSize {
+        CGSize(width: dp.width, height: dp.height - CGFloat(max(statusBarDp, 0)))
     }
 
     /// A y (0…1) in the shown part → y (0…1) in the whole display.

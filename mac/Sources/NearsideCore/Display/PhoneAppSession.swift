@@ -31,6 +31,9 @@ public final class PhoneAppSession: @unchecked Sendable {
     /// Phone window: its apps (top first), and their pictures as they come, on the main thread.
     public var onTasks: (@MainActor @Sendable ([PhoneTask]) -> Void)?
     public var onSnapshot: (@MainActor @Sendable (Int32, Data) -> Void)?
+    /// Rows at the top of the display the window doesn't show (the phone's status bar there),
+    /// on the main thread.
+    public var onCrop: (@MainActor @Sendable (Int) -> Void)?
     /// The video's pixel size (it changes after a resize), on the main thread.
     public var onVideoSize: (@MainActor @Sendable (CGSize) -> Void)?
 
@@ -46,7 +49,7 @@ public final class PhoneAppSession: @unchecked Sendable {
     private var gen: UInt32 = 0
     private var closing = false
     private var size: (width: Int, height: Int, dpi: Int)
-    /// Top rows of the display the window doesn't show (see PhoneDisplaySize); input maps past them.
+    /// Top rows of the display the window doesn't show (the status bar's); input maps past them.
     private var cropPixels = 0
     private let fps: Int
     private let kbps: Int
@@ -60,11 +63,10 @@ public final class PhoneAppSession: @unchecked Sendable {
     static let socket = "localabstract:nearside-display"
     static let graceSeconds: TimeInterval = 30
 
-    init(target: String, width: Int, height: Int, dpi: Int, cropPixels: Int = 0, fps: Int = 60, kbps: Int = 12_000,
+    init(target: String, width: Int, height: Int, dpi: Int, fps: Int = 60, kbps: Int = 12_000,
          token: String, requestTicket: @escaping @Sendable () async -> Data?) {
         self.target = target
         self.size = (width & ~1, height & ~1, dpi)
-        self.cropPixels = cropPixels
         self.fps = fps
         self.kbps = kbps
         self.token = token
@@ -169,6 +171,9 @@ public final class PhoneAppSession: @unchecked Sendable {
                 if let onSnapshot { Task { @MainActor in onSnapshot(task, jpeg) } }
             case .secure(let on):
                 if let onSecure { Task { @MainActor in onSecure(on) } }
+            case .insets(let top, _):
+                lock.withLock { cropPixels = top }
+                if let onCrop { Task { @MainActor in onCrop(top) } }
             case .thermal(let reduced):
                 if let onThermal { Task { @MainActor in onThermal(reduced) } }
             case let .pong(t0, phone):
@@ -361,8 +366,8 @@ public final class PhoneAppSession: @unchecked Sendable {
     }
 
     /// The window's new pixel size; the phone re-lays the app out for it.
-    public func resize(width: Int, height: Int, dpi: Int, cropPixels: Int = 0) {
-        lock.withLock { size = (width & ~1, height & ~1, dpi); self.cropPixels = cropPixels }
+    public func resize(width: Int, height: Int, dpi: Int) {
+        lock.withLock { size = (width & ~1, height & ~1, dpi) }
         send(DisplayWire.resize(width: width & ~1, height: height & ~1, dpi: dpi))
     }
 

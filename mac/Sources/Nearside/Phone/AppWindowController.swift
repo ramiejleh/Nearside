@@ -14,21 +14,15 @@ final class AppWindowController: NSObject, NSWindowDelegate {
     private let overlay = OverlayHostingView(rootView: AppWindowOverlay(state: .opening, label: ""))
     private var state: PhoneAppSession.State = .opening
     private let onClosed: (AppWindowController) -> Void
+    /// The status bar's rows at the top of the display (the phone says; see PhoneDisplaySize).
     private var cropPixels = 0
+    private var videoPixels: CGSize?
     /// Covered after the Mac slept or locked, until Touch ID (AuthGate).
     private var locked = false
     /// The vertical toolbar beside the app: Back, then the toolbox.
     private var tools: SideToolbar!
     /// The app's window blocks capture (FLAG_SECURE): the picture is black, so say why.
     private var secure = false
-
-    /// Apps that leave the phone's status-bar height empty at the top of any window. A per-app
-    /// default ("PhoneApp.hideTopBand.<package>") overrides the list either way.
-    static let topBandApps: Set<String> = ["com.instagram.android"]
-
-    private var topBandDp: Int {
-        hidesTopBand ? PhoneInfo.statusBarDp : 0
-    }
 
     // MARK: Size (the toolbox): a preset, never a free resize
 
@@ -39,10 +33,12 @@ final class AppWindowController: NSObject, NSWindowDelegate {
     }
 
     private var dp: CGSize { size.dp(phone: PhoneInfo.screenDp) }
+    /// What the window shows: all but the status bar the phone gives the display.
+    private var shownDp: CGSize { PhoneDisplaySize.shownDp(dp, statusBarDp: PhoneInfo.statusBarDp) }
 
-    /// The display keeps the preset's dp (2 px per dp, capped); the window only scales it.
-    private func displaySize() -> (width: Int, height: Int, dpi: Int, cropPixels: Int) {
-        PhoneDisplaySize.forPreset(dp, density: PhoneInfo.densityDpi, cropTopDp: topBandDp)
+    /// The display keeps the preset's dp at the phone's density; the window only scales it.
+    private func displaySize() -> (width: Int, height: Int, dpi: Int) {
+        PhoneDisplaySize.forPreset(dp, density: PhoneInfo.densityDpi)
     }
 
     /// Window points per dp: saved per app and size, else what fits the screen.
@@ -50,13 +46,13 @@ final class AppWindowController: NSObject, NSWindowDelegate {
         let saved = UserDefaults.standard.double(forKey: "PhoneApp.zoom.\(app.package).\(size.rawValue)")
         if saved > 0 { return saved }
         let screen = (window.screen ?? NSScreen.main)?.visibleFrame.size ?? CGSize(width: 1440, height: 875)
-        return PhoneSize.fittingZoom(dp, chrome: CGSize(width: SideToolbar.width, height: window.frame.height - window.contentLayoutRect.height),
+        return PhoneSize.fittingZoom(shownDp, chrome: CGSize(width: SideToolbar.width, height: window.frame.height - window.contentLayoutRect.height),
                                      screen: screen)
     }
 
     /// The window to the size's shape at `zoom`, its top-left corner kept.
     private func fitWindow(zoom z: CGFloat, animate: Bool) {
-        let content = NSSize(width: (dp.width * z).rounded() + SideToolbar.width, height: (dp.height * z).rounded())
+        let content = NSSize(width: (shownDp.width * z).rounded() + SideToolbar.width, height: (shownDp.height * z).rounded())
         var frame = window.frameRect(forContentRect: NSRect(origin: .zero, size: content))
         frame.origin = NSPoint(x: window.frame.minX, y: window.frame.maxY - frame.height)
         if let visible = (window.screen ?? NSScreen.main)?.visibleFrame { // stay on screen
@@ -105,8 +101,6 @@ final class AppWindowController: NSObject, NSWindowDelegate {
             .button(id: PhoneSize.phone.rawValue, symbol: PhoneSize.phone.symbol, label: "Phone size (⌃⌘1)") { [weak self] in self?.setSize(.phone) },
             .button(id: PhoneSize.foldable.rawValue, symbol: PhoneSize.foldable.symbol, label: "Foldable size (⌃⌘2)") { [weak self] in self?.setSize(.foldable) },
             .button(id: PhoneSize.tablet.rawValue, symbol: PhoneSize.tablet.symbol, label: "Tablet size (⌃⌘3)") { [weak self] in self?.setSize(.tablet) },
-            .separator,
-            .button(id: "crop", symbol: "rectangle.topthird.inset.filled", label: "Hide Top Bar") { [weak self] in self?.toggleTopBar(nil) },
             .spacer,
             .button(id: "toPhone", symbol: "iphone.and.arrow.forward", label: "Open on Phone") { [weak self] in self?.openOnPhone() },
         ])
@@ -131,9 +125,7 @@ final class AppWindowController: NSObject, NSWindowDelegate {
         stream.macShortcuts = ["=", "+", "-", "0"] // View → Larger / Smaller / Actual Size
         window.delegate = self
         let size = displaySize()
-        cropPixels = size.cropPixels
-        renderer.cropPixels = size.cropPixels
-        session = engine.makePhoneAppSession(app, width: size.width, height: size.height, dpi: size.dpi, cropPixels: size.cropPixels)
+        session = engine.makePhoneAppSession(app, width: size.width, height: size.height, dpi: size.dpi)
         render(.opening)
 
         session.onFrame = { [renderer] frame in renderer.show(frame) }
@@ -149,7 +141,14 @@ final class AppWindowController: NSObject, NSWindowDelegate {
         }
         session.onVideoSize = { [weak self] size in
             guard let self else { return }
-            stream.videoSize = CGSize(width: size.width, height: size.height - CGFloat(cropPixels)) // what's shown
+            videoPixels = size
+            showVideoSize()
+        }
+        session.onCrop = { [weak self] rows in
+            guard let self else { return }
+            cropPixels = rows
+            renderer.cropPixels = rows
+            showVideoSize()
         }
         stream.session = session
         window.initialFirstResponder = stream
@@ -431,15 +430,10 @@ final class AppWindowController: NSObject, NSWindowDelegate {
         show()
     }
 
-    private var hidesTopBand: Bool {
-        UserDefaults.standard.object(forKey: "PhoneApp.hideTopBand.\(app.package)") as? Bool ?? Self.topBandApps.contains(app.package)
-    }
-
-    /// Toolbox / View → Hide Top Bar: crop (or stop cropping) the empty band some apps keep at the top.
-    @objc func toggleTopBar(_ sender: Any?) {
-        UserDefaults.standard.set(!hidesTopBand, forKey: "PhoneApp.hideTopBand.\(app.package)")
-        applySize()
-        updateToolbox()
+    /// What's shown of the video: all but the status bar's rows.
+    private func showVideoSize() {
+        guard let videoPixels else { return }
+        stream.videoSize = CGSize(width: videoPixels.width, height: videoPixels.height - CGFloat(cropPixels))
     }
 
     /// Toolbox / View → Phone, Foldable, Tablet.
@@ -470,9 +464,7 @@ final class AppWindowController: NSObject, NSWindowDelegate {
 
     private func applySize() {
         let size = displaySize()
-        cropPixels = size.cropPixels
-        stream.renderer.cropPixels = size.cropPixels
-        session.resize(width: size.width, height: size.height, dpi: size.dpi, cropPixels: size.cropPixels)
+        session.resize(width: size.width, height: size.height, dpi: size.dpi)
     }
 
     func windowDidResignKey(_ notification: Notification) {
@@ -531,24 +523,16 @@ final class AppWindowController: NSObject, NSWindowDelegate {
 
 extension AppWindowController: NSMenuItemValidation {
     func validateMenuItem(_ item: NSMenuItem) -> Bool {
-        if item.action == #selector(toggleTopBar(_:)) {
-            item.state = hidesTopBand ? .on : .off
-            return PhoneInfo.statusBarDp > 0 && !locked
-        }
         if item.action == #selector(goBack(_:)) { return !locked && state == .showing }
         return true
     }
 }
 
 extension AppWindowController {
-    /// The toolbox shows the current size and whether the crop is on.
+    /// The toolbox shows the current size.
     func updateToolbox() {
         guard let tools else { return }
         for size in PhoneSize.allCases { tools.setSelected(size.rawValue, size == self.size) }
-        tools.setSelected("crop", hidesTopBand)
-        tools.setSymbol("crop", hidesTopBand ? "rectangle.topthird.inset.filled" : "rectangle.inset.filled",
-                        label: hidesTopBand ? "Show Top Bar" : "Hide Top Bar")
-        tools.setEnabled("crop", PhoneInfo.statusBarDp > 0)
     }
 }
 

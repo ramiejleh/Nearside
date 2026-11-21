@@ -33,6 +33,11 @@ final class PhoneWindowController: NSObject, NSWindowDelegate {
 
     /// The screen in dp (points at actual size).
     private var dp: CGSize { size.dp(phone: PhoneInfo.screenDp) }
+    /// What the window shows: all but the status bar the phone gives the display.
+    private var shownDp: CGSize { PhoneDisplaySize.shownDp(dp, statusBarDp: PhoneInfo.statusBarDp) }
+    /// The status bar's rows at the top of the display (the phone says), and the video's size.
+    private var cropPixels = 0
+    private var videoPixels: CGSize?
 
     init?(engine: SyncEngine, library: PhoneAppLibrary, renderer: MetalRenderer, onClosed: @escaping (PhoneWindowController) -> Void) {
         self.library = library
@@ -107,7 +112,17 @@ final class PhoneWindowController: NSObject, NSWindowDelegate {
 
         session.onFrame = { [renderer] frame in renderer.show(frame) }
         session.onState = { [weak self] state in self?.render(state) }
-        session.onVideoSize = { [weak self] size in self?.stream.videoSize = size }
+        session.onVideoSize = { [weak self] size in
+            guard let self else { return }
+            videoPixels = size
+            showVideoSize()
+        }
+        session.onCrop = { [weak self] rows in
+            guard let self else { return }
+            cropPixels = rows
+            renderer.cropPixels = rows
+            showVideoSize()
+        }
         session.onThermal = { [weak self] reduced in self?.tools.setHidden("warm", !reduced) }
         session.onSecure = { [weak self] on in
             guard let self else { return }
@@ -280,6 +295,12 @@ final class PhoneWindowController: NSObject, NSWindowDelegate {
         updateSizes()
     }
 
+    /// What's shown of the video: all but the status bar's rows.
+    private func showVideoSize() {
+        guard let videoPixels else { return }
+        stream.videoSize = CGSize(width: videoPixels.width, height: videoPixels.height - CGFloat(cropPixels))
+    }
+
     private func updateSizes() {
         for s in PhoneSize.allCases { tools.setSelected(s.rawValue, s == size) }
     }
@@ -289,7 +310,7 @@ final class PhoneWindowController: NSObject, NSWindowDelegate {
         let saved = UserDefaults.standard.double(forKey: "PhoneWindow.zoom.\(size.rawValue)")
         if saved > 0 { return saved }
         let screen = (window.screen ?? NSScreen.main)?.visibleFrame.size ?? CGSize(width: 1440, height: 875)
-        return PhoneSize.fittingZoom(dp, chrome: CGSize(width: SideToolbar.width, height: 0), screen: screen)
+        return PhoneSize.fittingZoom(shownDp, chrome: CGSize(width: SideToolbar.width, height: 0), screen: screen)
     }
 
     @objc func zoomIn(_ sender: Any?) { setZoom(Self.zooms.first { $0 > zoom + 0.01 } ?? Self.zooms.last!) }
@@ -303,7 +324,7 @@ final class PhoneWindowController: NSObject, NSWindowDelegate {
 
     /// The window: the screen at `z` plus the toolbar, its top edge kept (a phone held up grows down).
     private func fitWindow(zoom z: CGFloat, animate: Bool) {
-        let content = NSSize(width: (dp.width * z).rounded() + SideToolbar.width, height: (dp.height * z).rounded())
+        let content = NSSize(width: (shownDp.width * z).rounded() + SideToolbar.width, height: (shownDp.height * z).rounded())
         var frame = NSRect(x: window.frame.midX - content.width / 2, y: window.frame.maxY - content.height,
                            width: content.width, height: content.height)
         if let visible = (window.screen ?? NSScreen.main)?.visibleFrame {

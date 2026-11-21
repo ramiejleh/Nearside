@@ -110,7 +110,11 @@ object Main {
         // show that: no app link (no notification) means no new sessions, and a relink re-posts it.
         displays = DisplayServer(token, canNotify = { AppLink.isLinked }) { open ->
             AppLink.deliver(JSONObject().put("t", "display-state").put("open", open))
-        }.also { it.start(); dev.nearside.helper.display.AppCatalog.warmUp() }
+        }.also {
+            it.start()
+            dev.nearside.helper.display.AppCatalog.warmUp()
+            dev.nearside.helper.display.SystemBars.start() // the app restarts once
+        }
         AppLink.stopApps = { displays.closeAll() }
         AppLink.onUnlinked = {
             // Without the app, the phone shows nothing about apps open on the Mac: if it doesn't

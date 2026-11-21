@@ -135,6 +135,12 @@ class HomeActivity : Activity() {
             topMargin = (6 * dp).toInt()
             bottomMargin = (22 * dp).toInt()
         })
+        // Clear of the phone's status and gesture bars (the helper gives our display them).
+        column.setOnApplyWindowInsetsListener { view, insets ->
+            val bars = insets.getInsets(android.view.WindowInsets.Type.systemBars())
+            view.setPadding(0, bars.top, 0, bars.bottom)
+            insets
+        }
         return root
     }
 

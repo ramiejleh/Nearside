@@ -71,8 +71,6 @@ enum NearsideMain {
             item("Smaller", #selector(PhoneWindowController.zoomOut(_:)), "-"),
             item("Actual Size", #selector(PhoneWindowController.actualSize(_:)), "0"),
             .separator(),
-            item("Hide Top Bar", #selector(AppWindowController.toggleTopBar(_:))),
-            .separator(),
             item("Enter Full Screen", #selector(NSWindow.toggleFullScreen(_:)), "f", [.command, .control]),
         ])
         let window = submenu("Window", [

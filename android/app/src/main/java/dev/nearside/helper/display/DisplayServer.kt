@@ -48,6 +48,8 @@ object DisplayWire {
     // (i32 task + JPEG).
     const val RECENTS = 0x41; const val TASK_FRONT = 0x42; const val TASK_REMOVE = 0x43; const val DOCK = 0x44
     const val TASKS = 0x26; const val SNAPSHOT = 0x27
+    /** The display's system bars (u16 top, u16 bottom px): the Mac hides the top one. */
+    const val INSETS = 0x28
     /** VISIBILITY: the window in use, hidden, or on screen but not in use. */
     const val VIS_FOCUSED = 0; const val VIS_HIDDEN = 1; const val VIS_VISIBLE = 2
     const val MOUSE_HOVER = 0; const val MOUSE_EXIT = 1; const val MOUSE_SECONDARY_DOWN = 2; const val MOUSE_SECONDARY_UP = 3

@@ -22,11 +22,11 @@ struct PhoneSizeTests {
     @Test func displaysUseThePhonesDensity() {
         // Every size at the phone's 480 dpi: the phone size is the phone's own pixels.
         let p = PhoneDisplaySize.forPreset(phone, density: 480)
-        #expect(p.width == 1280 && p.height == 2856 && p.dpi == 480 && p.cropPixels == 0)
+        #expect(p.width == 1280 && p.height == 2856 && p.dpi == 480)
         let t = PhoneDisplaySize.forPreset(PhoneSize.tablet.dp(phone: phone), density: 480)
         #expect(t.width == 3840 && t.height == 2400 && t.dpi == 480)
-        // A 68 dp band cropped off the top: the display is that much taller, all of it cropped.
-        let c = PhoneDisplaySize.forPreset(phone, density: 480, cropTopDp: 68)
-        #expect(c.cropPixels == 204 && c.height == 2856 + 204)
+        // The window shows all but the 68 dp status bar: the phone's screen below its status bar.
+        #expect(PhoneDisplaySize.shownDp(phone, statusBarDp: 68) == CGSize(width: 427, height: 884))
+        #expect(PhoneDisplaySize.shownDp(phone, statusBarDp: 0) == phone)
     }
 }

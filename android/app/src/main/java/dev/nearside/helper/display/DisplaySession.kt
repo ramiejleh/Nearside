@@ -72,6 +72,8 @@ class DisplaySession(
     /** The window's sound (started with the display, if on the virtual device). */
     private val audio = AudioStreamer("display-$id")
     private var hasAudio = false
+    /** The phone's status and gesture bars on this display (px), if it has them. */
+    @Volatile private var bars: SystemBars.Bars? = null
 
     /** The phone wouldn't make another video encoder (too many windows). */
     class EncoderBusy(cause: Throwable) : Exception(cause)
@@ -85,6 +87,9 @@ class DisplaySession(
             ?: Hidden.displayManager.createVirtualDisplay("nearside-$id", w, h, dpi, surface, FLAGS)
         Log.d("display session $id: display $displayId ${w}x$h@$dpi for $target${device?.let { " (virtual device ${it.deviceId})" } ?: ""}")
         awake = Hidden.keepAwake(displayId, "Nearside:display-$id")
+        // Before the launch, so the app lays out with them from the start.
+        bars = SystemBars.add(displayId, dpi, phoneDensity())
+        sendBars()
         keyboard = Keyboard(displayId, id, device).also { it.create() }
         touchscreen = device?.createTouchscreen("Nearside Touch ${id.take(8)}", displayId, w, h)
         // Before the launch, so the app's sound never starts on the phone's speaker.
@@ -105,6 +110,7 @@ class DisplaySession(
         Thread({ controlLoop(conn) }, "display-$id-ctl").start()
         if (Thermal.moderate) sendThermal()
         if (taskId != -1) sendTask()
+        sendBars()
     }
 
     fun attachVideo(conn: DisplayWire.Conn) {
@@ -507,6 +513,19 @@ class DisplaySession(
             if (suspended) "suspended" else "${budgetFps()} fps, ${budgetKbps()} kbps")
     }
 
+    /** INSETS: u16 top, u16 bottom (px): the Mac hides the status bar's rows. */
+    private fun sendBars() {
+        val b = bars ?: return
+        ctl?.send(DisplayWire.INSETS, ByteBuffer.allocate(4).putShort(b.top.toShort()).putShort(b.bottom.toShort()).array())
+    }
+
+    private fun phoneDensity(): Int = runCatching {
+        val metrics = android.util.DisplayMetrics()
+        @Suppress("DEPRECATION")
+        Hidden.displayManager.getDisplay(android.view.Display.DEFAULT_DISPLAY).getRealMetrics(metrics)
+        metrics.densityDpi
+    }.getOrDefault(dpi)
+
     private fun sendThermal() = ctl?.send(DisplayWire.THERMAL, byteArrayOf(if (Thermal.moderate) 1 else 0))
 
     // MARK: Congestion
@@ -862,6 +881,7 @@ class DisplaySession(
         runCatching { awake?.release() }
         runCatching { keyboard?.close() }
         touchscreen?.let { PhoneDevice.closeInput(it) }
+        if (bars != null) SystemBars.remove(displayId)
         runCatching { display.release() }
         device?.close()
         codec?.let { runCatching { it.stop() }; it.release() }

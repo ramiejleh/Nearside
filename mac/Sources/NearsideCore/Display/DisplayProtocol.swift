@@ -24,6 +24,8 @@ public enum DisplayWire {
     // phone → Mac
     static let task: UInt8 = 0x20, taskGone: UInt8 = 0x21, pong: UInt8 = 0x22, error: UInt8 = 0x23
     static let thermal: UInt8 = 0x24, secure: UInt8 = 0x25, tasks: UInt8 = 0x26, snapshot: UInt8 = 0x27
+    /// The display's system bars (u16 top, u16 bottom px): the window hides the top one.
+    static let insets: UInt8 = 0x28
     // Phone window, Mac → phone.
     static let recents: UInt8 = 0x41, taskFront: UInt8 = 0x42, taskRemove: UInt8 = 0x43, dock: UInt8 = 0x44
     /// Mac → phone: the picture went all black (1) or isn't any more (0).
@@ -57,6 +59,8 @@ public enum DisplayWire {
         case tasks([PhoneTask])
         /// A task's last picture (JPEG).
         case snapshot(task: Int32, jpeg: Data)
+        /// The phone's status bar (top) and gesture bar (bottom) on the display, in px.
+        case insets(top: Int, bottom: Int)
         case config(gen: UInt32, width: Int, height: Int, parameterSets: Data)
         case frame(gen: UInt32, ptsMicros: Int64, encodedMicros: Int64, keyframe: Bool, data: Data)
         /// The audio stream's format (Opus).
@@ -212,6 +216,8 @@ public enum DisplayWire {
             })
         case snapshot where p.count > 4:
             return .snapshot(task: Int32(bitPattern: p.readBE(UInt32.self, at: s)), jpeg: p.subdata(in: s + 4..<p.endIndex))
+        case insets where p.count >= 4:
+            return .insets(top: Int(p.readBE(UInt16.self, at: s)), bottom: Int(p.readBE(UInt16.self, at: s + 2)))
         case secure where p.count >= 1:
             return .secure(p[s] != 0)
         case thermal where p.count >= 1:

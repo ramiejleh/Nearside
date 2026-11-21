@@ -109,9 +109,18 @@
             android:authorities="dev.nearside.link"
             android:exported="true"
             android:permission="android.permission.INTERACT_ACROSS_USERS_FULL" />
+        <!-- Hands the helper SystemBarsHost's Binder; in the host's process. -->
+        <provider
+            android:name=".phone.SystemBarsProvider"
+            android:authorities="dev.nearside.bars"
+            android:process=":bars"
+            android:exported="true"
+            android:permission="android.permission.INTERACT_ACROSS_USERS_FULL" />
     </application>
-    <!-- Probe (throwaway): system-bar insets for our displays, with the shell's permissions. -->
+    <!-- The phone's system bars on the helper's displays, with the shell's permissions (started
+         by the helper with `am instrument`; its own process, so the app keeps running normally). -->
     <instrumentation
-        android:name=".helper.probe.InsetsInstrumentation"
-        android:targetPackage="dev.nearside" />
+        android:name=".phone.SystemBarsHost"
+        android:targetPackage="dev.nearside"
+        android:targetProcesses="dev.nearside:bars" />
 </manifest>

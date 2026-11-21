@@ -92,13 +92,11 @@ struct DisplayProtocolTests {
         #expect(VideoDecoder.nalUnits(stream) == [Data([0x40, 0x01]), Data([0x42, 0x01]), Data([0x26])])
     }
 
-    @Test func topBandCropMakesTheDisplayTallerByTheBand() {
-        // 400×880 pt window at 2×, a 68 dp band: the display is 68 dp taller and its top 136 px go.
-        let s = PhoneDisplaySize.forWindow(CGSize(width: 400, height: 880), scale: 2, cropTopDp: 68)
-        #expect(s.width == 800 && s.height == 1896 && s.dpi == 320 && s.cropPixels == 136)
-        #expect(s.height - s.cropPixels == 1760) // exactly the window's pixels are shown
-        let none = PhoneDisplaySize.forWindow(CGSize(width: 400, height: 880), scale: 2, cropTopDp: 0)
-        #expect(none.cropPixels == 0 && none.height == 1760)
+    @Test func parsesTheDisplaysSystemBars() {
+        // INSETS: u16 top 204, u16 bottom 72 (the phone's status and gesture bars at 480 dpi).
+        var reader = DisplayWire.Reader()
+        #expect(reader.feed(packet(DisplayWire.insets, [0x00, 0xCC, 0x00, 0x48]) + packet(DisplayWire.insets, [0]))
+            == [.insets(top: 204, bottom: 72)])
     }
 
     @Test func inputMapsPastTheCroppedBand() {
