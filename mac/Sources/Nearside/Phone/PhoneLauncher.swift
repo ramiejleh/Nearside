@@ -76,7 +76,7 @@ final class PhoneLauncher: NSObject, NSWindowDelegate {
         }, openPhone: { [weak self] in
             self?.hide()
             PhoneWindowManager.shared?.openPhoneWindow()
-        }))
+        }).tint(Theme.accent))
         host.translatesAutoresizingMaskIntoConstraints = false
         effect.addSubview(host)
         NSLayoutConstraint.activate([
@@ -307,7 +307,7 @@ private struct LauncherCell: View {
         .help(app.label)
         .background(
             RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .fill(selected ? Color.accentColor.opacity(0.28) : hovering ? Color.primary.opacity(0.07) : .clear)
+                .fill(selected ? Theme.accent.opacity(0.25) : hovering ? Color.primary.opacity(0.07) : .clear)
         )
         .contentShape(Rectangle())
         .onHover { hovering = $0 }

@@ -27,7 +27,7 @@ final class SetupWindowController: NSObject, NSWindowDelegate {
         window.title = "Set Up Nearside"
         window.titlebarAppearsTransparent = true
         window.isReleasedWhenClosed = false
-        window.contentView = NSHostingView(rootView: SetupWizard(engine: engine, close: { [weak window] in window?.close() }))
+        window.contentView = NSHostingView(rootView: SetupWizard(engine: engine, close: { [weak window] in window?.close() }).tint(Theme.accent))
         window.center()
         return window
     }
@@ -225,7 +225,7 @@ struct SetupWizard: View {
             HStack(spacing: 6) {
                 ForEach(visiblePages, id: \.self) { p in
                     Circle()
-                        .fill(p == page ? Color.green : Color.secondary.opacity(0.3))
+                        .fill(p == page ? Theme.accent : Color.secondary.opacity(0.3))
                         .frame(width: 7, height: 7)
                 }
             }
@@ -248,16 +248,13 @@ struct SetupWizard: View {
         case .done:
             Button("Start Using Nearside") { close() }
                 .keyboardShortcut(.defaultAction)
-                .tint(.green)
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(AccentButtonStyle())
         case .permissions where !permissions.allAllowed:
-            Button("Continue Without") { page = next }
-                .keyboardShortcut(.defaultAction)
+            Button("Continue Without") { page = next } // not the Return key: skipping is a choice
         default:
             Button("Continue") { page = next }
                 .keyboardShortcut(.defaultAction)
-                .tint(.green)
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(AccentButtonStyle())
         }
     }
 
@@ -304,9 +301,9 @@ private struct Feature: View {
         HStack(alignment: .top, spacing: 14) {
             Image(systemName: icon)
                 .font(.system(size: 17, weight: .medium))
-                .foregroundStyle(.green)
+                .foregroundStyle(Theme.accent)
                 .frame(width: 34, height: 34)
-                .background(Color.green.opacity(0.13), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+                .background(Theme.accent.opacity(0.13), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
             VStack(alignment: .leading, spacing: 2) {
                 Text(title).font(.system(size: 13.5, weight: .semibold))
                 Text(text).font(.callout).foregroundStyle(.secondary)

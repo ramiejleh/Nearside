@@ -158,7 +158,7 @@ private struct ShelfView: View {
         VStack(spacing: 6) {
             Image(systemName: model.hovering ? "arrow.down.circle.fill" : "smartphone")
                 .font(.system(size: 26, weight: .light))
-                .foregroundStyle(.green)
+                .foregroundStyle(Theme.accent)
                 .contentTransition(.symbolEffect(.replace))
             Text(model.hovering ? "Release to send" : "Drop to send to your \(model.phoneName)")
                 .font(.system(size: 12.5, weight: .semibold))
@@ -169,7 +169,7 @@ private struct ShelfView: View {
         .overlay {
             RoundedRectangle(cornerRadius: 16, style: .continuous)
                 .strokeBorder(style: StrokeStyle(lineWidth: 2, dash: model.hovering ? [] : [6, 4]))
-                .foregroundStyle(Color.green.opacity(model.hovering ? 0.9 : 0.6))
+                .foregroundStyle(Theme.accent.opacity(model.hovering ? 0.9 : 0.6))
         }
         .scaleEffect(model.hovering ? 1.04 : 1)
         .animation(.snappy(duration: 0.18), value: model.hovering)

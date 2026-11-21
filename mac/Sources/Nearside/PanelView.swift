@@ -280,7 +280,7 @@ struct SetupPrompt: View {
             Spacer()
             Image(systemName: "iphone.gen3.radiowaves.left.and.right")
                 .font(.system(size: 38, weight: .light))
-                .foregroundStyle(.green)
+                .foregroundStyle(Theme.accent)
             Text("Connect your Android phone")
                 .font(.title3.weight(.semibold))
             Text("A one-time setup of about two minutes. Afterwards everything syncs on its own.")
@@ -289,8 +289,7 @@ struct SetupPrompt: View {
                 .multilineTextAlignment(.center)
                 .frame(maxWidth: 280)
             Button("Set Up Nearside…", action: openSetup)
-                .buttonStyle(.borderedProminent)
-                .tint(.green)
+                .buttonStyle(AccentButtonStyle())
                 .controlSize(.large)
             Spacer()
         }

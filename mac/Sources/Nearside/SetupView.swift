@@ -99,8 +99,7 @@ struct PairingView: View {
             }
             .frame(maxWidth: .infinity)
         }
-        .buttonStyle(.borderedProminent)
-        .tint(.green)
+        .buttonStyle(AccentButtonStyle())
         .controlSize(.large)
         .disabled(engine.isPairing || !hostPort.contains(":") || code.trimmingCharacters(in: .whitespaces).count < 6)
         .keyboardShortcut(.defaultAction)
@@ -139,9 +138,9 @@ struct Instruction: View {
         HStack(alignment: .top, spacing: 10) {
             Text("\(number)")
                 .font(.system(size: 11, weight: .bold, design: .rounded))
-                .foregroundStyle(.green)
+                .foregroundStyle(Theme.accent)
                 .frame(width: 20, height: 20)
-                .background(Color.green.opacity(0.15), in: Circle())
+                .background(Theme.accent.opacity(0.13), in: Circle())
             Text(text)
                 .font(.callout)
                 .fixedSize(horizontal: false, vertical: true)

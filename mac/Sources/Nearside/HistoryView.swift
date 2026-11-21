@@ -149,10 +149,10 @@ struct HistoryRow: View {
                     if isNew {
                         Text("NEW")
                             .font(.system(size: 9, weight: .bold))
-                            .foregroundStyle(.white)
+                            .foregroundStyle(Theme.onAccent)
                             .padding(.horizontal, 5)
                             .padding(.vertical, 1.5)
-                            .background(Color.green, in: Capsule())
+                            .background(Theme.accent, in: Capsule())
                     }
                     Text(meta)
                         .font(.system(size: 10.5))
@@ -182,7 +182,7 @@ struct HistoryRow: View {
                                 .frame(width: 22, height: 22)
                                 .contentShape(Rectangle())
                         }
-                        .buttonStyle(RowIconButtonStyle(hoverColor: .accentColor))
+                        .buttonStyle(RowIconButtonStyle(hoverColor: Theme.accent))
                         .help("Copy to Mac and phone")
                         .opacity(hovering ? 1 : 0)
                         .allowsHitTesting(hovering)
@@ -210,9 +210,9 @@ struct HistoryRow: View {
     @ViewBuilder private var background: some View {
         let shape = RoundedRectangle(cornerRadius: 8, style: .continuous)
         if isNew {
-            shape.fill(Color.green.opacity(hovering ? 0.16 : 0.10))
+            shape.fill(Theme.accent.opacity(hovering ? 0.14 : 0.08))
                 .overlay(alignment: .leading) {
-                    Capsule().fill(Color.green).frame(width: 3).padding(.vertical, 8)
+                    Capsule().fill(Theme.accent).frame(width: 3).padding(.vertical, 8)
                 }
         } else {
             shape.fill(Color.primary.opacity(hovering ? 0.06 : 0))

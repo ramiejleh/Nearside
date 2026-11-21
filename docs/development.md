@@ -53,7 +53,7 @@ without clicking:
 | `NEARSIDE_TEST_WAIT` | Seconds before the phone-window test runs |
 | `NEARSIDE_TEST_OVERLAY` | Save a window's overlay to this PNG |
 | `NEARSIDE_TEST_LAUNCHER` | Save the launcher to this PNG (with `NEARSIDE_TEST_QUERY`, `NEARSIDE_TEST_MOVES=down,right`) |
-| `NEARSIDE_TEST_SETUP` | Save setup's permissions page to this PNG (after `NEARSIDE_TEST_WAIT` s, default 3) |
+| `NEARSIDE_TEST_SETUP` | Save a setup page to this PNG (`NEARSIDE_TEST_SETUP_PAGE`: `welcome`, `permissions`, `phone`; `NEARSIDE_TEST_DARK=1` for dark mode; after `NEARSIDE_TEST_WAIT` s, default 3) |
 | `NEARSIDE_TEST_DOCK_ICON` | Save the Dock icon to this PNG |
 | `NEARSIDE_TEST_LAYOUTS` | Log the phone's keyboard layouts |
 | `NEARSIDE_TEST_VIDEO_KBPS` | Read video at most this fast (tests the adaptive bitrate) |

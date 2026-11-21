@@ -34,7 +34,7 @@ final class MessagesWindowController: NSObject, NSWindowDelegate {
         window.title = "Messages"
         window.isReleasedWhenClosed = false
         window.contentMinSize = NSSize(width: 600, height: 380)
-        window.contentView = NSHostingView(rootView: MessagesView(engine: engine))
+        window.contentView = NSHostingView(rootView: MessagesView(engine: engine).tint(Theme.accent))
         window.delegate = self
         window.center()
         window.setFrameAutosaveName("Messages")
@@ -136,10 +136,10 @@ private struct ThreadRow: View {
                     if thread.unread > 0 {
                         Text("\(thread.unread)")
                             .font(.system(size: 10, weight: .bold))
-                            .foregroundStyle(.white)
+                            .foregroundStyle(Theme.onAccent)
                             .padding(.horizontal, 6)
                             .padding(.vertical, 1.5)
-                            .background(Color.green, in: Capsule())
+                            .background(Theme.accent, in: Capsule())
                     }
                 }
             }
@@ -278,8 +278,8 @@ private struct Bubble: View {
                     .textSelection(.enabled)
                     .padding(.horizontal, 12)
                     .padding(.vertical, 7)
-                    .foregroundStyle(message.outgoing ? .white : .primary)
-                    .background(message.outgoing ? AnyShapeStyle(Color.green.gradient) : AnyShapeStyle(.quaternary),
+                    .foregroundStyle(message.outgoing ? Theme.onAccent : .primary)
+                    .background(message.outgoing ? AnyShapeStyle(Theme.accent) : AnyShapeStyle(.quaternary),
                                 in: shape)
                     .opacity(message.pending ? 0.6 : 1)
                     .help(message.date.formatted(date: .abbreviated, time: .shortened))
@@ -333,7 +333,7 @@ private struct ComposeBar: View {
             Button(action: send) {
                 Image(systemName: "arrow.up.circle.fill")
                     .font(.system(size: 26))
-                    .foregroundStyle(canSend ? Color.green : Color.secondary)
+                    .foregroundStyle(canSend ? Theme.accent : Color.secondary)
             }
             .buttonStyle(.plain)
             .disabled(!canSend)
@@ -375,6 +375,7 @@ private struct NewMessageSheet: View {
                     dismiss()
                 }
                 .keyboardShortcut(.defaultAction)
+                .buttonStyle(AccentButtonStyle())
                 .disabled(address.filter(\.isNumber).count < 3 || text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
         }

@@ -146,9 +146,9 @@ struct PermissionRow: View {
         HStack(alignment: .top, spacing: 12) {
             Image(systemName: icon)
                 .font(.system(size: 15, weight: .medium))
-                .foregroundStyle(.green)
+                .foregroundStyle(Theme.accent)
                 .frame(width: 30, height: 30)
-                .background(Color.green.opacity(0.13), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                .background(Theme.accent.opacity(0.13), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
             VStack(alignment: .leading, spacing: 2) {
                 Text(title).font(.system(size: 13, weight: .semibold))
                 Text(detail).font(.callout).foregroundStyle(.secondary)

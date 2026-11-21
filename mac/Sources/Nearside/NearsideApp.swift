@@ -126,17 +126,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return true
     }
 
-    /// Test hook: NEARSIDE_TEST_SETUP=<png> saves the setup window's permissions page (after
-    /// NEARSIDE_TEST_WAIT seconds, default 3, so the states have settled).
+    /// Test hook: NEARSIDE_TEST_SETUP=<png> saves a setup page (NEARSIDE_TEST_SETUP_PAGE: welcome,
+    /// permissions (default), phone) in light mode, or dark with NEARSIDE_TEST_DARK=1, after
+    /// NEARSIDE_TEST_WAIT seconds (default 3) so the states have settled.
     private func snapshotSetupForTesting(_ engine: SyncEngine) {
         let env = ProcessInfo.processInfo.environment
         guard let path = env["NEARSIDE_TEST_SETUP"] else { return }
         let window = NSWindow(contentRect: NSRect(x: -3000, y: 0, width: 620, height: 560), styleMask: [.borderless],
                               backing: .buffered, defer: false)
-        let view = NSHostingView(rootView: SetupWizard(engine: engine, close: {}, startPage: .permissions))
+        let page: SetupWizard.Page = switch env["NEARSIDE_TEST_SETUP_PAGE"] {
+        case "welcome": .welcome
+        case "phone": .phone
+        default: .permissions
+        }
+        let dark = env["NEARSIDE_TEST_DARK"] == "1"
+        let view = NSHostingView(rootView: SetupWizard(engine: engine, close: {}, startPage: page).tint(Theme.accent))
         window.contentView = view
-        window.appearance = NSAppearance(named: .aqua) // dark text on the white snapshot
-        window.backgroundColor = .white
+        window.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
+        window.backgroundColor = dark ? NSColor(white: 0.16, alpha: 1) : .white
         window.orderFrontRegardless()
         Task { @MainActor in
             try? await Task.sleep(for: .seconds(Double(env["NEARSIDE_TEST_WAIT"] ?? "") ?? 3))
@@ -237,7 +244,7 @@ final class StatusItemController: NSObject {
         }, openApps: { [weak self] in
             self?.popover.performClose(nil)
             self?.phoneApps.showLauncher()
-        }))
+        }).tint(Theme.accent))
         popover.contentSize = NSSize(width: 380, height: 540)
 
         guard let button = item.button else { return }

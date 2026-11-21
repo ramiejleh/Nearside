@@ -70,3 +70,39 @@ struct LogoTile: View {
             .accessibilityLabel("Nearside")
     }
 }
+
+/// The app's accent: the logo's graphite. Near-black in light mode, a mid graphite in dark mode
+/// (near-black would vanish there); `onAccent` is the text drawn on it.
+enum Theme {
+    static let nsAccent = NSColor(name: "NearsideAccent") { appearance in
+        isDark(appearance) ? NSColor(red: 0.62, green: 0.62, blue: 0.65, alpha: 1) : Logo.tileColor
+    }
+    static let nsOnAccent = NSColor(name: "NearsideOnAccent") { appearance in
+        isDark(appearance) ? NSColor(red: 0.08, green: 0.08, blue: 0.09, alpha: 1) : .white
+    }
+    static let accent = Color(nsColor: nsAccent)
+    static let onAccent = Color(nsColor: nsOnAccent)
+
+    private static func isDark(_ appearance: NSAppearance) -> Bool {
+        appearance.bestMatch(from: [.darkAqua, .aqua, .vibrantDark, .vibrantLight]).map { $0 == .darkAqua || $0 == .vibrantDark } ?? false
+    }
+}
+
+/// The main button of a screen, filled with the accent (`.borderedProminent` keeps white text,
+/// unreadable on the dark-mode accent).
+struct AccentButtonStyle: ButtonStyle {
+    @Environment(\.isEnabled) private var isEnabled
+    @Environment(\.controlSize) private var controlSize
+
+    func makeBody(configuration: Configuration) -> some View {
+        let large = controlSize == .large
+        configuration.label
+            .font(.system(size: large ? 13 : 12, weight: .medium))
+            .foregroundStyle(Theme.onAccent)
+            .padding(.horizontal, large ? 14 : 10)
+            .padding(.vertical, large ? 6 : 3)
+            .background(Theme.accent, in: RoundedRectangle(cornerRadius: large ? 7 : 5, style: .continuous))
+            .opacity(isEnabled ? (configuration.isPressed ? 0.75 : 1) : 0.4)
+            .contentShape(Rectangle())
+    }
+}

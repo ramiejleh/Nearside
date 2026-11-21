@@ -129,8 +129,8 @@ private final class ToolButton: NSButton {
     override var isEnabled: Bool { didSet { alphaValue = isEnabled ? 1 : 0.35 } }
 
     private func update() {
-        contentTintColor = chosen ? .controlAccentColor : .secondaryLabelColor
-        layer?.backgroundColor = chosen ? NSColor.controlAccentColor.withAlphaComponent(0.18).cgColor
+        contentTintColor = chosen ? Theme.nsAccent : .secondaryLabelColor
+        layer?.backgroundColor = chosen ? Theme.nsAccent.withAlphaComponent(0.18).cgColor
             : hovering ? NSColor.labelColor.withAlphaComponent(0.08).cgColor : nil
         setAccessibilityValue(chosen ? "selected" : nil)
     }

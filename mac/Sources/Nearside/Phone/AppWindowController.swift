@@ -632,7 +632,7 @@ struct AppWindowOverlay: View {
                     Text("\(label) is locked").font(.headline)
                     Text("Your Mac was locked. Unlock to keep using your phone's apps.")
                         .font(.subheadline).foregroundStyle(.secondary).multilineTextAlignment(.center)
-                    Button("Unlock", action: unlock).keyboardShortcut(.defaultAction)
+                    Button("Unlock", action: unlock).keyboardShortcut(.defaultAction).buttonStyle(AccentButtonStyle())
                 } else if secure, state == .showing {
                     Image(systemName: "eye.slash")
                         .font(.system(size: 30, weight: .light)).foregroundStyle(.secondary)
@@ -641,7 +641,7 @@ struct AppWindowOverlay: View {
                         .font(.subheadline).foregroundStyle(.secondary).multilineTextAlignment(.center)
                         .frame(maxWidth: 300)
                     HStack {
-                        Button("Open on Phone", action: openOnPhone).keyboardShortcut(.defaultAction)
+                        Button("Open on Phone", action: openOnPhone).keyboardShortcut(.defaultAction).buttonStyle(AccentButtonStyle())
                         Button("Close Window", action: close)
                     }
                 } else {
@@ -659,7 +659,7 @@ struct AppWindowOverlay: View {
                     Text(reason == .movedToPhone ? "\(label) moved to your phone" : "\(label) was closed")
                         .font(.headline)
                     HStack {
-                        Button(reason == .movedToPhone ? "Bring Back" : "Reopen", action: reopen).keyboardShortcut(.defaultAction)
+                        Button(reason == .movedToPhone ? "Bring Back" : "Reopen", action: reopen).keyboardShortcut(.defaultAction).buttonStyle(AccentButtonStyle())
                         Button("Close Window", action: close)
                     }
                 case .busy:
@@ -671,7 +671,7 @@ struct AppWindowOverlay: View {
                             .font(.subheadline).foregroundStyle(.secondary).multilineTextAlignment(.center)
                     }
                     HStack {
-                        if let oldest { Button("Close \(oldest)", action: closeOldest).keyboardShortcut(.defaultAction) }
+                        if let oldest { Button("Close \(oldest)", action: closeOldest).keyboardShortcut(.defaultAction).buttonStyle(AccentButtonStyle()) }
                         Button("Close Window", action: close)
                     }
                 case .failed(let message):
@@ -679,7 +679,7 @@ struct AppWindowOverlay: View {
                         .font(.system(size: 34, weight: .light)).foregroundStyle(.secondary)
                     Text(message).font(.headline).multilineTextAlignment(.center)
                     HStack {
-                        Button("Try Again", action: reopen).keyboardShortcut(.defaultAction)
+                        Button("Try Again", action: reopen).keyboardShortcut(.defaultAction).buttonStyle(AccentButtonStyle())
                         Button("Close Window", action: close)
                     }
                 }
