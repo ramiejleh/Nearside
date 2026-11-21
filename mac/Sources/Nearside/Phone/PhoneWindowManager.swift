@@ -53,9 +53,9 @@ final class PhoneWindowManager {
         Task { [weak self] in
             guard let self else { return }
             defer { opening.remove(app.package) }
+            await phoneShapeKnown() // before the check: nothing may lock the Mac between it and the window
             guard await auth.authenticate(opening: true) else { return }
             unlockWindows()
-            await phoneShapeKnown()
             guard let renderer = MetalRenderer(),
                   let controller = AppWindowController(app: app, engine: engine, renderer: renderer, icon: library.icons[app.id],
                                                        onClosed: { [weak self] in self?.closed($0) }) else { return }
@@ -77,9 +77,9 @@ final class PhoneWindowManager {
         Task { [weak self] in
             guard let self else { return }
             defer { openingPhone = false }
+            await phoneShapeKnown() // before the check: nothing may lock the Mac between it and the window
             guard await auth.authenticate(opening: true) else { return }
             unlockWindows()
-            await phoneShapeKnown()
             makePhoneWindow()
         }
     }
