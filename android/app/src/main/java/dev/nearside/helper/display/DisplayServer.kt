@@ -52,6 +52,8 @@ object DisplayWire {
     const val NOTIFICATION = 0x45
     /** Files dropped on the window (utf8 names, one per line, already in the app's shared folder): shared to the app on top. */
     const val SHARE = 0x46
+    /** u8 0: the window's sound plays on the phone, not the Mac (sent right after OPEN). */
+    const val SOUND = 0x47
     // Phone window, Mac → phone: RECENTS (no body), TASK_FRONT / TASK_REMOVE (i32 task), DOCK (utf8
     // packages, one per line). Phone → Mac: TASKS (utf8 JSON [{id, pkg}], top first), SNAPSHOT
     // (i32 task + JPEG).

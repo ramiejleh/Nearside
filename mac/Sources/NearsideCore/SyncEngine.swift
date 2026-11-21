@@ -225,13 +225,13 @@ public final class SyncEngine {
             receiveFile(message)
         case "app":
             appLinked = message["linked"] as? Bool ?? false
-        case "display-ticket", "display-apps", "display-icons":
+        case "display-ticket", "display-apps", "display-icons", "display-layouts":
             if let req = message["req"] as? Int, let waiting = displayRequests.removeValue(forKey: req) {
                 waiting.resume(returning: HelperReply(message))
             }
         case "apps-stop":
             onPhoneAppsStop?()
-        case "display-share-failed":
+        case "share-failed":
             if let pkg = message["pkg"] as? String { onShareFailed?(pkg, message["accepts"] as? Bool ?? false) }
         case "clip":
             guard state == .connected, let text = message["text"] as? String, !text.isEmpty else { return }

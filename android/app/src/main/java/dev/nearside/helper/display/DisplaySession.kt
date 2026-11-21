@@ -165,6 +165,12 @@ class DisplaySession(
                 resize(b.short.toInt() and 0xffff, b.short.toInt() and 0xffff, b.short.toInt() and 0xffff)
             }
             DisplayWire.NAV -> if (b.remaining() >= 1) nav(b.get().toInt())
+            DisplayWire.SOUND -> if (b.remaining() >= 1 && b.get().toInt() == 0 && hasAudio) {
+                // The Mac's setting: sound stays on the phone. Before the app makes any (sent right after OPEN).
+                hasAudio = false
+                audio.stop()
+                Log.d("display session $id: sound plays on the phone")
+            }
             DisplayWire.NOTIFICATION -> if (!isHome) utf8(b).let { key -> watcher.execute { openNotification(key) } }
             DisplayWire.SHARE -> utf8(b).lines().filter { it.isNotBlank() }.take(50).let { names -> watcher.execute { shareInto(names) } }
             DisplayWire.RECENTS -> if (isHome) watcher.execute { runCatching { sendRecents() } }
@@ -540,8 +546,11 @@ class DisplaySession(
         applyBudget()
     }
 
-    /** The bitrate grows with the picture: 12 Mbps per 2.6 Mpx (a phone-sized window), 30 at most. */
-    private val baseKbps get() = minOf(30_000, maxOf(kbps, (w.toLong() * h * 12_000 / 2_600_000).toInt()))
+    /**
+     * The bitrate grows with the picture: the Mac's OPEN kbps (its quality setting: 12 Mbps by
+     * default) per 2.6 Mpx, 40 Mbps at most.
+     */
+    private val baseKbps get() = minOf(40_000, (w.toLong() * h * kbps / 2_600_000).toInt())
 
     private fun budgetKbps(): Int = (when (visibility) {
         DisplayWire.VIS_FOCUSED -> baseKbps

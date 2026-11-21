@@ -34,9 +34,25 @@ final class PhoneWindowManager {
             self?.windows.forEach { $0.setLocked(true) }
             self?.phoneWindow?.setLocked(true)
         }
-        // Option-Command-P from anywhere.
-        hotKey = HotKey(keyCode: kVK_ANSI_P, modifiers: cmdKey | optionKey) { [weak self] in self?.toggleLauncher() }
+        registerLauncherShortcut()
+        NotificationCenter.default.addObserver(forName: LauncherShortcut.changed, object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.registerLauncherShortcut() }
+        }
     }
+
+    /// The launcher's shortcut from anywhere (⌥⌘P unless changed in Settings), and in the menu.
+    private func registerLauncherShortcut() {
+        let shortcut = LauncherShortcut.current
+        hotKey?.unregister()
+        hotKey = HotKey(keyCode: shortcut.keyCode, modifiers: shortcut.carbonModifiers) { [weak self] in self?.toggleLauncher() }
+        let item = NSApp.mainMenu?.items.lazy.compactMap(\.submenu).flatMap(\.items)
+            .first { $0.action == #selector(AppDelegate.showPhoneLauncher(_:)) }
+        item?.keyEquivalent = shortcut.key
+        item?.keyEquivalentModifierMask = shortcut.modifiers
+    }
+
+    /// The keyboard-layout setting changed: every window tells the phone again.
+    static let keyboardLayoutSettingChanged = Notification.Name("PhoneKeyboardLayoutSettingChanged")
 
     func toggleLauncher() { launcher.toggle() }
 

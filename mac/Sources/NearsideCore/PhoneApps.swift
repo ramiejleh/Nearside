@@ -89,6 +89,11 @@ extension SyncEngine {
         return ticket
     }
 
+    /// The phone's keyboard layouts (their names), for the keyboard-layout setting; nil if no answer.
+    public func phoneKeyboardLayouts() async -> [String]? {
+        await displayRequest("display-layouts")?["layouts"] as? [String]
+    }
+
     /// The phone's launchable apps, by name; nil if the phone didn't answer. Usually instant (the
     /// helper keeps the names), but a freshly started helper may need seconds to read them all.
     public func phoneApps() async -> [PhoneApp]? {
@@ -136,7 +141,9 @@ extension SyncEngine {
 
     /// The phone window's session: our home screen on a display of `width`×`height` pixels.
     public func makePhoneWindowSession(width: Int, height: Int, dpi: Int) -> PhoneAppSession {
-        PhoneAppSession(target: "home", width: width, height: height, dpi: dpi, token: Token.value) { [weak self] in
+        let quality = PhoneQuality.current
+        return PhoneAppSession(target: "home", width: width, height: height, dpi: dpi, fps: quality.fps, kbps: quality.kbps,
+                               soundOnMac: PhoneSound.onMac, token: Token.value) { [weak self] in
             await self?.displayTicket()
         }
     }
@@ -144,11 +151,53 @@ extension SyncEngine {
     /// A session showing `app` in a window of `width`×`height` pixels (start it to connect).
     /// `notification`: opened from that phone notification (its key) rather than the launcher.
     public func makePhoneAppSession(_ app: PhoneApp, width: Int, height: Int, dpi: Int, notification: String? = nil) -> PhoneAppSession {
-        PhoneAppSession(target: notification.map(DisplayWire.notificationTarget) ?? app.id, width: width, height: height, dpi: dpi,
-                        token: Token.value) { [weak self] in
+        let quality = PhoneQuality.current
+        return PhoneAppSession(target: notification.map(DisplayWire.notificationTarget) ?? app.id, width: width, height: height, dpi: dpi,
+                               fps: quality.fps, kbps: quality.kbps, soundOnMac: PhoneSound.onMac, token: Token.value) { [weak self] in
             await self?.displayTicket()
         }
     }
+}
+
+/// Settings → Phone apps → Quality: what the phone's encoder aims for (windows opened from then on).
+public enum PhoneQuality: String, CaseIterable, Sendable {
+    case auto, sharper, smoother
+
+    public static let key = "PhoneApps.quality"
+    public static var current: PhoneQuality { PhoneQuality(rawValue: UserDefaults.standard.string(forKey: key) ?? "") ?? .auto }
+
+    /// Frames per second for the window in use.
+    public var fps: Int { self == .sharper ? 30 : 60 }
+    /// Bitrate for a phone-sized picture (the phone scales it with the window's pixels).
+    public var kbps: Int {
+        switch self {
+        case .auto: 12_000
+        case .sharper: 20_000 // half the frames, nearly twice the data: about 3× the detail per frame
+        case .smoother: 8_000 // less to send: fewer stalls on busy Wi-Fi
+        }
+    }
+
+    public var title: String {
+        switch self {
+        case .auto: "Automatic"
+        case .sharper: "Sharper"
+        case .smoother: "Smoother"
+        }
+    }
+
+    public var detail: String {
+        switch self {
+        case .auto: "60 frames a second; detail follows your Wi-Fi."
+        case .sharper: "More detail, 30 frames a second. For reading and photos."
+        case .smoother: "60 frames a second with less detail. Best on busy Wi-Fi."
+        }
+    }
+}
+
+/// Settings → Phone apps → Sound: on the Mac (default) or left on the phone.
+public enum PhoneSound {
+    public static let key = "PhoneApps.sound"
+    public static var onMac: Bool { UserDefaults.standard.string(forKey: key) != "phone" }
 }
 
 /// The phone display for a Mac window.

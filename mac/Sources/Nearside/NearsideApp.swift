@@ -136,6 +136,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Test hook: NEARSIDE_OPEN_APP=<package> opens that phone app once the phone is connected
     /// (a comma-separated list opens several, a few seconds apart).
     private func openAppForTesting(_ engine: SyncEngine) {
+        // NEARSIDE_TEST_LAYOUTS=1: log the phone's keyboard layouts (the Settings list).
+        if ProcessInfo.processInfo.environment["NEARSIDE_TEST_LAYOUTS"] != nil {
+            Task { @MainActor in
+                while engine.state != .connected { try? await Task.sleep(for: .milliseconds(300)) }
+                NSLog("Nearside: test layouts: \(await engine.phoneKeyboardLayouts() ?? [])")
+            }
+        }
         // NEARSIDE_OPEN_NOTIFICATION=<key>: that phone notification's "Open on Mac".
         if let key = ProcessInfo.processInfo.environment["NEARSIDE_OPEN_NOTIFICATION"] {
             Task { @MainActor in

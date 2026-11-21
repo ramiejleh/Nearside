@@ -242,6 +242,10 @@ object Main {
                     .getOrElse { JSONObject().put("t", "display-icons").put("error", it.toString()) }
                 send(reply.put("req", msg.opt("req")))
             }.start()
+            "display-layouts" -> Thread { // for the Mac's keyboard-layout setting
+                val labels = org.json.JSONArray(dev.nearside.helper.display.Hidden.keyboardLayouts.map { it.label }.distinct().sorted())
+                send(JSONObject().put("t", "display-layouts").put("layouts", labels).put("req", msg.opt("req")))
+            }.start()
             "display-stop-all" -> displays.closeAll()
         }
     }

@@ -146,6 +146,8 @@ final class PhoneWindowController: NSObject, NSWindowDelegate {
         }
         NotificationCenter.default.addObserver(self, selector: #selector(keyboardLayoutChanged),
                                                name: NSTextInputContext.keyboardSelectionDidChangeNotification, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(keyboardLayoutChanged),
+                                               name: PhoneWindowManager.keyboardLayoutSettingChanged, object: nil)
         render(.opening)
         session.start()
         testIfAsked()

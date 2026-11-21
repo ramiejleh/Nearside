@@ -160,6 +160,8 @@ final class AppWindowController: NSObject, NSWindowDelegate {
         session.setKeyboardLayout(Self.keyboardLayout())
         NotificationCenter.default.addObserver(self, selector: #selector(keyboardLayoutChanged),
                                                name: NSTextInputContext.keyboardSelectionDidChangeNotification, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(keyboardLayoutChanged),
+                                               name: PhoneWindowManager.keyboardLayoutSettingChanged, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(occlusionChanged),
                                                name: NSWindow.didChangeOcclusionStateNotification, object: window)
         for name in [NSApplication.didBecomeActiveNotification, NSApplication.didResignActiveNotification] {
@@ -516,14 +518,39 @@ final class AppWindowController: NSObject, NSWindowDelegate {
         lastVisibility = visibility
         NSLog("Nearside: phone app window \(app.package) \(visibility)")
         session.setVisibility(visibility)
+        scheduleReturn(hidden: visibility == .hidden && !locked)
+    }
+
+    /// Settings → Phone apps: minutes a window may stay hidden (minimised, covered, another
+    /// Space) before its app goes back to the phone; 0 = never.
+    static let returnAfterKey = "PhoneApps.returnAfter"
+    private var returnTimer: Timer?
+
+    private func scheduleReturn(hidden: Bool) {
+        returnTimer?.invalidate()
+        returnTimer = nil
+        let minutes = UserDefaults.standard.integer(forKey: Self.returnAfterKey)
+        guard hidden, minutes > 0 else { return }
+        returnTimer = Timer.scheduledTimer(withTimeInterval: Double(minutes) * 60, repeats: false) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                NSLog("Nearside: \(self.app.package) hidden for \(minutes) min: back to the phone")
+                self.window.close()
+            }
+        }
     }
 
     @objc private func keyboardLayoutChanged() { session.setKeyboardLayout(Self.keyboardLayout()) }
+
+    /// An Android layout's name chosen in Settings, or empty: the one matching the Mac's.
+    static let keyboardLayoutKey = "PhoneApps.keyboardLayout"
 
     /// The Mac's keyboard layout as "name\nlanguage" ("Danish\nda", "US\nen"): the phone picks the
     /// Android layout that can type the same characters. The name is from the input source id, so
     /// it's the same whatever language the Mac's menus are in.
     static func keyboardLayout() -> String {
+        // Settings → Phone apps → Keyboard layout: an Android layout by name instead.
+        if let chosen = UserDefaults.standard.string(forKey: keyboardLayoutKey), !chosen.isEmpty { return "\(chosen)\n" }
         guard let source = TISCopyCurrentKeyboardLayoutInputSource()?.takeRetainedValue() else { return "" }
         func property(_ key: CFString) -> AnyObject? {
             TISGetInputSourceProperty(source, key).map { Unmanaged<AnyObject>.fromOpaque($0).takeUnretainedValue() }
@@ -542,6 +569,7 @@ final class AppWindowController: NSObject, NSWindowDelegate {
                 with pasteboard: NSPasteboard) -> Bool { false }
 
     func windowWillClose(_ notification: Notification) {
+        returnTimer?.invalidate()
         session.close() // the app goes back to the phone, under what's showing there
         NotificationCenter.default.removeObserver(self)
         onClosed(self)

@@ -53,6 +53,8 @@ public final class PhoneAppSession: @unchecked Sendable {
     private var cropPixels = 0
     private let fps: Int
     private let kbps: Int
+    /// The window's sound plays on the Mac (else it stays on the phone).
+    private let soundOnMac: Bool
     private let writer = DispatchQueue(label: "phone-app-control")
     private let decoder = VideoDecoder()
     /// phone µs − Mac µs, from the lowest-RTT ping so far (for latency stats).
@@ -63,12 +65,13 @@ public final class PhoneAppSession: @unchecked Sendable {
     static let socket = "localabstract:nearside-display"
     static let graceSeconds: TimeInterval = 30
 
-    init(target: String, width: Int, height: Int, dpi: Int, fps: Int = 60, kbps: Int = 12_000,
+    init(target: String, width: Int, height: Int, dpi: Int, fps: Int = 60, kbps: Int = 12_000, soundOnMac: Bool = true,
          token: String, requestTicket: @escaping @Sendable () async -> Data?) {
         self.target = target
         self.size = (width & ~1, height & ~1, dpi)
         self.fps = fps
         self.kbps = kbps
+        self.soundOnMac = soundOnMac
         self.token = token
         self.requestTicket = requestTicket
         var bytes = [UInt8](repeating: 0, count: 16)
@@ -116,6 +119,7 @@ public final class PhoneAppSession: @unchecked Sendable {
                 let s = lock.withLock { size }
                 try ctl.write(DisplayWire.open(width: s.width, height: s.height, dpi: s.dpi, fps: fps, kbps: kbps, target: target))
             }
+            if !soundOnMac { try ctl.write(DisplayWire.packet(DisplayWire.sound, Data([0]))) }
             let vid = try adb.open(Self.socket, window: 2 * 1024 * 1024)
             try vid.write(DisplayWire.hello(role: .video, session: id, ticket: ticket, token: token))
             guard let vidStart = awaitServer(vid, role: .video, ticket: ticket) else {
@@ -133,7 +137,7 @@ public final class PhoneAppSession: @unchecked Sendable {
             DispatchQueue.main.async { [self] in startPinging() }
             Thread { [self] in readControl(ctl, ctlStart) }.start()
             Thread { [self] in readVideo(vid, vidStart) }.start()
-            Thread { [self] in openAudio(adb, ticket) }.start()
+            if soundOnMac { Thread { [self] in openAudio(adb, ticket) }.start() }
             return true
         } catch {
             return false

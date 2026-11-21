@@ -13,6 +13,11 @@ struct SettingsView: View {
     @AppStorage(PhoneSpotlight.enabledKey) private var phoneAppsInSpotlight = true
     @AppStorage("PhoneApps.motion") private var phoneAppsMotion = "smooth"
     @AppStorage("PhoneApps.notificationClick") private var notificationClick = "phone"
+    @AppStorage(PhoneQuality.key) private var phoneQuality = PhoneQuality.auto.rawValue
+    @AppStorage(PhoneSound.key) private var phoneSound = "mac"
+    @AppStorage(AppWindowController.keyboardLayoutKey) private var keyboardLayout = ""
+    @AppStorage(AppWindowController.returnAfterKey) private var returnAfter = 0
+    @State private var phoneLayouts: [String] = []
     @State private var launchAtLogin = SMAppService.mainApp.status == .enabled
     @State private var confirmReset = false
 
@@ -71,7 +76,49 @@ struct SettingsView: View {
                              ? "Less delay; some frames are skipped when Wi-Fi is uneven."
                              : "Every frame shown, a little more delay. For windows opened from now on.")
                     }
-                    LabeledContent("Open the launcher", value: "⌥⌘P")
+                    Picker(selection: $phoneQuality) {
+                        ForEach(PhoneQuality.allCases, id: \.self) { Text($0.title).tag($0.rawValue) }
+                    } label: {
+                        Text("Quality")
+                        Text((PhoneQuality(rawValue: phoneQuality) ?? .auto).detail + " For windows opened from now on.")
+                    }
+                    Picker(selection: $phoneSound) {
+                        Text("On this Mac").tag("mac")
+                        Text("On your phone").tag("phone")
+                    } label: {
+                        Text("Play sound")
+                        Text("For windows opened from now on. Calls always stay on the phone.")
+                    }
+                    Picker(selection: $keyboardLayout) {
+                        Text("Same as this Mac").tag("")
+                        ForEach(phoneLayouts, id: \.self) { Text($0).tag($0) }
+                    } label: {
+                        Text("Keyboard layout")
+                        Text("The layout phone apps use for what you type here.")
+                    }
+                    .task {
+                        if let layouts = await engine.phoneKeyboardLayouts() {
+                            phoneLayouts = keyboardLayout.isEmpty || layouts.contains(keyboardLayout) ? layouts : [keyboardLayout] + layouts
+                        } else if !keyboardLayout.isEmpty {
+                            phoneLayouts = [keyboardLayout]
+                        }
+                    }
+                    .onChange(of: keyboardLayout) { _, _ in
+                        NotificationCenter.default.post(name: PhoneWindowManager.keyboardLayoutSettingChanged, object: nil)
+                    }
+                    Picker(selection: $returnAfter) {
+                        Text("Never").tag(0)
+                        ForEach([5, 15, 30, 60], id: \.self) { Text("After \($0) minutes").tag($0) }
+                    } label: {
+                        Text("Return hidden apps to the phone")
+                        Text("When a window stays minimised or out of sight that long, its app goes back to your phone.")
+                    }
+                    LabeledContent {
+                        ShortcutRecorder()
+                    } label: {
+                        Text("Open the launcher")
+                        Text("From anywhere. Use ⌘ or ⌃ with a key.")
+                    }
                 }
 
                 Section("History") {
@@ -154,5 +201,45 @@ struct SettingsView: View {
 
     private static var version: String {
         Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "dev"
+    }
+}
+
+/// The launcher's shortcut: click, then press the new one (Esc cancels).
+private struct ShortcutRecorder: View {
+    @State private var shortcut = LauncherShortcut.current
+    @State private var recording = false
+    @State private var monitor: Any?
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Button(recording ? "Type a shortcut…" : shortcut.title) { recording ? stop() : start() }
+                .monospacedDigit()
+            if shortcut != .default && !recording {
+                Button { save(.default) } label: { Image(systemName: "arrow.uturn.backward") }
+                    .buttonStyle(.borderless)
+                    .help("Back to ⌥⌘P")
+            }
+        }
+        .onDisappear(perform: stop)
+    }
+
+    private func start() {
+        recording = true
+        monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+            if event.keyCode == 53 { stop(); return nil } // Esc
+            if let new = LauncherShortcut(event) { save(new); stop() } else { NSSound.beep() }
+            return nil
+        }
+    }
+
+    private func stop() {
+        recording = false
+        if let monitor { NSEvent.removeMonitor(monitor) }
+        monitor = nil
+    }
+
+    private func save(_ new: LauncherShortcut) {
+        shortcut = new
+        LauncherShortcut.current = new
     }
 }

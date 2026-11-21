@@ -32,6 +32,8 @@ public enum DisplayWire {
     static let notification: UInt8 = 0x45
     /// Mac → phone: files dropped on the window (utf8 names, one per line, already pushed).
     static let share: UInt8 = 0x46
+    /// Mac → phone: u8 0 = the window's sound stays on the phone (sent right after OPEN).
+    static let sound: UInt8 = 0x47
 
     /// OPEN target for a window opened from a notification: its key in hex (keys hold any characters).
     public static func notificationTarget(_ key: String) -> String {

@@ -66,7 +66,7 @@ class DroppedFiles : ContentProvider() {
             }.onFailure { Log.w(TAG, "share failed: $it") }.getOrDefault(false)
             Log.i(TAG, "dropped ${files.size} file(s) ($type) to $pkg: accepts $accepts, sent $sent")
             if (!sent) {
-                HelperConnection.send(JSONObject().put("t", "display-share-failed").put("pkg", pkg).put("accepts", accepts))
+                HelperConnection.send(JSONObject().put("t", "share-failed").put("pkg", pkg).put("accepts", accepts))
             }
         }
     }
