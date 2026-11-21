@@ -1,4 +1,5 @@
 import CoreGraphics
+import CoreVideo
 import Foundation
 import NativeAdb
 
@@ -23,6 +24,8 @@ public final class PhoneAppSession: @unchecked Sendable {
     public var onState: (@MainActor @Sendable (State) -> Void)?
     /// The phone is warm and the quality reduced (true), or back to normal, on the main thread.
     public var onThermal: (@MainActor @Sendable (Bool) -> Void)?
+    /// An app window blocks capture (FLAG_SECURE), or stopped blocking, on the main thread.
+    public var onSecure: (@MainActor @Sendable (Bool) -> Void)?
     /// The video's pixel size (it changes after a resize), on the main thread.
     public var onVideoSize: (@MainActor @Sendable (CGSize) -> Void)?
 
@@ -74,6 +77,7 @@ public final class PhoneAppSession: @unchecked Sendable {
             // exit animation) must not hide the "was closed" state again.
             let current = lock.withLock { state }
             if current == .opening || current == .reconnecting { set(.showing) }
+            watchForBlack(frame)
             onFrame?(frame)
         }
         Thread { [self] in
@@ -152,6 +156,8 @@ public final class PhoneAppSession: @unchecked Sendable {
             switch message {
             case .taskGone(let reason): set(.gone(reason))
             case .error(_, let text): fail(text.isEmpty ? "The app couldn't be opened." : text)
+            case .secure(let on):
+                if let onSecure { Task { @MainActor in onSecure(on) } }
             case .thermal(let reduced):
                 if let onThermal { Task { @MainActor in onThermal(reduced) } }
             case let .pong(t0, phone):
@@ -366,18 +372,70 @@ public final class PhoneAppSession: @unchecked Sendable {
         pinger?.tolerance = 0.005
     }
 
+    // MARK: - Black pictures
+
+    private var blackSince: Int64?
+    private var reportedBlack = false
+    private var frameCount = 0
+
+    /// Samples every 10th frame; a picture all black for half a second (or no longer black) is
+    /// reported, and the phone checks for an app that blocks capture.
+    private func watchForBlack(_ frame: VideoDecoder.Frame) {
+        frameCount += 1
+        guard frameCount % 10 == 0 else { return }
+        let black = Self.isBlack(frame.image)
+        let now = monotonicMicros()
+        if black {
+            if blackSince == nil { blackSince = now }
+            if !reportedBlack, now - blackSince! > 500_000 {
+                reportedBlack = true
+                send(DisplayWire.packet(DisplayWire.black, Data([1])))
+            }
+        } else {
+            blackSince = nil
+            if reportedBlack {
+                reportedBlack = false
+                send(DisplayWire.packet(DisplayWire.black, Data([0])))
+            }
+        }
+    }
+
+    /// 64 points of the luma plane, all at video black (limited range: 16) or below 24.
+    static func isBlack(_ image: CVPixelBuffer) -> Bool {
+        guard CVPixelBufferLockBaseAddress(image, .readOnly) == kCVReturnSuccess else { return false }
+        defer { CVPixelBufferUnlockBaseAddress(image, .readOnly) }
+        let planar = CVPixelBufferIsPlanar(image)
+        guard let base = planar ? CVPixelBufferGetBaseAddressOfPlane(image, 0) : CVPixelBufferGetBaseAddress(image) else { return false }
+        let width = planar ? CVPixelBufferGetWidthOfPlane(image, 0) : CVPixelBufferGetWidth(image)
+        let height = planar ? CVPixelBufferGetHeightOfPlane(image, 0) : CVPixelBufferGetHeight(image)
+        let row = planar ? CVPixelBufferGetBytesPerRowOfPlane(image, 0) : CVPixelBufferGetBytesPerRow(image)
+        let bytes = base.assumingMemoryBound(to: UInt8.self)
+        for i in 0..<8 { for j in 0..<8 {
+            let x = width * (2 * i + 1) / 16, y = height * (2 * j + 1) / 16
+            if bytes[y * row + x] >= 24 { return false }
+        } }
+        return true
+    }
+
+    /// Closes the window and brings the app to the front on the phone ("Open on Phone").
+    public func openOnPhone() { close(onTop: true) }
+
     /// Closes the window's session; the app goes back to the phone, under what's showing there.
-    public func close() {
+    public func close() { close(onTop: false) }
+
+    private func close(onTop: Bool) {
         DispatchQueue.main.async { [self] in pinger?.invalidate() }
-        let streams = lock.withLock { () -> (AdbStream?, AdbStream?) in
+        let streams = lock.withLock { () -> (AdbStream?, AdbStream?)? in
+            if closing { return nil } // already closed ("Open on Phone", then the window's close)
             closing = true
             state = .closed
             audio?.close()
             return (control, video)
         }
+        guard let streams else { return }
         player.stop()
         writer.async {
-            try? streams.0?.write(DisplayWire.packet(DisplayWire.close))
+            try? streams.0?.write(DisplayWire.packet(DisplayWire.close, Data([onTop ? 1 : 0])))
             Thread.sleep(forTimeInterval: 0.2) // let it arrive before the stream closes
             streams.0?.close()
             streams.1?.close()

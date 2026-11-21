@@ -30,6 +30,10 @@ object DisplayWire {
     const val TASK = 0x20; const val TASK_GONE = 0x21; const val PONG = 0x22; const val ERROR = 0x23
     /** THERMAL: u8 1 if quality is reduced because the phone is warm, 0 when back to normal. */
     const val THERMAL = 0x24
+    /** SECURE: u8 1 if an app window on the display blocks capture (FLAG_SECURE: it shows black). */
+    const val SECURE = 0x25
+    /** Mac → phone BLACK: u8 1 when the picture has gone all black (check for SECURE), 0 when not. */
+    const val BLACK = 0x40
     // phone → Mac (video stream)
     const val CONFIG = 0x30; const val FRAME = 0x31
     // phone → Mac (audio stream): AUDIO_CONFIG u32 rate, u8 channels; AUDIO u64 pts µs, Opus packet

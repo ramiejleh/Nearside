@@ -18,6 +18,8 @@ final class AppWindowController: NSObject, NSWindowDelegate {
     private var cropPixels = 0
     /// Covered after the Mac slept or locked, until Touch ID (AuthGate).
     private var locked = false
+    /// The app's window blocks capture (FLAG_SECURE): the picture is black, so say why.
+    private var secure = false
 
     /// Apps that leave the phone's status-bar height empty at the top of any window. A per-app
     /// default ("PhoneApp.hideTopBand.<package>") overrides the list either way.
@@ -88,6 +90,11 @@ final class AppWindowController: NSObject, NSWindowDelegate {
             NSLog("Nearside: phone \(reduced ? "warm: quality reduced" : "cool again")")
             self?.window.subtitle = reduced ? "Lower quality: your phone is warm" : ""
         }
+        session.onSecure = { [weak self] on in
+            guard let self else { return }
+            secure = on
+            render(state)
+        }
         session.onVideoSize = { [weak self] size in
             guard let self else { return }
             stream.videoSize = CGSize(width: size.width, height: size.height - CGFloat(cropPixels)) // what's shown
@@ -116,11 +123,20 @@ final class AppWindowController: NSObject, NSWindowDelegate {
         Trace.log("window shows \(new)")
         if new == .showing, state != .showing { testInputIfAsked() }
         state = new
-        overlay.rootView = AppWindowOverlay(state: new, label: app.label, locked: locked,
+        overlay.rootView = AppWindowOverlay(state: new, label: app.label, locked: locked, secure: secure,
                                             reopen: { [weak self] in self?.reopen() },
                                             close: { [weak self] in self?.window.close() },
-                                            unlock: { PhoneWindowManager.shared?.unlock() })
-        overlay.isHidden = new == .showing && !locked
+                                            unlock: { PhoneWindowManager.shared?.unlock() },
+                                            openOnPhone: { [weak self] in self?.openOnPhone() })
+        overlay.isHidden = new == .showing && !locked && !secure
+        // Test hook: NEARSIDE_TEST_OVERLAY=<png> saves what the window shows over the app.
+        if let path = ProcessInfo.processInfo.environment["NEARSIDE_TEST_OVERLAY"], !overlay.isHidden {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [overlay] in
+                guard let rep = overlay.bitmapImageRepForCachingDisplay(in: overlay.bounds) else { return }
+                overlay.cacheDisplay(in: overlay.bounds, to: rep)
+                try? rep.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: path))
+            }
+        }
     }
 
     /// Covers the app (and stops its video) while the Mac is locked to phone apps.
@@ -320,6 +336,12 @@ final class AppWindowController: NSObject, NSWindowDelegate {
 
     @objc func goBack(_ sender: Any?) { if !locked { session.back() } }
 
+    /// The app, in front on the phone; the window closes.
+    private func openOnPhone() {
+        session.openOnPhone()
+        window.close()
+    }
+
     /// Dock menu: this window to the front.
     @objc func bringForward(_ sender: Any?) {
         if window.isMiniaturized { window.deminiaturize(nil) }
@@ -461,9 +483,11 @@ struct AppWindowOverlay: View {
     let state: PhoneAppSession.State
     let label: String
     var locked = false
+    var secure = false
     var reopen: () -> Void = {}
     var close: () -> Void = {}
     var unlock: () -> Void = {}
+    var openOnPhone: () -> Void = {}
 
     var body: some View {
         ZStack {
@@ -477,6 +501,17 @@ struct AppWindowOverlay: View {
                     Text("Your Mac was locked. Unlock to keep using your phone's apps.")
                         .font(.subheadline).foregroundStyle(.secondary).multilineTextAlignment(.center)
                     Button("Unlock", action: unlock).keyboardShortcut(.defaultAction)
+                } else if secure, state == .showing {
+                    Image(systemName: "eye.slash")
+                        .font(.system(size: 30, weight: .light)).foregroundStyle(.secondary)
+                    Text("\(label) blocks screen sharing").font(.headline)
+                    Text("It hides its screen from recordings and other displays, so it can only be used on your phone.")
+                        .font(.subheadline).foregroundStyle(.secondary).multilineTextAlignment(.center)
+                        .frame(maxWidth: 300)
+                    HStack {
+                        Button("Open on Phone", action: openOnPhone).keyboardShortcut(.defaultAction)
+                        Button("Close Window", action: close)
+                    }
                 } else {
                 switch state {
                 case .opening, .showing, .closed:

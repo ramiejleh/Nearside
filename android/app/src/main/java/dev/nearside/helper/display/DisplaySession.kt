@@ -153,7 +153,9 @@ class DisplaySession(
             }
             DisplayWire.VISIBILITY -> if (b.remaining() >= 1) setVisibility(b.get().toInt())
             DisplayWire.SYNC -> requestKeyframe()
-            DisplayWire.CLOSE -> close(toPhone = true)
+            // CLOSE: u8 1 = bring the app to the front on the phone ("Open on Phone").
+            DisplayWire.CLOSE -> close(toPhone = true, onTop = b.remaining() >= 1 && b.get().toInt() == 1)
+            DisplayWire.BLACK -> if (b.remaining() >= 1) black(b.get().toInt() == 1)
         }
     }
 
@@ -194,6 +196,41 @@ class DisplaySession(
     }
 
     /** Polled: which task is ours, and did it leave (closed, or moved to the phone)? */
+    // MARK: - Secure apps
+    //
+    // An app window with FLAG_SECURE (banking apps) is drawn black into our display. The Mac
+    // notices a black picture and asks; only then is the window list read (`dumpsys window`
+    // costs ~100 ms of system_server time, too much to poll), and again every 3 s while it stays
+    // black, so the window can say why it's black (and that it's no longer).
+
+    @Volatile private var secure = false
+    private var blackCheck: java.util.concurrent.ScheduledFuture<*>? = null
+
+    @Synchronized
+    private fun black(isBlack: Boolean) {
+        blackCheck?.cancel(false)
+        blackCheck = null
+        if (isBlack) {
+            blackCheck = watcher.scheduleWithFixedDelay({ runCatching { checkSecure() } }, 0, 3, TimeUnit.SECONDS)
+        } else if (secure) {
+            secure = false
+            ctl?.send(DisplayWire.SECURE, byteArrayOf(0))
+        }
+    }
+
+    private fun checkSecure() {
+        val p = Runtime.getRuntime().exec(arrayOf("dumpsys", "window", "windows"))
+        val text = p.inputStream.bufferedReader().readText().also { p.waitFor() }
+        // Per window: "mDisplayId=<id> …", "fl=… SECURE …", "isVisible=true".
+        val found = text.split("  Window #").any { w ->
+            w.contains("mDisplayId=$displayId ") && Regex("\\bfl=[^\\n]*\\bSECURE\\b").containsMatchIn(w) && w.contains("isVisible=true")
+        }
+        if (found == secure) return
+        secure = found
+        Log.d("display session $id: ${if (found) "an app window blocks capture (FLAG_SECURE)" else "no secure window"}")
+        ctl?.send(DisplayWire.SECURE, byteArrayOf(if (found) 1 else 0))
+    }
+
     fun owns(task: Int) = !closed && !taskGone && taskId == task
 
     /**
@@ -683,7 +720,7 @@ class DisplaySession(
      * on top). Then the display and encoder go.
      */
     @Synchronized
-    fun close(toPhone: Boolean) {
+    fun close(toPhone: Boolean, onTop: Boolean = false) {
         if (closed) return
         closed = true
         val onOurs = Hidden.rootTasks().filter { it.displayId == displayId }
@@ -693,7 +730,7 @@ class DisplaySession(
         if (hasAudio && Media.pause(onOurs.mapNotNull { it.packageName }.toSet())) Thread.sleep(150)
         audio.stop()
         if (toPhone && onOurs.isNotEmpty()) matchPhone()
-        if (toPhone) onOurs.forEach { Hidden.moveTask(it.taskId, 0, onTop = false) }
+        if (toPhone) onOurs.forEach { Hidden.moveTask(it.taskId, 0, onTop = onTop) }
         runCatching { awake?.release() }
         runCatching { keyboard?.close() }
         touchscreen?.let { PhoneDevice.closeInput(it) }
