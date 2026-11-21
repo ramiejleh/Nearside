@@ -8,7 +8,7 @@
 //  - an always-unlocked lock state, independent of the phone's.
 // It needs a companion association owned by the shell (app-streaming profile), created once with
 // `cmd companiondevice associate` and kept. If any of it fails, sessions fall back to plain
-// displays. Measured in vault/phone-apps-plan.md ("VirtualDevice wider spike").
+// displays. See docs/architecture.md.
 package dev.nearside.helper.display
 
 import android.annotation.SuppressLint

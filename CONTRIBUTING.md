@@ -20,13 +20,13 @@ See [Build and run](README.md#build-and-run). For a development loop:
 
 ```sh
 (cd android && ./gradlew assembleDebug) && adb install -r android/app/build/outputs/apk/debug/app-debug.apk
-adb shell pkill -f nearside-helper            # the Mac starts the new helper
+adb shell 'kill $(pidof nearside-helper)'     # the Mac starts the new helper
 (cd mac && swift test) && mac/scripts/bundle.sh && open mac/build/Nearside.app
 ```
 
 The Mac app has test hooks driven by environment variables (`NEARSIDE_OPEN_APP`,
 `NEARSIDE_TRACE`, `NEARSIDE_TEST_INPUT`…); they're documented in
-[`vault/phone-apps-plan.md`](vault/phone-apps-plan.md).
+[`docs/development.md`](docs/development.md), with how the code is organised.
 
 ## Pull requests
 

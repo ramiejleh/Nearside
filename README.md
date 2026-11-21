@@ -158,11 +158,12 @@ mac/                      Swift package: the Mac app
   Sources/NearsideCore/  sync engine, protocols, video and audio pipeline
   Sources/NativeAdb/        adb client: TLS, pairing, streams, file sync
 android/              Kotlin: the phone app and the shell-user helper
-vault/                    design notes, research and test results
+docs/                     architecture, security design, protocol, development
 ```
 
-Read [`vault/README.md`](vault/README.md) for the design and the reasoning behind it, and
-[`vault/phone-apps-plan.md`](vault/phone-apps-plan.md) for the phone-apps feature.
+Read [`docs/architecture.md`](docs/architecture.md) for how it works and why,
+[`docs/security.md`](docs/security.md) for the security design and
+[`docs/development.md`](docs/development.md) to work on it.
 
 ## Contributing
 

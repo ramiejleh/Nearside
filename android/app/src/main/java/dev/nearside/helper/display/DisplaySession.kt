@@ -34,7 +34,7 @@ class DisplaySession(
         // PUBLIC | OWN_CONTENT_ONLY | SUPPORTS_TOUCH | TRUSTED | OWN_DISPLAY_GROUP | ALWAYS_UNLOCKED |
         // TOUCH_FEEDBACK_DISABLED | OWN_FOCUS. OWN_CONTENT_ONLY matters: without it an empty display
         // mirrors the phone's own screen. No system decorations: on Android 17 they divert launches
-        // into desktop "desks" (and fail while locked). See vault/phone-apps-plan.md, Gate A.
+        // into desktop "desks" (and fail while locked). See docs/architecture.md.
         const val FLAGS = (1 shl 0) or (1 shl 3) or (1 shl 6) or (1 shl 10) or (1 shl 11) or (1 shl 12) or
             (1 shl 13) or (1 shl 14)
         private const val GRACE_MS = 30_000L

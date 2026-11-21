@@ -18,7 +18,7 @@ In scope: anything that lets another app on the phone, another device on the net
 another user on the Mac read or control what Nearside carries (clipboard, notifications,
 messages, files, phone apps), or use the helper's rights.
 
-The design and its threat model are described in [`vault/README.md`](vault/README.md).
+The design and its threat model are described in [`docs/security.md`](docs/security.md).
 
 ## Supported versions
 

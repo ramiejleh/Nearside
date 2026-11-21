@@ -1,7 +1,7 @@
 import CryptoKit
 import Foundation
 
-/// The phone-apps stream protocol (vault/phone-apps-plan.md; helper side: DisplayServer.kt).
+/// The phone-apps stream protocol (docs/display-protocol.md; helper side: DisplayServer.kt).
 /// Every packet: u8 type, u8 flags, u32 big-endian length, payload. Lengths from the wire are never
 /// trusted: each message checks its minimum size, and packets over `maxPacket` end the stream.
 /// An app in the phone window (a task on its display).

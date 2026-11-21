@@ -14,7 +14,7 @@ import javax.crypto.Mac
 import javax.crypto.spec.SecretKeySpec
 
 /**
- * Binary protocol of the display streams (vault/phone-apps-plan.md). Every packet:
+ * Binary protocol of the display streams (docs/display-protocol.md). Every packet:
  * u8 type, u8 flags, u32 big-endian length, payload. The first packet of a stream is HELLO.
  */
 object DisplayWire {

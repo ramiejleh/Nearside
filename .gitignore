@@ -8,3 +8,6 @@ local.properties
 # Swift
 .build/
 .swiftpm/
+
+# Private notes (kept locally, never committed)
+vault/
