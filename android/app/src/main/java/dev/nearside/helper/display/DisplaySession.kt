@@ -488,9 +488,12 @@ class DisplaySession(
         applyBudget()
     }
 
+    /** The bitrate grows with the picture: 12 Mbps per 2.6 Mpx (a phone-sized window), 30 at most. */
+    private val baseKbps get() = minOf(30_000, maxOf(kbps, (w.toLong() * h * 12_000 / 2_600_000).toInt()))
+
     private fun budgetKbps(): Int = (when (visibility) {
-        DisplayWire.VIS_FOCUSED -> kbps
-        else -> kbps * 6 / 10
+        DisplayWire.VIS_FOCUSED -> baseKbps
+        else -> baseKbps * 6 / 10
     } * congestion * heat).toInt().coerceAtLeast(500)
 
     /** Not encoding: hidden, or a hot phone (severe) keeps only the window in use going. */

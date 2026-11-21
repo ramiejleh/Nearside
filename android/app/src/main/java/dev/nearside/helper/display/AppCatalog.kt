@@ -49,7 +49,7 @@ object AppCatalog {
                 .put("ver", ver).put("used", used[a.packageName] ?: 0L))
         }
         return JSONObject().put("t", "display-apps").put("apps", apps).put("statusBarDp", statusBar)
-            .put("screenDp", screenDp())
+            .put("screenDp", screenDp()).put("densityDpi", densityDpi())
     }
 
     /** Last foreground time per package (usage stats; the shell may read them). */
@@ -129,6 +129,14 @@ object AppCatalog {
         val h = maxOf(m.widthPixels, m.heightPixels) / m.density
         "${Math.round(w)}x${Math.round(h)}"
     }.getOrDefault("")
+
+    /** The phone's density: windows use it too, so moving an app never changes its density. */
+    private fun densityDpi(): Int = runCatching {
+        val m = android.util.DisplayMetrics()
+        @Suppress("DEPRECATION")
+        Hidden.displayManager.getDisplay(android.view.Display.DEFAULT_DISPLAY).getRealMetrics(m)
+        m.densityDpi
+    }.getOrDefault(0)
 
     /** Reads the names (and the status bar) in the background when the helper starts. */
     fun warmUp() {

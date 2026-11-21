@@ -96,6 +96,7 @@ extension SyncEngine {
         if reply == nil { NSLog("Nearside: no answer to display-apps") }
         if let error = reply?["error"] { NSLog("Nearside: display-apps failed: \(error)") }
         if let dp = reply?["statusBarDp"] as? Int, dp > 0 { PhoneInfo.statusBarDp = dp }
+        if let dpi = reply?["densityDpi"] as? Int, (120...800).contains(dpi) { PhoneInfo.densityDpi = dpi }
         if let size = (reply?["screenDp"] as? String)?.split(separator: "x").compactMap({ Double($0) }), size.count == 2,
            size[0] > 200, size[1] > 300 {
             PhoneInfo.screenDp = CGSize(width: size[0], height: size[1])
@@ -172,6 +173,18 @@ public enum PhoneDisplaySize {
         return (s.width, s.height, s.dpi, crop)
     }
 
+    /// The display for a size: `dp` at the phone's own density (so an app moving between the
+    /// phone and a window, or between sizes, only ever changes size, never density: YouTube kept a
+    /// density-changed layout until killed), plus `cropTopDp` above that isn't shown.
+    public static func forPreset(_ dp: CGSize, density: Int, cropTopDp: Int = 0)
+        -> (width: Int, height: Int, dpi: Int, cropPixels: Int) {
+        let scale = Double(density) / 160
+        let crop = Int((Double(max(cropTopDp, 0)) * scale).rounded()) & ~1
+        let w = Int((dp.width * scale).rounded()) & ~1
+        let h = (Int((dp.height * scale).rounded()) & ~1) + crop
+        return (min(w, 4096), min(h, 4096), density, crop)
+    }
+
     /// A y (0…1) in the shown part → y (0…1) in the whole display.
     public static func displayY(_ y: Float, cropPixels: Int, height: Int) -> Float {
         guard cropPixels > 0, height > cropPixels else { return y }
@@ -184,6 +197,12 @@ public enum PhoneInfo {
     private static let lock = NSLock()
     nonisolated(unsafe) private static var _statusBarDp = 0
     nonisolated(unsafe) private static var _screenDp = CGSize(width: 412, height: 915)
+    nonisolated(unsafe) private static var _densityDpi = 420
+    /// The phone's screen density (a typical phone's until the app list has been fetched).
+    public static var densityDpi: Int {
+        get { lock.withLock { _densityDpi } }
+        set { lock.withLock { _densityDpi = newValue } }
+    }
     /// The phone's screen in dp, portrait (a typical phone until the app list has been fetched).
     public static var screenDp: CGSize {
         get { lock.withLock { _screenDp } }

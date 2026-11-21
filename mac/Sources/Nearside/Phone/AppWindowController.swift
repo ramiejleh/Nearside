@@ -17,8 +17,8 @@ final class AppWindowController: NSObject, NSWindowDelegate {
     private var cropPixels = 0
     /// Covered after the Mac slept or locked, until Touch ID (AuthGate).
     private var locked = false
-    fileprivate var sizeGroup: NSToolbarItemGroup?
-    fileprivate var cropItem: NSToolbarItem?
+    /// The vertical toolbar beside the app: Back, then the toolbox.
+    private var tools: SideToolbar!
     /// The app's window blocks capture (FLAG_SECURE): the picture is black, so say why.
     private var secure = false
 
@@ -42,7 +42,7 @@ final class AppWindowController: NSObject, NSWindowDelegate {
 
     /// The display keeps the preset's dp (2 px per dp, capped); the window only scales it.
     private func displaySize() -> (width: Int, height: Int, dpi: Int, cropPixels: Int) {
-        PhoneDisplaySize.forWindow(dp, scale: 2, cropTopDp: topBandDp)
+        PhoneDisplaySize.forPreset(dp, density: PhoneInfo.densityDpi, cropTopDp: topBandDp)
     }
 
     /// Window points per dp: saved per app and size, else what fits the screen.
@@ -50,12 +50,13 @@ final class AppWindowController: NSObject, NSWindowDelegate {
         let saved = UserDefaults.standard.double(forKey: "PhoneApp.zoom.\(app.package).\(size.rawValue)")
         if saved > 0 { return saved }
         let screen = (window.screen ?? NSScreen.main)?.visibleFrame.size ?? CGSize(width: 1440, height: 875)
-        return PhoneSize.fittingZoom(dp, chrome: window.frame.height - window.contentLayoutRect.height, screen: screen)
+        return PhoneSize.fittingZoom(dp, chrome: CGSize(width: SideToolbar.width, height: window.frame.height - window.contentLayoutRect.height),
+                                     screen: screen)
     }
 
     /// The window to the size's shape at `zoom`, its top-left corner kept.
     private func fitWindow(zoom z: CGFloat, animate: Bool) {
-        let content = NSSize(width: (dp.width * z).rounded(), height: (dp.height * z).rounded())
+        let content = NSSize(width: (dp.width * z).rounded() + SideToolbar.width, height: (dp.height * z).rounded())
         var frame = window.frameRect(forContentRect: NSRect(origin: .zero, size: content))
         frame.origin = NSPoint(x: window.frame.minX, y: window.frame.maxY - frame.height)
         if let visible = (window.screen ?? NSScreen.main)?.visibleFrame { // stay on screen
@@ -94,19 +95,37 @@ final class AppWindowController: NSObject, NSWindowDelegate {
         let container = NSView()
         container.addSubview(stream)
         container.addSubview(overlay)
-        for view in [stream, overlay] as [NSView] {
+        window.contentView = container
+
+        super.init()
+        // The app on the left, the toolbar on the right: nothing covers the app.
+        tools = SideToolbar([
+            .button(id: "back", symbol: "chevron.backward", label: "Back (⌘[)") { [weak self] in self?.goBack(nil) },
+            .separator,
+            .button(id: PhoneSize.phone.rawValue, symbol: PhoneSize.phone.symbol, label: "Phone size (⌃⌘1)") { [weak self] in self?.setSize(.phone) },
+            .button(id: PhoneSize.foldable.rawValue, symbol: PhoneSize.foldable.symbol, label: "Foldable size (⌃⌘2)") { [weak self] in self?.setSize(.foldable) },
+            .button(id: PhoneSize.tablet.rawValue, symbol: PhoneSize.tablet.symbol, label: "Tablet size (⌃⌘3)") { [weak self] in self?.setSize(.tablet) },
+            .separator,
+            .button(id: "crop", symbol: "rectangle.topthird.inset.filled", label: "Hide Top Bar") { [weak self] in self?.toggleTopBar(nil) },
+            .spacer,
+            .button(id: "toPhone", symbol: "iphone.and.arrow.forward", label: "Open on Phone") { [weak self] in self?.openOnPhone() },
+        ])
+        container.addSubview(tools)
+        for view in [stream, overlay, tools] as [NSView] {
             view.translatesAutoresizingMaskIntoConstraints = false
             NSLayoutConstraint.activate([
-                view.leadingAnchor.constraint(equalTo: container.leadingAnchor),
-                view.trailingAnchor.constraint(equalTo: container.trailingAnchor),
                 view.topAnchor.constraint(equalTo: container.topAnchor),
                 view.bottomAnchor.constraint(equalTo: container.bottomAnchor),
             ])
         }
-        window.contentView = container
-
-        super.init()
-        installToolbar()
+        NSLayoutConstraint.activate([
+            stream.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            stream.trailingAnchor.constraint(equalTo: tools.leadingAnchor),
+            overlay.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            overlay.trailingAnchor.constraint(equalTo: tools.leadingAnchor),
+            tools.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+        ])
+        updateToolbox()
         fitWindow(zoom: zoom, animate: false)
         if !placed { window.center() }
         stream.macShortcuts = ["=", "+", "-", "0"] // View → Larger / Smaller / Actual Size
@@ -289,6 +308,28 @@ final class AppWindowController: NSObject, NSWindowDelegate {
                 Trace.log("test type sent")
                 return
             }
+            if mode == "size", let spec = ProcessInfo.processInfo.environment["NEARSIDE_TEST_SIZE"],
+               let first = PhoneSize(rawValue: spec) {
+                // Size names: switch, optionally to a second (NEARSIDE_TEST_SIZE2) 8 s later, then
+                // close (NEARSIDE_TEST_CLOSE_AFTER): the app goes back to the phone.
+                setSize(first)
+                try? await Task.sleep(for: .seconds(8))
+                if let second = ProcessInfo.processInfo.environment["NEARSIDE_TEST_SIZE2"].flatMap(PhoneSize.init(rawValue:)) {
+                    setSize(second)
+                    try? await Task.sleep(for: .seconds(8))
+                }
+                NSLog("Nearside: test sizes: picture \(stream.bounds.size), video \(stream.videoPointSize), size \(self.size.rawValue)")
+                if let path = ProcessInfo.processInfo.environment["NEARSIDE_TEST_OVERLAY"], let view = window.contentView,
+                   let rep = view.bitmapImageRepForCachingDisplay(in: view.bounds) {
+                    view.cacheDisplay(in: view.bounds, to: rep)
+                    try? rep.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: path))
+                }
+                if let wait = Double(ProcessInfo.processInfo.environment["NEARSIDE_TEST_CLOSE_AFTER"] ?? "") {
+                    try? await Task.sleep(for: .seconds(wait))
+                    window.close()
+                }
+                return
+            }
             if mode == "size", let spec = ProcessInfo.processInfo.environment["NEARSIDE_TEST_SIZE"] {
                 // "WxH" in points: the window's content size (e.g. phone-shaped "400x880").
                 let parts = spec.split(separator: "x").compactMap { Double($0) }
@@ -368,15 +409,6 @@ final class AppWindowController: NSObject, NSWindowDelegate {
         PhoneWindowManager.shared?.open(app)
     }
 
-    // MARK: - Toolbar
-
-    private func installToolbar() {
-        let toolbar = NSToolbar(identifier: "PhoneAppToolbar")
-        toolbar.delegate = self
-        toolbar.displayMode = .iconOnly
-        window.toolbar = toolbar
-        window.toolbarStyle = .unifiedCompact
-    }
 
     @objc func goBack(_ sender: Any?) { if !locked { session.back() } }
 
@@ -509,80 +541,14 @@ extension AppWindowController: NSMenuItemValidation {
 }
 
 extension AppWindowController {
-    @objc fileprivate func sizePicked(_ sender: NSToolbarItemGroup) {
-        setSize(PhoneSize.allCases[max(0, sender.selectedIndex)])
-    }
-
-    @objc fileprivate func openOnPhoneFromToolbar(_ sender: Any?) { openOnPhone() }
-
     /// The toolbox shows the current size and whether the crop is on.
     func updateToolbox() {
-        sizeGroup?.selectedIndex = PhoneSize.allCases.firstIndex(of: size) ?? 0
-        if let cropItem {
-            cropItem.image = NSImage(systemSymbolName: hidesTopBand ? "rectangle.topthird.inset.filled" : "rectangle.inset.filled",
-                                     accessibilityDescription: hidesTopBand ? "Show Top Bar" : "Hide Top Bar")
-            cropItem.label = hidesTopBand ? "Show Top Bar" : "Hide Top Bar"
-        }
-    }
-}
-
-extension AppWindowController: NSToolbarDelegate {
-    private static let back = NSToolbarItem.Identifier("back")
-
-    private static let sizes = NSToolbarItem.Identifier("sizes")
-    private static let crop = NSToolbarItem.Identifier("crop")
-    private static let toPhone = NSToolbarItem.Identifier("toPhone")
-
-    // The permanent bar, beside the app (never over it): Back, then the toolbox — the size
-    // (Phone / Foldable / Tablet), the top-band crop, and Open on Phone.
-    func toolbarDefaultItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
-        [Self.back, .flexibleSpace, Self.sizes, Self.crop, Self.toPhone]
-    }
-    func toolbarAllowedItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
-        [Self.back, .flexibleSpace, Self.sizes, Self.crop, Self.toPhone]
-    }
-
-    func toolbar(_ toolbar: NSToolbar, itemForItemIdentifier id: NSToolbarItem.Identifier,
-                 willBeInsertedIntoToolbar flag: Bool) -> NSToolbarItem? {
-        switch id {
-        case Self.sizes:
-            let group = NSToolbarItemGroup(itemIdentifier: id, images: PhoneSize.allCases.map {
-                NSImage(systemSymbolName: $0.symbol, accessibilityDescription: $0.title)!
-            }, selectionMode: .selectOne, labels: PhoneSize.allCases.map(\.title), target: self, action: #selector(sizePicked(_:)))
-            group.label = "Size"
-            group.toolTip = "Show the app at a phone, open foldable or tablet size"
-            group.selectedIndex = PhoneSize.allCases.firstIndex(of: size) ?? 0
-            sizeGroup = group
-            return group
-        case Self.crop:
-            let item = NSToolbarItem(itemIdentifier: id)
-            item.toolTip = "Hide the empty band some apps leave at the top"
-            item.isBordered = true
-            item.target = self
-            item.action = #selector(toggleTopBar(_:))
-            cropItem = item
-            updateToolbox()
-            return item
-        case Self.toPhone:
-            let item = NSToolbarItem(itemIdentifier: id)
-            item.label = "Open on Phone"
-            item.toolTip = "Open on Phone: the app goes back to your phone, in front"
-            item.image = NSImage(systemSymbolName: "iphone.and.arrow.forward", accessibilityDescription: "Open on Phone")
-            item.isBordered = true
-            item.target = self
-            item.action = #selector(openOnPhoneFromToolbar(_:))
-            return item
-        default: break
-        }
-        guard id == Self.back else { return nil }
-        let item = NSToolbarItem(itemIdentifier: id)
-        item.label = "Back"
-        item.toolTip = "Back"
-        item.image = NSImage(systemSymbolName: "chevron.backward", accessibilityDescription: "Back")
-        item.isBordered = true
-        item.target = self
-        item.action = #selector(goBack(_:))
-        return item
+        guard let tools else { return }
+        for size in PhoneSize.allCases { tools.setSelected(size.rawValue, size == self.size) }
+        tools.setSelected("crop", hidesTopBand)
+        tools.setSymbol("crop", hidesTopBand ? "rectangle.topthird.inset.filled" : "rectangle.inset.filled",
+                        label: hidesTopBand ? "Show Top Bar" : "Hide Top Bar")
+        tools.setEnabled("crop", PhoneInfo.statusBarDp > 0)
     }
 }
 

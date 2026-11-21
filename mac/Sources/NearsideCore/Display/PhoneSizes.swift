@@ -36,10 +36,10 @@ public enum PhoneSize: String, CaseIterable, Sendable {
         }
     }
 
-    /// The zoom (window points per dp) that fits `dp` plus `chrome` points of bars on `screen`,
-    /// at most 1 (actual size: 1 dp = 1 pt), in steps of 0.05.
-    public static func fittingZoom(_ dp: CGSize, chrome: CGFloat, screen: CGSize) -> CGFloat {
-        let fit = min(1, screen.width * 0.92 / dp.width, (screen.height * 0.9 - chrome) / dp.height)
+    /// The zoom (window points per dp) that fits `dp` plus `chrome` points of bars (title bar
+    /// height, side toolbar width) on `screen`, at most 1 (actual size: 1 dp = 1 pt), in steps of 0.05.
+    public static func fittingZoom(_ dp: CGSize, chrome: CGSize = .zero, screen: CGSize) -> CGFloat {
+        let fit = min(1, (screen.width * 0.92 - chrome.width) / dp.width, (screen.height * 0.9 - chrome.height) / dp.height)
         return max(0.3, (fit * 20).rounded(.down) / 20)
     }
 }
