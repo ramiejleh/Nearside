@@ -192,6 +192,7 @@ struct SettingsView: View {
                 }
             }
             .formStyle(.grouped)
+            .tint(.green) // switches are green when on (the form's only tinted controls)
             .scrollContentBackground(.hidden)
             .onAppear { permissions.startWatching() }
             .onDisappear { permissions.stopWatching() }

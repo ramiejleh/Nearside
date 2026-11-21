@@ -326,7 +326,7 @@ private struct Choice: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
             Spacer(minLength: 8)
-            Toggle("", isOn: $isOn).toggleStyle(.switch).labelsHidden()
+            Toggle("", isOn: $isOn).toggleStyle(.switch).labelsHidden().tint(.green)
         }
         .padding(14)
         .background(.quaternary.opacity(0.45), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
