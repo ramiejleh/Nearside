@@ -28,6 +28,9 @@ class AudioStreamer(private val name: String) {
     private var codec: MediaCodec? = null
     private var channels = 2
     @Volatile private var conn: DisplayWire.Conn? = null
+    /** When something on the display last made a sound (uptime ms). */
+    @Volatile var lastSoundAt = 0L
+        private set
     @Volatile private var stopped = false
     /** null until [start] has run; then whether sound is captured. */
     @Volatile private var capturing: Boolean? = null
@@ -102,6 +105,7 @@ class AudioStreamer(private val name: String) {
                 // Blocks until a frame's worth is there: the capture paces the loop.
                 val n = read.invoke(cap, frame, 0, frame.size) as Int
                 if (n <= 0) { if (n < 0) break else continue }
+                for (i in 0 until n) if (frame[i] > 64 || frame[i] < -64) { lastSoundAt = SystemClock.uptimeMillis(); break }
                 val pts = SystemClock.uptimeMillis() * 1000 - FRAME_MS * 1000L
                 val index = codec.dequeueInputBuffer(10_000)
                 if (index >= 0) {

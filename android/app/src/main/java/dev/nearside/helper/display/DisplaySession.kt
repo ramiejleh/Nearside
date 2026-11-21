@@ -90,6 +90,7 @@ class DisplaySession(
         launch()
         watcher.scheduleWithFixedDelay({ runCatching { watchTasks() } }, 300, 500, TimeUnit.MILLISECONDS)
         watcher.scheduleWithFixedDelay({ logStats() }, 5, 5, TimeUnit.SECONDS)
+        watcher.scheduleWithFixedDelay({ runCatching { sleepWhenLongHidden() } }, 5, 5, TimeUnit.SECONDS)
     }
 
     // MARK: - Connections
@@ -505,6 +506,7 @@ class DisplaySession(
     @Synchronized
     private fun applyBudget() {
         if (closed) return
+        sleepWhenLongHidden()
         if (!suspended && budgetFps() != encoderFps) return replaceEncoder()
         runCatching {
             codec?.setParameters(Bundle().apply {
@@ -512,6 +514,45 @@ class DisplaySession(
                 putInt(MediaCodec.PARAMETER_KEY_VIDEO_BITRATE, budgetKbps() * 1000)
             })
         }.onFailure { Log.d("display session $id: budget not applied: $it") }
+    }
+
+    // MARK: Sleeping when hidden
+    //
+    // The display's wake lock keeps it (and its app) running. A window hidden for a while and
+    // silent lets its display sleep, as the phone's own screen would: the app is stopped like
+    // any app behind a screen that's off. Shown again, the lock wakes it. Music keeps playing:
+    // a display that made a sound in the last 30 s stays awake.
+
+    private var suspendedSince = 0L
+    private var asleep = false
+
+    @Synchronized
+    private fun sleepWhenLongHidden() {
+        val now = SystemClock.uptimeMillis()
+        if (!suspended) {
+            suspendedSince = 0
+            if (asleep) {
+                asleep = false
+                runCatching { awake?.acquire() } // ACQUIRE_CAUSES_WAKEUP: the display wakes
+                requestKeyframe()
+                Log.d("display session $id: awake again")
+            }
+            return
+        }
+        if (suspendedSince == 0L) suspendedSince = now
+        if (asleep || now - suspendedSince < sleepAfterMs) return
+        if (hasAudio && now - audio.lastSoundAt < 30_000) return
+        asleep = true
+        runCatching { awake?.release() }
+        Log.d("display session $id: hidden ${(now - suspendedSince) / 1000} s and silent; letting the display sleep")
+    }
+
+    /** 2 minutes, or `debug.nearside.sleep_after_s` (tests). */
+    private val sleepAfterMs: Long by lazy {
+        runCatching {
+            val p = Runtime.getRuntime().exec(arrayOf("getprop", "debug.nearside.sleep_after_s"))
+            p.inputStream.bufferedReader().readText().trim().also { p.waitFor() }.toLong() * 1000
+        }.getOrDefault(120_000L)
     }
 
     /** A new encoder for the display at the current size and budget. */
