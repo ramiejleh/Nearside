@@ -154,6 +154,8 @@ public enum Adb {
 
     public enum AppUpdate: Sendable, Equatable {
         case upToDate, updated
+        /// The phone couldn't be reached or asked: check again on the next connection.
+        case unknown
         /// Installed from a build signed with another key (e.g. built from source): Android
         /// refuses to update it, only to replace it.
         case otherSignature
@@ -164,8 +166,10 @@ public enum Adb {
     /// never installs it where it's missing: that's setup's job). The helper runs from the old
     /// APK, so it's stopped and the next connection starts the new one.
     static func updateAppIfOutdated(pinned: String, apk: URL, version: Int) -> AppUpdate {
-        guard let serial = ensureConnected(pinned: pinned),
-              let installed = installedAppVersion(serial), installed < version else { return .upToDate }
+        guard let serial = ensureConnected(pinned: pinned) else { return .unknown }
+        let listed = shell(serial, "pm list packages --show-versioncode \(appPackage)")
+        guard listed.ok else { return .unknown }
+        guard let installed = installedAppVersion(serial), installed < version else { return .upToDate }
         let r = install(apk)
         guard r.ok else {
             return r.out.contains("INSTALL_FAILED_UPDATE_INCOMPATIBLE") ? .otherSignature : .failed(r.out)

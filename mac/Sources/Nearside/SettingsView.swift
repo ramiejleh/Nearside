@@ -20,6 +20,7 @@ struct SettingsView: View {
     @State private var phoneLayouts: [String] = []
     @State private var launchAtLogin = SMAppService.mainApp.status == .enabled
     @State private var confirmReset = false
+    @State private var permissions = Permissions()
 
     var body: some View {
         VStack(spacing: 0) {
@@ -121,6 +122,14 @@ struct SettingsView: View {
                     }
                 }
 
+                Section {
+                    ForEach(Permissions.kinds) { PermissionRow(permissions: permissions, kind: $0) }
+                } header: {
+                    Text("Permissions")
+                } footer: {
+                    Text("What macOS lets Nearside do. If something stops working, check here first.")
+                }
+
                 Section("History") {
                     Picker("Keep", selection: Binding(get: { engine.historyLimit }, set: { engine.historyLimit = $0 })) {
                         Text("50 items").tag(50)
@@ -184,6 +193,8 @@ struct SettingsView: View {
             }
             .formStyle(.grouped)
             .scrollContentBackground(.hidden)
+            .onAppear { permissions.startWatching() }
+            .onDisappear { permissions.stopWatching() }
 
             Divider()
             HStack {

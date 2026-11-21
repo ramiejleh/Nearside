@@ -215,8 +215,10 @@ public final class SyncEngine {
 
     private func updatePhoneAppIfNeeded(pinned: String) async {
         guard !checkedPhoneApp, inUseOn == nil, let apk = apkURL, let version = bundledAppVersion, version > 0 else { return }
-        checkedPhoneApp = true
-        switch await Task.detached(operation: { Adb.updateAppIfOutdated(pinned: pinned, apk: apk, version: version) }).value {
+        let outcome = await Task.detached(operation: { Adb.updateAppIfOutdated(pinned: pinned, apk: apk, version: version) }).value
+        if outcome != .unknown { checkedPhoneApp = true }
+        switch outcome {
+        case .unknown: break
         case .upToDate: phoneAppProblem = nil
         case .updated:
             phoneAppProblem = nil

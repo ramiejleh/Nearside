@@ -103,6 +103,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         statusItem = StatusItemController(engine: engine)
         openAppForTesting(engine)
         snapshotLauncherForTesting(engine)
+        snapshotSetupForTesting(engine)
     }
 
     @objc func showPhoneLauncher(_ sender: Any?) { statusItem?.phoneApps.showLauncher() }
@@ -123,6 +124,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
               let id = userActivity.userInfo?[CSSearchableItemActivityIdentifier] as? String else { return false }
         statusItem?.phoneApps.open(id: id)
         return true
+    }
+
+    /// Test hook: NEARSIDE_TEST_SETUP=<png> saves the setup window's permissions page (after
+    /// NEARSIDE_TEST_WAIT seconds, default 3, so the states have settled).
+    private func snapshotSetupForTesting(_ engine: SyncEngine) {
+        let env = ProcessInfo.processInfo.environment
+        guard let path = env["NEARSIDE_TEST_SETUP"] else { return }
+        let window = NSWindow(contentRect: NSRect(x: -3000, y: 0, width: 620, height: 560), styleMask: [.borderless],
+                              backing: .buffered, defer: false)
+        let view = NSHostingView(rootView: SetupWizard(engine: engine, close: {}, startPage: .permissions))
+        window.contentView = view
+        window.appearance = NSAppearance(named: .aqua) // dark text on the white snapshot
+        window.backgroundColor = .white
+        window.orderFrontRegardless()
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(Double(env["NEARSIDE_TEST_WAIT"] ?? "") ?? 3))
+            guard let rep = view.bitmapImageRepForCachingDisplay(in: view.bounds) else { return }
+            view.cacheDisplay(in: view.bounds, to: rep)
+            try? rep.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: path))
+            window.close()
+        }
     }
 
     /// Test hook: NEARSIDE_TEST_LAUNCHER=<png> shows the launcher once connected and saves its

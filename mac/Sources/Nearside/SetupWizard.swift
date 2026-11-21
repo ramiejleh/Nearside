@@ -38,10 +38,17 @@ struct SetupWizard: View {
     let close: () -> Void
 
     enum Page: Int, CaseIterable {
-        case welcome, phone, pair, choices, done
+        case welcome, permissions, phone, pair, choices, done
     }
 
-    @State private var page: Page = .welcome
+    @State private var page: Page
+
+    init(engine: SyncEngine, close: @escaping () -> Void, startPage: Page = .welcome) {
+        self.engine = engine
+        self.close = close
+        _page = State(initialValue: startPage)
+    }
+    @State private var permissions = Permissions()
 
     var body: some View {
         VStack(spacing: 0) {
@@ -62,6 +69,8 @@ struct SetupWizard: View {
         }
         .frame(width: 620, height: 560)
         .animation(.snappy(duration: 0.25), value: page)
+        .onAppear { permissions.startWatching() }
+        .onDisappear { permissions.stopWatching() }
         // Pairing ends with the phone connecting: move on by itself.
         .onChange(of: engine.state) { _, state in
             if page == .pair && state == .connected { page = .choices }
@@ -91,6 +100,7 @@ struct SetupWizard: View {
     private var icon: String {
         switch page {
         case .welcome: "link"
+        case .permissions: "hand.raised"
         case .phone: "iphone.gen3.radiowaves.left.and.right"
         case .pair: "qrcode"
         case .choices: "slider.horizontal.3"
@@ -101,6 +111,7 @@ struct SetupWizard: View {
     private var title: String {
         switch page {
         case .welcome: "Welcome to Nearside"
+        case .permissions: "Allow Nearside on this Mac"
         case .phone: "Prepare your phone"
         case .pair: "Pair with your phone"
         case .choices: "Choose what to sync"
@@ -111,6 +122,7 @@ struct SetupWizard: View {
     private var subtitle: String {
         switch page {
         case .welcome: "Your Android phone and this Mac, working together. A one-time setup of about two minutes."
+        case .permissions: "macOS asks before an app uses these. Allow each one; you can change them later in Settings."
         case .phone: "Nearside connects through Android's Wireless debugging, which lives in Developer options."
         case .pair: "This links your phone and this Mac, once. It stays paired after reboots and Wi-Fi changes."
         case .choices: "You can change all of these later in Settings (the gear in the menu-bar panel)."
@@ -123,6 +135,7 @@ struct SetupWizard: View {
     @ViewBuilder private var content: some View {
         switch page {
         case .welcome: welcome
+        case .permissions: permissionsPage
         case .phone: phone
         case .pair: PairingView(engine: engine)
         case .choices: choices
@@ -145,6 +158,16 @@ struct SetupWizard: View {
                 .font(.footnote)
                 .foregroundStyle(.secondary)
                 .padding(.top, 6)
+        }
+    }
+
+    private var permissionsPage: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            ForEach(Permissions.kinds) { PermissionRow(permissions: permissions, kind: $0) }
+            Label("Nothing leaves your Wi-Fi: these only let Nearside talk to your phone and show what it sends.",
+                  systemImage: "lock.shield")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
         }
     }
 
@@ -221,6 +244,9 @@ struct SetupWizard: View {
                 .keyboardShortcut(.defaultAction)
                 .tint(.green)
                 .buttonStyle(.borderedProminent)
+        case .permissions where !permissions.allAllowed:
+            Button("Continue Without") { page = next }
+                .keyboardShortcut(.defaultAction)
         default:
             Button("Continue") { page = next }
                 .keyboardShortcut(.defaultAction)
