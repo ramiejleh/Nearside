@@ -117,6 +117,9 @@ public final class AdbConnection: @unchecked Sendable {
         channel.close()
     }
 
+    /// Frequent keepalive probes while phone-app windows are open, rare otherwise (they wake the phone).
+    public func setKeepalive(busy: Bool) { channel.setKeepalive(busy: busy) }
+
     /// Opens a stream to a service on the phone ("shell,v2,raw:ls", "localabstract:name", …).
     /// `window` bounds how much the phone may send before we read it (latency-sensitive streams
     /// keep it small: a big window only hides queueing).

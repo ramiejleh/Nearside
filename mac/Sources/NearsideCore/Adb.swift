@@ -74,23 +74,14 @@ public enum Adb {
         return nil
     }
 
-    static func model(_ serial: String) -> String? {
-        Native.current()?.property("ro.product.model")
-    }
-
     /// True only for a process named exactly `nearside-helper` owned by the shell user:
     /// an app can pick a similar process name, but can never run as shell.
     static func helperRunning(_ serial: String) -> Bool {
-        shell(serial, "ps -A -o USER,NAME").out
-            .split(separator: "\n")
-            .contains { $0.split(whereSeparator: \.isWhitespace) == ["shell", "nearside-helper"] }
+        helperListed(shell(serial, "ps -A -o USER,NAME").out)
     }
 
-    /// Every Mac paired with the phone has its own token; a helper another Mac started finds ours
-    /// here, in a folder only the shell user can read (apps can't), named by our token's id.
-    static func registerToken(_ serial: String) {
-        let dir = "/data/local/tmp/nearside-macs"
-        _ = shell(serial, "mkdir -p \(dir) && chmod 700 \(dir) && umask 077 && printf %s \(Token.value) > \(dir)/\(Token.id)")
+    private static func helperListed(_ ps: String) -> Bool {
+        ps.split(separator: "\n").contains { $0.split(whereSeparator: \.isWhitespace) == ["shell", "nearside-helper"] }
     }
 
     /// Launches the privileged helper in its own session so it outlives this adb connection.
@@ -112,15 +103,24 @@ public enum Adb {
 
     /// Connects and starts the helper if needed. nil when unreachable. (The Mac then opens a
     /// stream straight to the helper's socket over this connection: no port forwarding.)
+    ///
+    /// One shell command (each one wakes the phone): registers this Mac's token, then reads the
+    /// model and what's running. Every Mac paired with the phone has its own token; a helper
+    /// another Mac started finds ours in a folder only the shell user can read (apps can't),
+    /// named by our token's id. It's only written when it isn't there already.
     static func prepareHelper(pinned: String) -> Phone? {
         guard let serial = ensureConnected(pinned: pinned) else { return nil }
-        registerToken(serial)
-        if !helperRunning(serial) {
+        let dir = "/data/local/tmp/nearside-macs", file = "\(dir)/\(Token.id)"
+        let out = shell(serial, "mkdir -p \(dir) && chmod 700 \(dir) && umask 077 && "
+            + "{ [ \"$(cat \(file) 2>/dev/null)\" = \(Token.value) ] || printf %s \(Token.value) > \(file); }; "
+            + "getprop ro.product.model; ps -A -o USER,NAME").out
+        let model = out.split(separator: "\n", omittingEmptySubsequences: false).first.map(String.init)
+        if !helperListed(out) {
             _ = startHelper(serial)
             Thread.sleep(forTimeInterval: 1.5)
             guard helperRunning(serial) else { return nil }
         }
-        return Phone(serial: serial, hardwareSerial: serial, model: model(serial))
+        return Phone(serial: serial, hardwareSerial: serial, model: model?.isEmpty == false ? model : nil)
     }
 
     /// A stream to the helper's abstract socket, over the pinned connection.

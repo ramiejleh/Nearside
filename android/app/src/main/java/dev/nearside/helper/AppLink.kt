@@ -49,6 +49,11 @@ object AppLink {
 
     @Volatile private var app: IAppCallback? = null
     @Volatile private var appUid = -1
+    /** The sticky unfreeze took (then the wake broadcast is only needed right after a re-link). */
+    @Volatile private var unfrozen = false
+    @Volatile private var linkedAt = 0L
+    /** When the app last died, recent first: it's re-linked (restarting it) more slowly if it keeps dying. */
+    private val deaths = ArrayDeque<Long>()
     private val scheduler = Executors.newSingleThreadScheduledExecutor()
 
     val isLinked get() = app != null
@@ -136,7 +141,9 @@ object AppLink {
         } catch (e: RemoteException) {
             Log.d("Mac → app failed: $e")
         }
-        if (target != null) wake()
+        // Only needed while the app may still be frozen: the sticky unfreeze failed, or it was
+        // only just linked (each is a broadcast that wakes the app's process).
+        if (target != null && (!unfrozen || System.currentTimeMillis() - linkedAt < 30_000)) wake()
     }
 
     /**
@@ -146,12 +153,13 @@ object AppLink {
      * process (each re-link). An idle unfrozen process is asleep, so this costs no battery.
      */
     private fun keepUnfrozen() {
-        runCatching {
+        unfrozen = runCatching {
             val p = ProcessBuilder("cmd", "activity", "unfreeze", "--sticky", PACKAGE).redirectErrorStream(true).start()
             val out = p.inputStream.bufferedReader().readText().trim()
-            p.waitFor()
+            val code = p.waitFor()
             if (out.isNotEmpty()) Log.d("unfreeze: $out")
-        }.onFailure { Log.d("unfreeze failed: $it") }
+            code == 0 && out.isEmpty()
+        }.onFailure { Log.d("unfreeze failed: $it") }.getOrDefault(false)
     }
 
     /**
@@ -183,6 +191,23 @@ object AppLink {
         }
     }
 
+    /**
+     * Seconds until re-linking after the app died. Re-linking starts its process again, so an app
+     * that keeps dying (memory pressure) is restarted less and less often: 3 s, then 30 s after
+     * three deaths in ten minutes, five minutes after six.
+     */
+    @Synchronized
+    private fun relinkDelay(): Long {
+        val now = System.currentTimeMillis()
+        deaths.addFirst(now)
+        while (deaths.isNotEmpty() && now - deaths.last() > 600_000) deaths.removeLast()
+        return when {
+            deaths.size >= 6 -> 300
+            deaths.size >= 3 -> 30
+            else -> 3
+        }
+    }
+
     private fun tryAttach(): Boolean {
         val am = Class.forName("android.app.ActivityManager").getMethod("getService").invoke(null)!!
         val token: IBinder = Binder()
@@ -207,10 +232,11 @@ object AppLink {
                     Log.d("app died; re-linking")
                     onUnlinked()
                     toMac(JSONObject().put("t", "app").put("linked", false))
-                    scheduler.schedule(::attach, 3, TimeUnit.SECONDS)
+                    scheduler.schedule(::attach, relinkDelay(), TimeUnit.SECONDS)
                 }
             }, 0)
             app = callback
+            linkedAt = System.currentTimeMillis()
             Log.d("linked to app (uid $appUid)")
             keepUnfrozen()
             toMac(JSONObject().put("t", "app").put("linked", true))

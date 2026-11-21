@@ -132,13 +132,4 @@ object AppCatalog {
         Hidden.displayManager.getDisplay(android.view.Display.DEFAULT_DISPLAY).getRealMetrics(m)
         m.densityDpi
     }.getOrDefault(0)
-
-    /** Reads the names (and the status bar) in the background when the helper starts. */
-    fun warmUp() {
-        Thread({
-            val started = System.currentTimeMillis()
-            val n = runCatching { apps().optJSONArray("apps")?.length() }.getOrNull()
-            Log.d("app list ready: $n apps in ${System.currentTimeMillis() - started} ms")
-        }, "apps-warm-up").start()
-    }
 }

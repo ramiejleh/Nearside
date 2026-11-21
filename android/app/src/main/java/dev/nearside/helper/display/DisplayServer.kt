@@ -158,7 +158,6 @@ class DisplayServer(
         listening = true
         // An app in a window opened again on the phone (its icon, Recents…): it goes to the phone.
         TaskEvents.onRestartAttempt = { task -> sessions.values.firstOrNull { it.owns(task) }?.openedOnPhone(task) }
-        TaskEvents.register()
         Thermal.onChange = {
             rebalance()
             sessions.values.forEach { it.thermalChanged() }
@@ -248,11 +247,13 @@ class DisplayServer(
                 }
                 val session = DisplaySession(sid, this, open)
                 sessions[sid] = session
+                TaskEvents.listen(true)
                 try {
                     session.start()
                 } catch (t: Throwable) {
                     Log.d("display session $sid failed to start: $t")
                     sessions.remove(sid)
+                    if (sessions.isEmpty()) TaskEvents.listen(false)
                     val (code, text) = if (t is DisplaySession.EncoderBusy) DisplayWire.ERR_BUSY to "Your phone can't show more apps at once."
                         else DisplayWire.ERR_LAUNCH to "couldn't start: $t"
                     conn.send(DisplayWire.ERROR, byteArrayOf(code.toByte()) + text.toByteArray())
@@ -271,6 +272,7 @@ class DisplayServer(
 
     fun ended(session: DisplaySession) {
         sessions.remove(session.id)
+        if (sessions.isEmpty()) TaskEvents.listen(false)
         onSessionsChanged(sessions.size)
         rebalance()
     }

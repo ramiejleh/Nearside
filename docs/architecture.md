@@ -114,8 +114,9 @@ its task moved there) and the display is encoded and streamed to the Mac.
   between the phone and a window only ever changes size.
 - **System bars:** an invisible window per display provides the phone's status and navigation
   bar insets, so apps lay out exactly as on the phone (the Mac hides the status-bar strip).
-  Adding it needs shell permissions *and* a real app process, so it's an instrumentation in
-  the app's `:bars` process, started by the helper.
+  Adding it needs shell permissions *and* a real app process, so it's an instrumentation that
+  joins the app's process (without restarting it), started by the helper when phone-app windows
+  are about to be used and finished ten minutes after the last one closes.
 - **Moving back:** closing a window, or opening the app on the phone, moves the task to the
   phone (first resized to the phone's size, so apps restore their phone layout).
 - **Phone window:** a whole second phone with Nearside's own home screen (Android 17

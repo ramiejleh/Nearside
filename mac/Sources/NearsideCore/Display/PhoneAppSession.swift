@@ -92,6 +92,7 @@ public final class PhoneAppSession: @unchecked Sendable {
             watchForBlack(frame)
             onFrame?(frame)
         }
+        Native.windowOpened()
         Thread { [self] in
             if !connect(resume: false) { fail("Couldn't reach your phone.") }
         }.start()
@@ -524,6 +525,7 @@ public final class PhoneAppSession: @unchecked Sendable {
             return (control, video)
         }
         guard let streams else { return }
+        Native.windowClosed()
         player.stop()
         writer.async {
             try? streams.0?.write(DisplayWire.packet(DisplayWire.close, Data([onTop ? 1 : 0])))

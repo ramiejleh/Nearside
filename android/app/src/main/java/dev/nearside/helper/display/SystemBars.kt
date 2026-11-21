@@ -3,10 +3,15 @@ package dev.nearside.helper.display
 
 import android.content.AttributionSource
 import android.content.pm.ProviderInfo
+import android.graphics.Insets
+import android.graphics.PixelFormat
 import android.os.Binder
 import android.os.Bundle
 import android.os.IBinder
 import android.os.Parcel
+import android.view.Gravity
+import android.view.WindowInsets
+import android.view.WindowManager
 import dev.nearside.helper.FakeContext
 import dev.nearside.helper.Log
 
@@ -16,9 +21,11 @@ import dev.nearside.helper.Log
  * [dev.nearside.phone.SystemBarsHost] gives a display the phone's own bar sizes (an
  * invisible window providing the insets); the Mac then hides the status-bar area.
  *
- * The host is an instrumentation (only it may add such windows: see there), started here once.
- * Starting an instrumentation force-stops the app first, so the app restarts once (~3 s) when
- * the helper starts; the app link reconnects by itself.
+ * The host is an instrumentation (only it may add such windows: see there). It runs only while
+ * it's needed: started when the Mac's launcher asks for the app list (or by the first window),
+ * and finished ten minutes after the last window closes, since a running instrumentation keeps
+ * its process at foreground priority (never frozen). `--no-restart` keeps the app itself
+ * running when the host starts and ends.
  */
 object SystemBars {
     private const val PACKAGE = "dev.nearside"
@@ -26,6 +33,9 @@ object SystemBars {
     private const val AUTHORITY = "$PACKAGE.bars"
     private const val ADD = 1    // as SystemBarsHost
     private const val REMOVE = 2
+    private const val FINISH = 3
+    private const val TYPE_STATUS_BAR_ADDITIONAL = 2041
+    private const val IDLE_MS = 10 * 60_000L
 
     /** The phone's bars in px, from the window manager (0 if unknown). */
     class Bars(val top: Int, val bottom: Int)
@@ -46,13 +56,41 @@ object SystemBars {
     private val token = Binder()
     /** Displays that have bars, with theirs: given again if the host had to be restarted. */
     private val displays = HashMap<Int, Bars>()
+    private val timer = java.util.concurrent.Executors.newSingleThreadScheduledExecutor()
+    private var finishing: java.util.concurrent.ScheduledFuture<*>? = null
 
-    /** Starts the host (the app restarts once). */
+    /** Starts the host ahead of the first window, if it isn't running. */
+    fun prewarm() {
+        synchronized(this) {
+            finishing?.cancel(false)
+            start()
+            if (displays.isEmpty()) finishLater() // in case no window comes
+        }
+        // Hand it our token as soon as it's up, so it ends with us even if no window comes.
+        Thread({ synchronized(this) { if (binder == null) awaitHost(start = false) } }, "bars-prewarm").start()
+    }
+
+    /** No windows left: finish the host after a while (a new window in the meantime keeps it). */
     @Synchronized
-    fun start() {
+    fun finishLater() {
+        finishing?.cancel(false)
+        finishing = timer.schedule({ finishIfUnused() }, IDLE_MS, java.util.concurrent.TimeUnit.MILLISECONDS)
+    }
+
+    @Synchronized
+    private fun finishIfUnused() {
+        if (displays.isNotEmpty() || host?.isAlive != true) return
+        val b = binder ?: awaitHost(start = false)
+        if (b != null) transact(b, FINISH) {}
+        binder = null
+        Log.d("system bars host finished (unused)")
+    }
+
+    @Synchronized
+    private fun start() {
         if (host?.isAlive == true) return
         runCatching {
-            host = ProcessBuilder("am", "instrument", "-w", "--no-hidden-api-checks", HOST).redirectErrorStream(true).start().also { p ->
+            host = ProcessBuilder("am", "instrument", "-w", "--no-restart", "--no-hidden-api-checks", HOST).redirectErrorStream(true).start().also { p ->
                 Thread({ p.inputStream.bufferedReader().forEachLine { Log.d("system bars host: $it") } }, "bars-host").start()
             }
             Log.d("system bars host starting")
@@ -66,19 +104,50 @@ object SystemBars {
     @Synchronized
     fun add(id: Int, dpi: Int, phoneDpi: Int): Bars? {
         if (phone.top <= 0) return null
+        finishing?.cancel(false)
         val bars = Bars(phone.top * dpi / phoneDpi, phone.bottom * dpi / phoneDpi)
-        val host = binder ?: awaitHost() ?: return null
-        return if (add(host, id, bars)) bars.also { displays[id] = it } else null
+        val host = binder ?: awaitHost()
+        val added = host != null && add(host, id, bars)
+        if (added) displays[id] = bars else if (displays.isEmpty()) finishLater()
+        return if (added) bars else null
     }
 
     @Synchronized
     fun remove(id: Int) {
         if (displays.remove(id) == null) return
-        transact(binder ?: return, REMOVE) { it.writeInt(id) }
+        binder?.let { b -> transact(b, REMOVE) { it.writeInt(id) } }
+        if (displays.isEmpty()) finishLater()
     }
 
     private fun add(host: IBinder, id: Int, bars: Bars) =
-        transact(host, ADD) { it.writeInt(id); it.writeInt(bars.top); it.writeInt(bars.bottom) }
+        transact(host, ADD) { it.writeInt(id); barWindow(bars).writeToParcel(it, 0) }
+
+    /**
+     * The bar window's layout, built here: its insets are hidden API, which the shell may use but
+     * the app (whose process the host joins, with hidden-API checks on) may not. The host
+     * unparcels it with the public CREATOR and adds the window.
+     */
+    private fun barWindow(bars: Bars): WindowManager.LayoutParams {
+        val params = WindowManager.LayoutParams(1, 1, TYPE_STATUS_BAR_ADDITIONAL,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or
+                WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN, PixelFormat.TRANSPARENT)
+        params.gravity = Gravity.TOP or Gravity.START
+        params.title = "Nearside system bars"
+        // InsetsFrameProvider(owner, index, type), sized from the display's edges.
+        val provider = Class.forName("android.view.InsetsFrameProvider")
+        val make = provider.getConstructor(Any::class.java, Int::class.javaPrimitiveType, Int::class.javaPrimitiveType)
+        val fromDisplay = provider.getField("SOURCE_DISPLAY").getInt(null)
+        val owner = Binder()
+        fun inset(index: Int, type: Int, size: Insets) = make.newInstance(owner, index, type).also {
+            provider.getMethod("setSource", Int::class.javaPrimitiveType).invoke(it, fromDisplay)
+            provider.getMethod("setInsetsSize", Insets::class.java).invoke(it, size)
+        }
+        val provided = java.lang.reflect.Array.newInstance(provider, 2)
+        java.lang.reflect.Array.set(provided, 0, inset(0, WindowInsets.Type.statusBars(), Insets.of(0, bars.top, 0, 0)))
+        java.lang.reflect.Array.set(provided, 1, inset(1, WindowInsets.Type.navigationBars(), Insets.of(0, 0, 0, bars.bottom)))
+        WindowManager.LayoutParams::class.java.getField("providedInsets").set(params, provided)
+        return params
+    }
 
     private fun transact(host: IBinder, code: Int, write: (Parcel) -> Unit): Boolean {
         val data = Parcel.obtain()
@@ -98,8 +167,8 @@ object SystemBars {
     }
 
     /** The host's Binder, once it's up (it starts with the app's process: seconds); null if it doesn't come. */
-    private fun awaitHost(): IBinder? {
-        if (host?.isAlive != true) start()
+    private fun awaitHost(start: Boolean = true): IBinder? {
+        if (host?.isAlive != true) { if (start) start() else return null }
         val deadline = System.currentTimeMillis() + 10_000
         while (System.currentTimeMillis() < deadline) {
             val b = runCatching { fetchHost() }.onFailure { Log.d("system bars: provider: ${it.cause ?: it}") }.getOrNull()

@@ -48,6 +48,7 @@ without clicking:
 | `NEARSIDE_TEST_TEXT` | Text for `type` |
 | `NEARSIDE_TEST_SIZE`, `NEARSIDE_TEST_SIZE2` | `WxH` in points for `size` (the second 8 s later) |
 | `NEARSIDE_TEST_CLOSE_AFTER` | Seconds before `close` / how long `hide` lasts |
+| `NEARSIDE_TEST_HIDE_AFTER` | Seconds before `hide` minimises the window (default 0) |
 | `NEARSIDE_TEST_FILE` | File for `drop` |
 | `NEARSIDE_TEST_PHONE` | Phone window: `recents`, `close`, `bar` |
 | `NEARSIDE_TEST_WAIT` | Seconds before the phone-window test runs |

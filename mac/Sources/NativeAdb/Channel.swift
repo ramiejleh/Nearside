@@ -29,9 +29,12 @@ protocol Channel: AnyObject, Sendable {
     func read(into buffer: UnsafeMutableRawBufferPointer) throws -> Int // > 0, or throws
     func write(_ data: Data) throws
     func close()
+    /// See `TCPSocket.setKeepalive`.
+    func setKeepalive(busy: Bool)
 }
 
 extension Channel {
+    func setKeepalive(busy: Bool) {}
     func readExactly(_ count: Int) throws -> Data {
         var data = Data(count: count)
         var filled = 0
@@ -62,12 +65,12 @@ final class TCPSocket: Channel, @unchecked Sendable {
         var one: Int32 = 1
         setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, &one, socklen_t(MemoryLayout<Int32>.size))
         setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &one, socklen_t(MemoryLayout<Int32>.size))
-        // Notice a phone that vanished (Wi-Fi off, out of range) within ~25 s.
-        var idle: Int32 = 10, interval: Int32 = 5, count: Int32 = 3
         setsockopt(fd, SOL_SOCKET, SO_KEEPALIVE, &one, socklen_t(MemoryLayout<Int32>.size))
-        setsockopt(fd, IPPROTO_TCP, TCP_KEEPALIVE, &idle, socklen_t(MemoryLayout<Int32>.size))
-        setsockopt(fd, IPPROTO_TCP, TCP_KEEPINTVL, &interval, socklen_t(MemoryLayout<Int32>.size))
-        setsockopt(fd, IPPROTO_TCP, TCP_KEEPCNT, &count, socklen_t(MemoryLayout<Int32>.size))
+        // Data sent to a phone that vanished (Wi-Fi off, out of range) fails within ~20 s, so a
+        // clip or notification never disappears into a dead link for long.
+        var dropAfter: Int32 = 20
+        setsockopt(fd, IPPROTO_TCP, TCP_RXT_CONNDROPTIME, &dropAfter, socklen_t(MemoryLayout<Int32>.size))
+        Self.keepalive(fd, busy: false)
 
         // Connect with a timeout: non-blocking connect + poll, then back to blocking.
         let flags = fcntl(fd, F_GETFL)
@@ -108,6 +111,19 @@ final class TCPSocket: Channel, @unchecked Sendable {
 
     func close() { shutdown(fd, SHUT_RDWR) }
     deinit { Darwin.close(fd) }
+
+    /// Keepalive probes wake the phone's Wi-Fi and CPU, so they're rare unless phone-app windows
+    /// are open: then a vanished phone is noticed within ~25 s (10 s quiet, 3 probes 5 s apart).
+    /// Otherwise every 15 min: anything sent still notices a dead link quickly (above).
+    func setKeepalive(busy: Bool) { Self.keepalive(fd, busy: busy) }
+
+    private static func keepalive(_ fd: Int32, busy: Bool) {
+        var idle: Int32 = busy ? 10 : 900, interval: Int32 = busy ? 5 : 30, count: Int32 = 3
+        let size = socklen_t(MemoryLayout<Int32>.size)
+        setsockopt(fd, IPPROTO_TCP, TCP_KEEPALIVE, &idle, size)
+        setsockopt(fd, IPPROTO_TCP, TCP_KEEPINTVL, &interval, size)
+        setsockopt(fd, IPPROTO_TCP, TCP_KEEPCNT, &count, size)
+    }
 }
 
 /// TLS 1.3 over the socket, as adb's wireless debugging uses it. An `SSL` may only be used by
@@ -236,6 +252,8 @@ final class TLSChannel: Channel, @unchecked Sendable {
         lock.unlock()
         socket.close()
     }
+
+    func setKeepalive(busy: Bool) { socket.setKeepalive(busy: busy) }
 
     static func errorString() -> String {
         let code = ERR_get_error()

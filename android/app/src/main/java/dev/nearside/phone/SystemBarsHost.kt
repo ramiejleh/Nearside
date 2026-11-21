@@ -5,8 +5,6 @@ import android.app.Instrumentation
 import android.content.ContentProvider
 import android.content.ContentValues
 import android.database.Cursor
-import android.graphics.Insets
-import android.graphics.PixelFormat
 import android.hardware.display.DisplayManager
 import android.net.Uri
 import android.os.Binder
@@ -16,9 +14,7 @@ import android.os.IBinder
 import android.os.Looper
 import android.os.Parcel
 import android.util.Log
-import android.view.Gravity
 import android.view.View
-import android.view.WindowInsets
 import android.view.WindowManager
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
@@ -30,19 +26,21 @@ import java.util.concurrent.TimeUnit
  * strip over its content, and its bottom bar against the edge); the Mac hides the status-bar area.
  *
  * Only a process the activity manager knows may add windows on Android 17, and providing insets
- * needs the shell's STATUS_BAR_SERVICE: so this runs in its own process of our app as an
- * instrumentation started by the helper (`am instrument --no-hidden-api-checks`), borrowing two of
- * the shell's permissions while it adds a window. Shell and apps can't reach each other's sockets (SELinux), so the helper
- * gets [binder] from [SystemBarsProvider] and calls it (shell uid only); it ends when the helper goes.
+ * needs the shell's STATUS_BAR_SERVICE: so this runs in the app's process as an instrumentation
+ * started by the helper (`am instrument --no-restart --no-hidden-api-checks`: it joins the running
+ * app without restarting it), borrowing two of the shell's permissions while it adds a window.
+ * Shell and apps can't reach each other's sockets (SELinux), so the helper gets [binder] from
+ * [SystemBarsProvider] and calls it (shell uid only). It ends when the helper goes, or when the
+ * helper says it's no longer needed (FINISH).
  */
 @SuppressLint("PrivateApi", "WrongConstant")
 class SystemBarsHost : Instrumentation() {
     companion object {
         private const val TAG = "NearsideBars"
-        private const val TYPE_STATUS_BAR_ADDITIONAL = 2041
         const val SHELL_UID = 2000
-        const val ADD = 1   // i32 display, i32 top, i32 bottom → i32 0 ok / 1 failed, string reason
+        const val ADD = 1   // i32 display, the window's LayoutParams (parcelled) → i32 0 ok / 1 failed, string reason
         const val REMOVE = 2 // i32 display
+        const val FINISH = 3 // no longer needed: end (the helper starts it again when it is)
 
         /** Set while the host runs (this process is the instrumented one). */
         @Volatile var binder: IBinder? = null
@@ -72,8 +70,13 @@ class SystemBarsHost : Instrumentation() {
                 if (Binder.getCallingUid() != SHELL_UID) return false
                 val result = runCatching {
                     when (code) {
-                        ADD -> { val (d, t, b) = Triple(data.readInt(), data.readInt(), data.readInt()); onMain { add(d, t, b) } }
+                        ADD -> {
+                            val d = data.readInt()
+                            val params = WindowManager.LayoutParams.CREATOR.createFromParcel(data)
+                            onMain { add(d, params) }
+                        }
                         REMOVE -> { val d = data.readInt(); onMain { remove(d) } }
+                        FINISH -> done.countDown()
                         else -> return super.onTransact(code, data, reply, flags)
                     }
                 }
@@ -106,33 +109,16 @@ class SystemBarsHost : Instrumentation() {
     }
 
     /** Only the two shell permissions a bar window needs, and only while adding it. */
-    private fun add(displayId: Int, top: Int, bottom: Int) {
+    private fun add(displayId: Int, params: WindowManager.LayoutParams) {
         remove(displayId)
         uiAutomation.adoptShellPermissionIdentity("android.permission.INTERNAL_SYSTEM_WINDOW", "android.permission.STATUS_BAR_SERVICE")
-        try { addWindow(displayId, top, bottom) } finally { uiAutomation.dropShellPermissionIdentity() }
+        try { addWindow(displayId, params) } finally { uiAutomation.dropShellPermissionIdentity() }
     }
 
-    private fun addWindow(displayId: Int, top: Int, bottom: Int) {
+    /** [params] come from the helper, insets and all (hidden API, which only it may use). */
+    private fun addWindow(displayId: Int, params: WindowManager.LayoutParams) {
         val display = context.getSystemService(DisplayManager::class.java).getDisplay(displayId) ?: error("no display $displayId")
-        val window = context.createDisplayContext(display).createWindowContext(TYPE_STATUS_BAR_ADDITIONAL, null)
-        val params = WindowManager.LayoutParams(1, 1, TYPE_STATUS_BAR_ADDITIONAL,
-            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or
-                WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN, PixelFormat.TRANSPARENT)
-        params.gravity = Gravity.TOP or Gravity.START
-        params.title = "Nearside system bars"
-        // Hidden API: InsetsFrameProvider(owner, index, type), sized from the display's edges.
-        val provider = Class.forName("android.view.InsetsFrameProvider")
-        val make = provider.getConstructor(Any::class.java, Int::class.javaPrimitiveType, Int::class.javaPrimitiveType)
-        val fromDisplay = provider.getField("SOURCE_DISPLAY").getInt(null)
-        val owner = Binder()
-        fun inset(index: Int, type: Int, size: Insets) = make.newInstance(owner, index, type).also {
-            provider.getMethod("setSource", Int::class.javaPrimitiveType).invoke(it, fromDisplay)
-            provider.getMethod("setInsetsSize", Insets::class.java).invoke(it, size)
-        }
-        val provided = java.lang.reflect.Array.newInstance(provider, 2)
-        java.lang.reflect.Array.set(provided, 0, inset(0, WindowInsets.Type.statusBars(), Insets.of(0, top, 0, 0)))
-        java.lang.reflect.Array.set(provided, 1, inset(1, WindowInsets.Type.navigationBars(), Insets.of(0, 0, 0, bottom)))
-        WindowManager.LayoutParams::class.java.getField("providedInsets").set(params, provided)
+        val window = context.createDisplayContext(display).createWindowContext(params.type, null)
         val view = View(window)
         window.getSystemService(WindowManager::class.java).addView(view, params)
         windows[displayId] = view

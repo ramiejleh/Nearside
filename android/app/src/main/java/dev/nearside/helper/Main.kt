@@ -44,7 +44,9 @@ object Main {
     /** The Mac using the phone now (see [serve]): its id, name and socket. */
     private class Owner(val id: String, val name: String, val socket: LocalSocket, val writer: Writer)
     @Volatile private var owner: Owner? = null
+    /** The Mac's last clip and when it was set here: its echo (Android fires twice) isn't sent back. */
     @Volatile private var lastSetByMac: String? = null
+    @Volatile private var lastSetByMacAt = 0L
     private lateinit var displays: DisplayServer
     private var lastSent: String? = null // main looper only
     private var lastSentAt = 0L
@@ -78,9 +80,11 @@ object Main {
                 return@addPrimaryClipChangedListener
             }
             val text = clip.getItemAt(0).text?.toString() ?: return@addPrimaryClipChangedListener
-            if (text == lastSetByMac) return@addPrimaryClipChangedListener // our own echo
-            // Android 17 fires this listener twice per copy (~50 ms apart); send once.
             val now = System.currentTimeMillis()
+            // Our own echo. Only right after setting it: copying the same text again later on
+            // the phone is a real copy.
+            if (text == lastSetByMac && now - lastSetByMacAt < 2000) return@addPrimaryClipChangedListener
+            // Android 17 fires this listener twice per copy (~50 ms apart); send once.
             if (text == lastSent && now - lastSentAt < 1000) return@addPrimaryClipChangedListener
             lastSent = text
             lastSentAt = now
@@ -95,6 +99,7 @@ object Main {
             main.post {
                 try {
                     lastSetByMac = text
+                    lastSetByMacAt = System.currentTimeMillis()
                     clipboard.setPrimaryClip(ClipData.newPlainText("Nearside", text))
                 } finally { latch.countDown() }
             }
@@ -113,11 +118,7 @@ object Main {
         // show that: no app link (no notification) means no new sessions, and a relink re-posts it.
         displays = DisplayServer(canNotify = { AppLink.isLinked }) { open ->
             AppLink.deliver(JSONObject().put("t", "display-state").put("open", open))
-        }.also {
-            it.start()
-            dev.nearside.helper.display.AppCatalog.warmUp()
-            dev.nearside.helper.display.SystemBars.start() // the app restarts once
-        }
+        }.also { it.start() } // the app list and the system-bars host start when first needed
         AppLink.stopApps = { displays.closeAll() }
         AppLink.onUnlinked = {
             // Without the app, the phone shows nothing about apps open on the Mac: if it doesn't
@@ -244,6 +245,7 @@ object Main {
                     Log.d("set clip from Mac (${text.length} chars, ${System.currentTimeMillis() - msg.optLong("ts")} ms)")
                     main.post {
                         lastSetByMac = text
+                        lastSetByMacAt = System.currentTimeMillis()
                         clipboard.setPrimaryClip(ClipData.newPlainText("Nearside", text))
                         dev.nearside.helper.display.PhoneDevice.setClipEverywhere(text)
                     }
@@ -267,6 +269,8 @@ object Main {
             "display-ticket" -> send(JSONObject().put("t", "display-ticket").put("req", msg.opt("req"))
                 .put("ticket", displays.issueTicket(token) ?: JSONObject.NULL))
             "display-apps" -> Thread {
+                // The Mac's launcher is open: an app window is likely next, so get its bars ready.
+                dev.nearside.helper.display.SystemBars.prewarm()
                 val started = System.currentTimeMillis()
                 val reply = runCatching { dev.nearside.helper.display.AppCatalog.apps() }.getOrElse {
                     Log.d("display-apps failed: $it")

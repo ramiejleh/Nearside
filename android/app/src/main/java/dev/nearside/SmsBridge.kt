@@ -194,6 +194,7 @@ object SmsBridge {
         val notify = Runnable { HelperConnection.send(JSONObject().put("t", "sms-changed")) }
         context.contentResolver.registerContentObserver(Telephony.Sms.CONTENT_URI, true, object : ContentObserver(handler) {
             override fun onChange(selfChange: Boolean) {
+                if (!HelperConnection.macConnected) return // the Mac reloads when it connects
                 handler.removeCallbacks(notify)
                 handler.postDelayed(notify, 500)
             }

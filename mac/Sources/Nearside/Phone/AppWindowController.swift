@@ -375,9 +375,14 @@ final class AppWindowController: NSObject, NSWindowDelegate {
                 return
             }
             if mode == "hide" {
-                // Minimise for NEARSIDE_TEST_CLOSE_AFTER seconds (default 20), then restore.
+                // After NEARSIDE_TEST_HIDE_AFTER seconds (default 0), minimise for
+                // NEARSIDE_TEST_CLOSE_AFTER seconds (default 20), then restore.
                 let wait = Double(ProcessInfo.processInfo.environment["NEARSIDE_TEST_CLOSE_AFTER"] ?? "") ?? 20
+                if let delay = Double(ProcessInfo.processInfo.environment["NEARSIDE_TEST_HIDE_AFTER"] ?? "") {
+                    try? await Task.sleep(for: .seconds(delay))
+                }
                 window.miniaturize(nil)
+                Trace.log("test hidden")
                 try? await Task.sleep(for: .seconds(wait))
                 window.deminiaturize(nil)
                 Trace.log("test restored")

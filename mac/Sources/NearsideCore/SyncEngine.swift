@@ -1,6 +1,7 @@
 import AppKit
 import Foundation
 import Observation
+import Network
 import os
 
 /// Everything the UI shows: connection state, clipboard history, unseen arrivals, setup progress.
@@ -92,13 +93,33 @@ public final class SyncEngine {
     /// Another Mac is using the phone (its name): this one waits until it's free, or until
     /// `useHere()`. Phone-app windows closed when it took over.
     public private(set) var inUseOn: String?
-    private var waitTicks = 0
+
+    /// When to try reaching the phone next. Each try browses the network (which wakes the phone),
+    /// so while it can't be found the gap grows from 3 s to a minute; a network change or the Mac
+    /// waking up tries again at once. While another Mac has the phone, once a minute.
+    @ObservationIgnored private var nextAttempt = Date.distantPast
+    @ObservationIgnored private var failedAttempts = 0
+    @ObservationIgnored private let network = NWPathMonitor()
+    /// The phone's permissions, applied on the first connection of each launch (and after the
+    /// phone app is reinstalled or updated), not on every reconnect: each is a command on the phone.
+    @ObservationIgnored private var grantsApplied = false
 
     /// "Use on this Mac": take the phone back from the other Mac.
     public func useHere() {
         inUseOn = nil
         link.passive = false
+        tryAgainNow()
+    }
+
+    private func tryAgainNow() {
+        failedAttempts = 0
+        nextAttempt = .distantPast
         tick()
+    }
+
+    /// The gap after `failures` failed tries in a row: 3, 6, 12, 24, 48, 60, 60… seconds.
+    nonisolated static func retryDelay(afterFailures failures: Int) -> TimeInterval {
+        min(60, 3 * pow(2, Double(max(0, failures - 1))))
     }
 
     /// The phone's "Stop" on its apps-open notification: close every phone-app window.
@@ -160,12 +181,28 @@ public final class SyncEngine {
         }
 
         // Keep the helper and tunnel alive: whenever we're idle, try to (re)establish them.
-        Timer.scheduledTimer(withTimeInterval: 3, repeats: true) { [weak self] _ in
+        let ticker = Timer.scheduledTimer(withTimeInterval: 3, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated { self?.tick() }
-        }.fire()
-        Timer.scheduledTimer(withTimeInterval: 6 * 3600, repeats: true) { [weak self] _ in
+        }
+        ticker.tolerance = 0.5
+        ticker.fire()
+        // A new network (or the same one back) or the Mac waking: the phone may be reachable now.
+        network.pathUpdateHandler = { [weak self] path in
+            guard path.status == .satisfied else { return }
+            Task { @MainActor in self?.tryAgainNow() }
+        }
+        network.start(queue: .main)
+        NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.didWakeNotification, object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.tryAgainNow() }
+        }
+        // Android forgets an adb authorisation after 7 days without a fresh connection: reconnect
+        // once a day, never while phone-app windows are open (it would cut them).
+        var renewed = Date()
+        Timer.scheduledTimer(withTimeInterval: 3600, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated {
-                guard let pinned = self?.pinnedSerial else { return }
+                guard Date().timeIntervalSince(renewed) > 24 * 3600, !Native.hasOpenWindows,
+                      let pinned = self?.pinnedSerial else { return }
+                renewed = Date()
                 Task.detached { Adb.renewAuthorization(pinned: pinned) }
             }
         }
@@ -182,17 +219,23 @@ public final class SyncEngine {
         // Only ever talk to the phone pinned during the user-run pairing flow; no discovery
         // of "whatever phone is around" (that would let a look-alike device be adopted).
         guard link.isIdle, !preparing, !isPairing, state == .searching || state == .connected,
-              let pinned = pinnedSerial else { return }
-        if inUseOn != nil { // another Mac has it: ask now and then whether it's free
-            waitTicks += 1
-            guard waitTicks % 5 == 0 else { return }
-        }
+              let pinned = pinnedSerial, Date() >= nextAttempt else { return }
         preparing = true
         Task {
-            await updatePhoneAppIfNeeded(pinned: pinned)
-            let phone = await Task.detached { Adb.prepareHelper(pinned: pinned) }.value
+            var phone = await Task.detached { Adb.prepareHelper(pinned: pinned) }.value
+            // Connected: check the phone app on this connection (an update restarts the helper).
+            if phone != nil, await updatePhoneAppIfNeeded(pinned: pinned) {
+                phone = await Task.detached { Adb.prepareHelper(pinned: pinned) }.value
+            }
             preparing = false
-            guard let phone else { return }
+            guard let phone else {
+                failedAttempts += 1
+                nextAttempt = Date().addingTimeInterval(Self.retryDelay(afterFailures: failedAttempts))
+                return
+            }
+            failedAttempts = 0
+            // Another Mac has it: ask again in a minute whether it's free ("busy" answers this).
+            nextAttempt = inUseOn != nil ? Date().addingTimeInterval(60) : .distantPast
             adopt(phone)
             link.connect()
         }
@@ -213,8 +256,9 @@ public final class SyncEngine {
         case failed(String)
     }
 
-    private func updatePhoneAppIfNeeded(pinned: String) async {
-        guard !checkedPhoneApp, inUseOn == nil, let apk = apkURL, let version = bundledAppVersion, version > 0 else { return }
+    /// True if the phone app was updated (its helper then needs starting again).
+    private func updatePhoneAppIfNeeded(pinned: String) async -> Bool {
+        guard !checkedPhoneApp, inUseOn == nil, let apk = apkURL, let version = bundledAppVersion, version > 0 else { return false }
         let outcome = await Task.detached(operation: { Adb.updateAppIfOutdated(pinned: pinned, apk: apk, version: version) }).value
         if outcome != .unknown { checkedPhoneApp = true }
         switch outcome {
@@ -222,12 +266,15 @@ public final class SyncEngine {
         case .upToDate: phoneAppProblem = nil
         case .updated:
             phoneAppProblem = nil
+            grantsApplied = false // apply them to the new app at its first hello
             log.info("updated the phone app to \(version)")
+            return true
         case .otherSignature: phoneAppProblem = .otherSignature
         case .failed(let message):
             phoneAppProblem = .failed(Self.friendly(message))
             log.error("phone app update failed: \(message, privacy: .public)")
         }
+        return false
     }
 
     /// Replaces a phone app signed with another key (after the user agreed in the panel).
@@ -238,6 +285,7 @@ public final class SyncEngine {
         Task {
             let r = await Task.detached { Adb.reinstallApp(pinned: pinned, apk: apk) }.value
             reinstallingPhoneApp = false
+            grantsApplied = false // a new install has none
             phoneAppProblem = r.ok ? nil : .failed(Self.friendly(r.out))
             tick()
         }
@@ -275,6 +323,12 @@ public final class SyncEngine {
         case "hello":
             state = .connected
             inUseOn = nil // the phone is ours again
+            guard !grantsApplied else {
+                // Texts may have changed while the phone was away (its observer only reports to a Mac).
+                if textMessages, messages.isOpen { messages.refresh() }
+                return
+            }
+            grantsApplied = true
             applyNotificationAccess()
             if let serial = adbSerial {
                 Task {

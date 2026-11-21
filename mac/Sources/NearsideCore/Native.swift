@@ -18,6 +18,23 @@ enum Native {
     /// connect by an earlier version; those are ignored, so such setups pair once more.)
     private static let pinKey = "pairedPhoneKey"
 
+    /// Phone-app windows open on this connection: while there are any, the connection checks
+    /// the phone often (see `TCPSocket.setKeepalive`).
+    nonisolated(unsafe) private static var openWindows = 0
+
+    static var hasOpenWindows: Bool { lock.withLock { openWindows > 0 } }
+
+    static func windowOpened() { changeWindows(by: 1) }
+    static func windowClosed() { changeWindows(by: -1) }
+
+    private static func changeWindows(by delta: Int) {
+        let (adb, busy) = lock.withLock { () -> (AdbConnection?, Bool) in
+            openWindows = max(0, openWindows + delta)
+            return (connection, openWindows > 0)
+        }
+        adb?.setKeepalive(busy: busy)
+    }
+
     /// The live connection, if any.
     static func current() -> AdbConnection? {
         lock.withLock { connection?.isAlive == true ? connection : nil }
@@ -76,10 +93,12 @@ enum Native {
                 adb.close()
                 continue
             }
-            lock.withLock {
+            let busy = lock.withLock { () -> Bool in
                 connection?.close()
                 connection = adb
+                return openWindows > 0
             }
+            adb.setKeepalive(busy: busy)
             return adb
         }
         return nil

@@ -119,14 +119,14 @@
         <provider
             android:name=".phone.SystemBarsProvider"
             android:authorities="dev.nearside.bars"
-            android:process=":bars"
             android:exported="true"
             android:permission="android.permission.INTERACT_ACROSS_USERS_FULL" />
     </application>
-    <!-- The phone's system bars on the helper's displays, with the shell's permissions (started
-         by the helper with `am instrument`; its own process, so the app keeps running normally). -->
+    <!-- The phone's system bars on the helper's displays, with the shell's permissions. Started
+         by the helper with `am instrument` (no-restart) only while phone-app windows need it: it
+         joins the app's running process (or starts it) without restarting the app. -->
     <instrumentation
         android:name=".phone.SystemBarsHost"
         android:targetPackage="dev.nearside"
-        android:targetProcesses="dev.nearside:bars" />
+        android:targetProcesses="dev.nearside" />
 </manifest>

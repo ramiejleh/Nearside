@@ -43,13 +43,28 @@ object TaskEvents {
         }
     }
 
-    fun register() = runCatching {
+    private var listener: Any? = null
+
+    /**
+     * Listens while phone-app windows are open (`on`), not otherwise: the window manager calls
+     * every listener on each task change on the phone, which would wake us for nothing.
+     */
+    @Synchronized
+    fun listen(on: Boolean) = runCatching {
+        if (on == (listener != null)) return@runCatching
         val listenerClass = Class.forName(DESCRIPTOR)
-        val listener = Proxy.newProxyInstance(listenerClass.classLoader, arrayOf(listenerClass)) { _, method, _ ->
-            if (method.name == "asBinder") binder else null
-        }
         val atm = Class.forName("android.app.ActivityTaskManager").getMethod("getService").invoke(null)!!
-        atm.javaClass.getMethod("registerTaskStackListener", listenerClass).invoke(atm, listener)
-        Log.d("task events: listening (restart code $restartCode)")
+        if (on) {
+            val proxy = Proxy.newProxyInstance(listenerClass.classLoader, arrayOf(listenerClass)) { _, method, _ ->
+                if (method.name == "asBinder") binder else null
+            }
+            atm.javaClass.getMethod("registerTaskStackListener", listenerClass).invoke(atm, proxy)
+            listener = proxy
+            Log.d("task events: listening (restart code $restartCode)")
+        } else {
+            atm.javaClass.getMethod("unregisterTaskStackListener", listenerClass).invoke(atm, listener)
+            listener = null
+            Log.d("task events: stopped")
+        }
     }.onFailure { Log.d("task events unavailable: ${it.cause ?: it}") }
 }

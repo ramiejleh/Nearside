@@ -57,6 +57,8 @@ class NotificationMirror : NotificationListenerService() {
     private val active = HashMap<String, Notification>()
     private val quietUntil = HashMap<String, Long>()
     private val icons = HashMap<String, String>()
+    /** Packages whose icon this Mac connection has: the Mac keeps icons per package. */
+    private val iconsSent = HashSet<String>()
 
     override fun onListenerConnected() {
         instance = this
@@ -102,6 +104,8 @@ class NotificationMirror : NotificationListenerService() {
         if (title.isBlank() && text.isBlank()) return false
 
         active[sbn.key] = n
+        // No Mac: nothing to build (catch-up sends it when one connects).
+        if (!HelperConnection.macConnected) return false
         // Buttons are part of the version: the Mac's button index must match the phone's list.
         val fingerprint = "$title\u0000$text\u0000" + usableActions(n).joinToString("\u0001") { it.title.toString() }
         if (delivered[sbn.key] == fingerprint) return false
@@ -120,20 +124,29 @@ class NotificationMirror : NotificationListenerService() {
             .put("when", sbn.postTime)
             .put("actions", actions)
             .put("quiet", quiet || SystemClock.uptimeMillis() < (quietUntil[sbn.key] ?: 0))
-        icon(sbn.packageName)?.let { msg.put("icon", it) }
+        if (sbn.packageName !in iconsSent) icon(sbn.packageName)?.let { msg.put("icon", it) }
         // Only remember it as delivered if it actually reached the Mac; otherwise catch-up sends it.
         if (!HelperConnection.send(msg)) return false
         delivered[sbn.key] = fingerprint
+        iconsSent += sbn.packageName
         return true
     }
 
-    /** Everything still showing that the Mac doesn't have yet; the newest few as banners. */
+    /**
+     * Everything still showing, sent again to a Mac that (re)connected: what it never had, the
+     * newest few as banners; what was sent before, quietly (a link that died unnoticed may have
+     * swallowed it; the Mac replaces it by key, without alerting).
+     */
     private fun catchUp() {
         val showing = runCatching { activeNotifications }.getOrNull() ?: return
         val sorted = showing.sortedByDescending { it.postTime }
+        val sentBefore = delivered.keys.toSet()
+        delivered.clear()
+        iconsSent.clear() // a new connection: maybe another Mac, without our icons
         var banners = 0
         for (sbn in sorted) {
-            if (mirror(sbn, quiet = banners >= CATCH_UP_BANNERS)) banners++
+            val before = sbn.key in sentBefore
+            if (mirror(sbn, quiet = before || banners >= CATCH_UP_BANNERS) && !before) banners++
         }
         val keys = JSONArray().apply { sorted.forEach { put(it.key) } }
         HelperConnection.send(JSONObject().put("t", "notif-active").put("keys", keys))
