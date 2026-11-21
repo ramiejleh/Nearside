@@ -94,6 +94,10 @@ final class MetalRenderer: @unchecked Sendable {
     /// The window left the screen: no ticks, so draw on arrival again.
     func stopTicking() { pace.withLock { ticking = false; waiting.removeAll() } }
 
+    /// Frames that reached the screen since the last call (the statistics overlay).
+    private var presented = 0
+    func takePresented() -> Int { pace.withLock { defer { presented = 0 }; return presented } }
+
     func redraw() {
         if let frame = lastFrame { draw(frame) }
     }
@@ -129,7 +133,10 @@ final class MetalRenderer: @unchecked Sendable {
         encoder.endEncoding()
         buffer.present(drawable)
         let pts = frame.ptsMicros
-        drawable.addPresentedHandler { d in Trace.log("presented \(pts) at \(Int64(d.presentedTime * 1000))") }
+        drawable.addPresentedHandler { [weak self] d in
+            if d.presentedTime > 0, let self { self.pace.withLock { self.presented += 1 } }
+            Trace.log("presented \(pts) at \(Int64(d.presentedTime * 1000))")
+        }
         Trace.log("drawn \(pts)")
         if Trace.enabled { saveSnapshotSoon(frame, cropRows: cropRows) }
         let textures = TextureHold(luma: luma, chroma: chroma)

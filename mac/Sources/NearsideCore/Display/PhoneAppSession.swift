@@ -60,6 +60,8 @@ public final class PhoneAppSession: @unchecked Sendable {
     /// phone µs − Mac µs, from the lowest-RTT ping so far (for latency stats).
     private var clockOffset: Int64?
     private var bestRTT = Int64.max
+    /// The statistics overlay's numbers since it last asked (see `takeStats`).
+    private var stats = Stats()
     private var pinger: Timer?
 
     static let socket = "localabstract:nearside-display"
@@ -184,6 +186,7 @@ public final class PhoneAppSession: @unchecked Sendable {
                 let now = monotonicMicros(), rtt = now - Int64(t0)
                 lock.withLock {
                     if rtt < bestRTT { bestRTT = rtt; clockOffset = Int64(phone) - (Int64(t0) + now) / 2 }
+                    stats.rttMicros = rtt
                 }
                 if rtt > 50_000 { Trace.log("rtt \(rtt / 1000) ms") }
             default: break
@@ -218,6 +221,17 @@ public final class PhoneAppSession: @unchecked Sendable {
                         if let onVideoSize { Task { @MainActor in onVideoSize(size) } }
                     }
                 case let .frame(gen, pts, encoded, _, data):
+                    lock.withLock {
+                        stats.frames += 1
+                        stats.bytes += data.count
+                        stats.encodeMicros += max(encoded - pts, 0)
+                        if let offset = clockOffset {
+                            let latency = max(now - (pts - offset), 0)
+                            stats.latencyMicros += latency
+                            stats.latencyMaxMicros = max(stats.latencyMaxMicros, latency)
+                            stats.latencyCount += 1
+                        }
+                    }
                     if Trace.enabled, let offset = lock.withLock({ clockOffset }) {
                         Trace.log("recv \(pts) capture→recv \((now - (pts - offset)) / 1000) ms encode \((encoded - pts) / 1000) ms size \(data.count)")
                     } else {
@@ -231,6 +245,40 @@ public final class PhoneAppSession: @unchecked Sendable {
             if reader.failed { break }
         }
         streamEnded(stream)
+    }
+
+    /// What arrived since the last call (the statistics overlay asks once a second).
+    public func takeStats() -> Stats {
+        lock.withLock {
+            var taken = stats
+            taken.seconds = Double(monotonicMicros() - stats.since) / 1_000_000
+            stats = Stats(rttMicros: stats.rttMicros)
+            return taken
+        }
+    }
+
+    /// Numbers for the statistics overlay.
+    public struct Stats: Sendable {
+        var since = monotonicMicros()
+        public var seconds = 0.0
+        public var frames = 0
+        public var bytes = 0
+        var encodeMicros: Int64 = 0
+        var latencyMicros: Int64 = 0
+        var latencyMaxMicros: Int64 = 0
+        var latencyCount = 0
+        /// The last ping's round trip.
+        public var rttMicros: Int64 = 0
+
+        init(rttMicros: Int64 = 0) { self.rttMicros = rttMicros }
+
+        public var fps: Double { seconds > 0 ? Double(frames) / seconds : 0 }
+        public var mbps: Double { seconds > 0 ? Double(bytes) * 8 / seconds / 1_000_000 : 0 }
+        /// The phone capturing a frame → it arriving here, ms (average, worst); nil before the clocks are matched.
+        public var latencyMs: (average: Int, worst: Int)? {
+            latencyCount > 0 ? (Int(latencyMicros / Int64(latencyCount) / 1000), Int(latencyMaxMicros / 1000)) : nil
+        }
+        public var encodeMs: Int { frames > 0 ? Int(encodeMicros / Int64(frames) / 1000) : 0 }
     }
 
     /// Test hook: NEARSIDE_TEST_VIDEO_KBPS=<n> reads video no faster than that (a slow network).

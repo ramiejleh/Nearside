@@ -17,6 +17,7 @@ final class AppWindowController: NSObject, NSWindowDelegate {
     /// The status bar's rows at the top of the display (the phone says; see PhoneDisplaySize).
     private var cropPixels = 0
     private var videoPixels: CGSize?
+    private var stats: StatsOverlay?
     /// Covered after the Mac slept or locked, until Touch ID (AuthGate).
     private var locked = false
     /// The vertical toolbar beside the app: Back, then the toolbox.
@@ -152,6 +153,14 @@ final class AppWindowController: NSObject, NSWindowDelegate {
             showVideoSize()
         }
         stream.session = session
+        let statsView = StatsOverlay(session: session, renderer: renderer)
+        statsView.translatesAutoresizingMaskIntoConstraints = false
+        container.addSubview(statsView, positioned: .below, relativeTo: overlay)
+        NSLayoutConstraint.activate([
+            statsView.leadingAnchor.constraint(equalTo: stream.leadingAnchor, constant: 8),
+            statsView.topAnchor.constraint(equalTo: stream.topAnchor, constant: 8),
+        ])
+        stats = statsView
         stream.onDropFiles = { [weak self, weak engine] urls in
             guard let self, let engine, !locked else { return }
             engine.shareFiles(urls, into: session)
@@ -570,6 +579,7 @@ final class AppWindowController: NSObject, NSWindowDelegate {
 
     func windowWillClose(_ notification: Notification) {
         returnTimer?.invalidate()
+        stats?.stop()
         session.close() // the app goes back to the phone, under what's showing there
         NotificationCenter.default.removeObserver(self)
         onClosed(self)

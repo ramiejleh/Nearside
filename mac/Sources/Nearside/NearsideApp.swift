@@ -71,6 +71,8 @@ enum NearsideMain {
             item("Smaller", #selector(PhoneWindowController.zoomOut(_:)), "-"),
             item("Actual Size", #selector(PhoneWindowController.actualSize(_:)), "0"),
             .separator(),
+            item("Show Statistics", #selector(AppDelegate.toggleStatistics(_:)), "i", [.command, .option]),
+            .separator(),
             item("Enter Full Screen", #selector(NSWindow.toggleFullScreen(_:)), "f", [.command, .control]),
         ])
         let window = submenu("Window", [
@@ -106,6 +108,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc func showPhoneLauncher(_ sender: Any?) { statusItem?.phoneApps.showLauncher() }
 
     @objc func showPhoneWindow(_ sender: Any?) { statusItem?.phoneApps.openPhoneWindow() }
+
+    /// View → Show Statistics: the readout over every phone window (a menu checkmark when on).
+    @objc func toggleStatistics(_ sender: Any?) {
+        StatsOverlay.enabled.toggle()
+    }
 
     func applicationDockMenu(_ sender: NSApplication) -> NSMenu? { statusItem?.phoneApps.dockMenu() }
 
@@ -284,4 +291,11 @@ private final class StatusDropView: FileDropView {
     var onClick: () -> Void = {}
     override func mouseDown(with event: NSEvent) { onClick() }
     override func rightMouseDown(with event: NSEvent) { onClick() }
+}
+
+extension AppDelegate: NSMenuItemValidation {
+    func validateMenuItem(_ item: NSMenuItem) -> Bool {
+        if item.action == #selector(toggleStatistics(_:)) { item.state = StatsOverlay.enabled ? .on : .off }
+        return true
+    }
 }

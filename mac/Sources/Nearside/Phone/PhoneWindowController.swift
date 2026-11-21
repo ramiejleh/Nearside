@@ -37,6 +37,7 @@ final class PhoneWindowController: NSObject, NSWindowDelegate {
     private var shownDp: CGSize { PhoneDisplaySize.shownDp(dp, statusBarDp: PhoneInfo.statusBarDp) }
     /// The status bar's rows at the top of the display (the phone says), and the video's size.
     private var cropPixels = 0
+    private var stats: StatsOverlay?
     private var videoPixels: CGSize?
 
     init?(engine: SyncEngine, library: PhoneAppLibrary, renderer: MetalRenderer, onClosed: @escaping (PhoneWindowController) -> Void) {
@@ -132,6 +133,14 @@ final class PhoneWindowController: NSObject, NSWindowDelegate {
         session.onTasks = { [weak self] tasks in self?.recentsModel.tasks = tasks }
         session.onSnapshot = { [weak self] task, jpeg in self?.recentsModel.snapshots[task] = NSImage(data: jpeg) }
         stream.session = session
+        let statsView = StatsOverlay(session: session, renderer: renderer)
+        statsView.translatesAutoresizingMaskIntoConstraints = false
+        stream.superview?.addSubview(statsView, positioned: .below, relativeTo: overlay)
+        NSLayoutConstraint.activate([
+            statsView.leadingAnchor.constraint(equalTo: stream.leadingAnchor, constant: 14),
+            statsView.topAnchor.constraint(equalTo: stream.topAnchor, constant: 14),
+        ])
+        stats = statsView
         stream.onDropFiles = { [weak self, weak engine] urls in // to the app on top
             guard let self, let engine, !locked else { return }
             engine.shareFiles(urls, into: session)
@@ -375,6 +384,7 @@ final class PhoneWindowController: NSObject, NSWindowDelegate {
     @objc private func keyboardLayoutChanged() { session.setKeyboardLayout(AppWindowController.keyboardLayout()) }
 
     func windowWillClose(_ notification: Notification) {
+        stats?.stop()
         session.close() // its apps go back to the phone; the home screen ends
         NotificationCenter.default.removeObserver(self)
         onClosed(self)
