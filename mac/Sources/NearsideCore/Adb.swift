@@ -170,7 +170,7 @@ public enum Adb {
         guard r.ok else {
             return r.out.contains("INSTALL_FAILED_UPDATE_INCOMPATIBLE") ? .otherSignature : .failed(r.out)
         }
-        _ = shell(serial, "pkill -x nearside-helper")
+        _ = shell(serial, "for p in $(pidof nearside-helper); do kill $p; done")
         return .updated
     }
 
@@ -178,7 +178,7 @@ public enum Adb {
     /// install ours, grant the background permissions again.
     static func reinstallApp(pinned: String, apk: URL) -> Result {
         guard let serial = ensureConnected(pinned: pinned) else { return Result(code: -1, out: "not connected") }
-        _ = shell(serial, "pkill -x nearside-helper; pm uninstall \(appPackage)")
+        _ = shell(serial, "for p in $(pidof nearside-helper); do kill $p; done; pm uninstall \(appPackage)")
         let r = install(apk)
         guard r.ok else { return r }
         grantBackground(serial)
