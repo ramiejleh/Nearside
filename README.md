@@ -153,12 +153,12 @@ MacBook. Known limitations:
 ## Project layout
 
 ```
-mac/                      Swift package: the Mac app
-  Sources/Nearside/      menu-bar app, windows, launcher, settings
-  Sources/NearsideCore/  sync engine, protocols, video and audio pipeline
-  Sources/NativeAdb/        adb client: TLS, pairing, streams, file sync
-android/              Kotlin: the phone app and the shell-user helper
-docs/                     architecture, security design, protocol, development
+mac/                     Swift package: the Mac app
+  Sources/Nearside/        menu-bar app, windows, launcher, settings
+  Sources/NearsideCore/    sync engine, protocols, video and audio pipeline
+  Sources/NativeAdb/       adb client: TLS, pairing, streams, file sync
+android/                 Kotlin: the phone app and the shell-user helper
+docs/                    architecture, security design, protocol, development
 ```
 
 Read [`docs/architecture.md`](docs/architecture.md) for how it works and why,

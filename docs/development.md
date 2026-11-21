@@ -7,7 +7,7 @@ Needs Xcode 16+ and Android Studio (its bundled JDK; a newer system JDK is too n
 ```sh
 export JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home"
 (cd android && ./gradlew assembleDebug)   # phone app + helper (one APK)
-mac/scripts/bundle.sh                          # → mac/build/Nearside.app, APK inside
+mac/scripts/bundle.sh                     # → mac/build/Nearside.app, APK inside
 open mac/build/Nearside.app
 ```
 
@@ -15,7 +15,7 @@ The Mac app installs and updates the phone app itself. While iterating on the ph
 
 ```sh
 adb install -r android/app/build/outputs/apk/debug/app-debug.apk
-adb shell 'kill $(pidof nearside-helper)'   # the Mac starts the new helper within seconds
+adb shell 'kill $(pidof nearside-helper)'     # the Mac starts the new helper within seconds
 ```
 
 Logs:
@@ -68,14 +68,14 @@ Notes:
 ## Code map
 
 ```
-mac/Sources/Nearside/        UI: menu-bar panel, setup, settings, Messages, phone-app windows
-mac/Sources/NearsideCore/    SyncEngine, helper link, notifications, clipboard, Display/ pipeline
-mac/Sources/NativeAdb/          adb client: TLS, pairing, mDNS discovery, streams, sync, install
+mac/Sources/Nearside/       UI: menu-bar panel, setup, settings, Messages, phone-app windows
+mac/Sources/NearsideCore/   SyncEngine, helper link, notifications, clipboard, Display/ pipeline
+mac/Sources/NativeAdb/      adb client: TLS, pairing, mDNS discovery, streams, sync, install
 android/app/src/main/java/dev/nearside/
-  helper/                       the shell-user helper (Main.kt) and display/ (virtual displays,
-                                encoder, input, audio, system bars, app catalog)
-  link/                         app side of the helper Binder link
-  phone/                        home screen, system-bars host, dropped files, in-use notification
+  helper/                   the shell-user helper (Main.kt) and display/ (virtual displays,
+                            encoder, input, audio, system bars, app catalog)
+  link/                     app side of the helper Binder link
+  phone/                    home screen, system-bars host, dropped files, in-use notification
 ```
 
 See [architecture.md](architecture.md) for how the pieces fit together.

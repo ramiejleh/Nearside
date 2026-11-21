@@ -9,8 +9,8 @@ public enum Paths {
     static let token = support.appendingPathComponent("token")
 }
 
-/// The Mac's secret for the helper (passed as its env var over adb, then sent back through the
-/// adb tunnel). Stored owner-only. Shared with the PoC CLI so an existing pairing keeps working.
+/// The Mac's secret for the helper (passed to it over adb, never over the network). Stored
+/// owner-only.
 enum Token {
     /// Names this Mac's token to the helper without revealing it (see the helper's MacTokens).
     static var id: String {
