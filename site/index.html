@@ -56,14 +56,16 @@
         <div class="screen">
           <div class="menubar"><span class="mini-mark"></span></div>
           <div class="landed window-landed"><img src="images/window-calculator.png" alt=""></div>
+          <!-- Nearside's own clip card: light, with the clipboard mark. -->
           <div class="landed toast">
-            <span class="who">Copied on your phone</span>
-            <span>Flight departs 18:40 from gate B12</span>
+            <svg class="clip-mark" viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="4" width="14" height="17" rx="2.5" fill="none" stroke="currentColor" stroke-width="2"/><rect x="9" y="2.5" width="6" height="3.5" rx="1.2" fill="currentColor"/></svg>
+            <span class="toast-text"><span class="who">Copied on your phone</span><span>Flight departs 18:40 from gate B12</span></span>
+            <kbd>⌘V</kbd>
           </div>
+          <!-- A notification, as macOS shows it: the app's icon, its name, the time. -->
           <div class="landed banner">
-            <span class="who">Messages</span>
-            <b>Sam</b>
-            <span>Running five minutes late. Order me a flat white?</span>
+            <img class="app-icon" src="images/icon-messages.png" alt="">
+            <span class="banner-text"><span class="who">Messages <span class="when">now</span></span><b>Sam</b><span>Running five minutes late. Order me a flat white?</span></span>
           </div>
         </div>
         <div class="base"></div>
@@ -73,7 +75,7 @@
         <div class="phone-screen">
           <span class="time">18:05</span>
           <div class="lock-note">
-            <span class="who">Messages</span>
+            <span class="who"><img class="app-icon" src="images/icon-messages.png" alt=""> Messages</span>
             <b>Sam</b>
             <span>Running five minutes late. Order me a flat white?</span>
           </div>
