@@ -105,6 +105,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         openAppForTesting(engine)
         snapshotLauncherForTesting(engine)
         snapshotSetupForTesting(engine)
+        snapshotViewForTesting(engine)
     }
 
     @objc func showPhoneLauncher(_ sender: Any?) { statusItem?.phoneApps.showLauncher() }
@@ -156,6 +157,34 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         window.orderFrontRegardless()
         Task { @MainActor in
             try? await Task.sleep(for: .seconds(Double(env["NEARSIDE_TEST_WAIT"] ?? "") ?? 3))
+            guard let rep = view.bitmapImageRepForCachingDisplay(in: view.bounds) else { return }
+            view.cacheDisplay(in: view.bounds, to: rep)
+            try? rep.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: path))
+            window.close()
+        }
+    }
+
+    /// Test hook: NEARSIDE_TEST_VIEW=panel|settings|messages saves that view to NEARSIDE_TEST_OVERLAY
+    /// (png), light or dark (NEARSIDE_TEST_DARK=1), after NEARSIDE_TEST_WAIT seconds (default 8, so
+    /// the phone has connected and the data has arrived). For the README and the website.
+    private func snapshotViewForTesting(_ engine: SyncEngine) {
+        let env = ProcessInfo.processInfo.environment
+        guard let which = env["NEARSIDE_TEST_VIEW"], let path = env["NEARSIDE_TEST_OVERLAY"] else { return }
+        let (root, size): (AnyView, NSSize) = switch which {
+        case "settings": (AnyView(SettingsView(engine: engine, onDone: {}, openSetup: {})), NSSize(width: 380, height: 540))
+        case "messages": (AnyView(MessagesView(engine: engine)), NSSize(width: 820, height: 560))
+        default: (AnyView(PanelView(engine: engine, openMessages: {}, openSetup: {}, openApps: {})), NSSize(width: 380, height: 540))
+        }
+        let dark = env["NEARSIDE_TEST_DARK"] == "1"
+        let window = NSWindow(contentRect: NSRect(origin: NSPoint(x: -3000, y: 0), size: size), styleMask: [.borderless],
+                              backing: .buffered, defer: false)
+        let view = NSHostingView(rootView: root.tint(Theme.accent))
+        window.contentView = view
+        window.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
+        window.backgroundColor = dark ? NSColor(white: 0.16, alpha: 1) : NSColor(white: 0.97, alpha: 1)
+        window.orderFrontRegardless()
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(Double(env["NEARSIDE_TEST_WAIT"] ?? "") ?? 8))
             guard let rep = view.bitmapImageRepForCachingDisplay(in: view.bounds) else { return }
             view.cacheDisplay(in: view.bounds, to: rep)
             try? rep.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: path))

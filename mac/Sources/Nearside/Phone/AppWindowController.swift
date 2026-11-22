@@ -208,7 +208,7 @@ final class AppWindowController: NSObject, NSWindowDelegate {
 
     private func render(_ new: PhoneAppSession.State) {
         Trace.log("window shows \(new)")
-        if new == .showing, state != .showing { testInputIfAsked(); snapshotIfAsked() }
+        if new == .showing, state != .showing { testInputIfAsked(); snapshotIfAsked(); WindowShot.saveSoon(window: window, stream: stream) }
         state = new
         overlay.rootView = AppWindowOverlay(state: new, label: app.label, locked: locked, secure: secure,
                                             reopen: { [weak self] in self?.reopen() },

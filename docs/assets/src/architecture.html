@@ -1,0 +1,108 @@
+<!doctype html>
+<!--
+  The "How it works" picture in the README. Rendered to PNG with a headless browser:
+  "/Applications/Brave Browser.app/Contents/MacOS/Brave Browser" --headless=new --hide-scrollbars \
+    --force-device-scale-factor=2 --virtual-time-budget=3000 --window-size=1600,900 \
+    --screenshot=docs/images/architecture-light.png "file://$PWD/docs/assets/src/architecture.html"
+  Add #dark to the URL for docs/images/architecture-dark.png.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Nearside architecture</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Schibsted+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --desk: #E8E9EC; --ink: #1C1C1F; --soft: #5D5F66; --line: #C9CBD1;
+    --device: #FFFFFF; --device-edge: #D3D5DA; --chip: #F2F3F5;
+    --dusk: linear-gradient(135deg, #1B2A4A 0%, #2A1B3D 58%, #0B0D14 100%);
+    --on-dusk: #FFFFFF; --on-dusk-soft: rgba(255,255,255,.66); --ok: #34C759;
+  }
+  :root.dark {
+    --desk: #17171A; --ink: #F2F2F4; --soft: #9E9EA6; --line: #34343A;
+    --device: #202024; --device-edge: #34343A; --chip: #2A2A2F;
+  }
+  * { box-sizing: border-box; margin: 0; }
+  html, body { width: 1600px; height: 900px; background: var(--desk); }
+  body { font-family: "Schibsted Grotesk", -apple-system, system-ui, sans-serif; color: var(--ink);
+         padding: 64px 72px; display: grid; grid-template-rows: auto 1fr auto; gap: 40px; }
+
+  header h1 { font-size: 40px; font-weight: 700; letter-spacing: -0.02em; }
+  header p { margin-top: 8px; font-size: 19px; color: var(--soft); max-width: 70ch; }
+
+  .row { display: grid; grid-template-columns: 380px 1fr 340px; align-items: stretch; }
+
+  .device { background: var(--device); border: 1.5px solid var(--device-edge); padding: 26px 26px 22px;
+            display: flex; flex-direction: column; gap: 14px; position: relative; z-index: 1; }
+  .mac { border-radius: 22px; }
+  .phone { border-radius: 40px; padding: 30px 24px; }
+  .device h2 { font-size: 24px; font-weight: 700; letter-spacing: -0.01em; display: flex; align-items: center; gap: 10px; }
+  .device h2 svg { flex: none; }
+  .part { background: var(--chip); border-radius: 14px; padding: 14px 16px; }
+  .part b { display: block; font-size: 17px; font-weight: 600; }
+  .part span { display: block; margin-top: 3px; font-size: 14.5px; color: var(--soft); line-height: 1.35; }
+
+  /* The space between: where everything travels, and nothing else. */
+  .between { background: var(--dusk); margin: 34px -2px; padding: 26px 44px; color: var(--on-dusk);
+             display: flex; flex-direction: column; justify-content: center; gap: 17px; }
+  .lane { display: grid; grid-template-columns: minmax(0,1fr) 150px minmax(0,1fr); align-items: center; gap: 18px; font-size: 19px; }
+  .lane .l { text-align: right; white-space: nowrap; } .lane .r { text-align: left; }
+  .lane small { color: var(--on-dusk-soft); font-size: 15.5px; }
+  .arrow { width: 150px; height: 14px; }
+  .link { margin-top: 8px; padding-top: 16px; border-top: 1px solid rgba(255,255,255,.16);
+          display: flex; justify-content: center; gap: 12px; align-items: center; font-size: 16px; }
+  .link .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--ok); box-shadow: 0 0 0 4px rgba(52,199,89,.2); }
+
+  footer { display: flex; gap: 48px; font-size: 16px; color: var(--soft); }
+  footer b { color: var(--ink); font-weight: 600; }
+</style>
+</head>
+<body>
+  <header>
+    <h1>How Nearside works</h1>
+    <p>The Mac starts a small helper on your phone over Android's wireless debugging (or a USB cable) and talks to it directly. Nothing goes through a server.</p>
+  </header>
+
+  <div class="row">
+    <section class="device mac">
+      <h2>
+        <svg width="30" height="24" viewBox="0 0 30 24" aria-hidden="true"><rect x="3" y="2" width="24" height="16" rx="2.5" fill="none" stroke="currentColor" stroke-width="2"/><rect x="0" y="19.5" width="30" height="3" rx="1.5" fill="currentColor"/></svg>
+        Your Mac
+      </h2>
+      <div class="part"><b>Nearside app</b><span>Menu bar, clipboard history, notifications, Messages, phone-app windows</span></div>
+      <div class="part"><b>Built-in adb client</b><span>Pairs once, then pins your phone's key. Nothing else to install</span></div>
+      <div class="part"><b>Picture and sound</b><span>VideoToolbox decodes, Metal draws, AudioToolbox plays</span></div>
+    </section>
+
+    <section class="between" aria-label="What travels between the devices">
+      <div class="lane"><span class="l">Clipboard</span><svg class="arrow" viewBox="0 0 150 14"><path d="M8 7h134M8 7l7-6M8 7l7 6M142 7l-7-6M142 7l-7 6" stroke="#fff" stroke-width="2" fill="none" stroke-linecap="round"/></svg><span class="r">both ways</span></div>
+      <div class="lane"><span class="l">Notifications <small>and replies</small></span><svg class="arrow" viewBox="0 0 150 14"><path d="M8 7h134M8 7l7-6M8 7l7 6M142 7l-7-6M142 7l-7 6" stroke="#fff" stroke-width="2" fill="none" stroke-linecap="round"/></svg><span class="r">dismiss on either</span></div>
+      <div class="lane"><span class="l">Text messages</span><svg class="arrow" viewBox="0 0 150 14"><path d="M8 7h134M8 7l7-6M8 7l7 6M142 7l-7-6M142 7l-7 6" stroke="#fff" stroke-width="2" fill="none" stroke-linecap="round"/></svg><span class="r">read and send SMS</span></div>
+      <div class="lane"><span class="l">Files</span><svg class="arrow" viewBox="0 0 150 14"><path d="M8 7h134M8 7l7-6M8 7l7 6M142 7l-7-6M142 7l-7 6" stroke="#fff" stroke-width="2" fill="none" stroke-linecap="round"/></svg><span class="r">either way, or into an app</span></div>
+      <div class="lane"><span class="l">App windows</span><svg class="arrow" viewBox="0 0 150 14"><path d="M8 7h134M8 7l7-6M8 7l7 6" stroke="#fff" stroke-width="2" fill="none" stroke-linecap="round"/></svg><span class="r">picture and sound</span></div>
+      <div class="lane"><span class="l">Touch, trackpad, keys</span><svg class="arrow" viewBox="0 0 150 14"><path d="M8 7h134M142 7l-7-6M142 7l-7 6" stroke="#fff" stroke-width="2" fill="none" stroke-linecap="round"/></svg><span class="r">to the phone</span></div>
+      <div class="link"><span class="dot"></span>Wi-Fi with TLS 1.3, pinned to your phone, or a USB cable. Each side proves itself before anything is sent.</div>
+    </section>
+
+    <section class="device phone">
+      <h2>
+        <svg width="18" height="28" viewBox="0 0 18 28" aria-hidden="true"><rect x="1" y="1" width="16" height="26" rx="4" fill="none" stroke="currentColor" stroke-width="2"/></svg>
+        Your phone
+      </h2>
+      <div class="part"><b>Helper</b><span>Runs with adb shell rights, like scrcpy. No root</span></div>
+      <div class="part"><b>Virtual displays</b><span>One per window, encoded by the phone's hardware. Works while locked</span></div>
+      <div class="part"><b>Nearside app</b><span>Notifications, SMS, Send to Mac</span></div>
+    </section>
+  </div>
+
+  <footer>
+    <span><b>No cloud.</b> No account, server or telemetry.</span>
+    <span><b>Your keys.</b> A per-Mac secret that never crosses the network.</span>
+    <span><b>Your call.</b> Touch ID before phone apps show.</span>
+  </footer>
+
+  <script>if (location.hash === "#dark") document.documentElement.classList.add("dark");</script>
+</body>
+</html>

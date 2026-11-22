@@ -173,6 +173,7 @@ final class PhoneWindowController: NSObject, NSWindowDelegate {
         render(.opening)
         session.start()
         testIfAsked()
+        WindowShot.saveSoon(window: window, stream: stream) // counted from opening: set NEARSIDE_TEST_SHOT_AFTER
     }
 
     /// Test hook: NEARSIDE_TEST_PHONE=recents (or notifications) opens Recents (the notification

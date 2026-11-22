@@ -87,6 +87,16 @@ final class MetalRenderer: @unchecked Sendable {
     /// The newest frame, if any.
     var lastFrame: VideoDecoder.Frame? { lock.withLock { latest } }
 
+    /// The picture as shown (without the cropped status rows), as an image: a view capture can't
+    /// see the Metal layer. For screenshots (WindowShot).
+    func shownImage() -> CGImage? {
+        guard let frame = lastFrame else { return nil }
+        let full = CIImage(cvPixelBuffer: frame.image)
+        let rows = min(max(lock.withLock { crop }, 0), Int(full.extent.height) / 2)
+        let image = full.cropped(to: CGRect(x: 0, y: 0, width: full.extent.width, height: full.extent.height - CGFloat(rows)))
+        return CIContext().createCGImage(image, from: image.extent, format: .RGBA8, colorSpace: CGColorSpace(name: CGColorSpace.sRGB)!)
+    }
+
     func show(_ frame: VideoDecoder.Frame) {
         let (now, wakeLink): (Bool, Bool) = pace.withLock {
             // No ticks (display link paused, or not on screen yet): draw at once, and wake the link.
