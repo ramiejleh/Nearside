@@ -20,6 +20,7 @@ struct SettingsView: View {
     @AppStorage(AppWindowController.returnAfterKey) private var returnAfter = 0
     @State private var phoneLayouts: [String] = []
     @State private var launchAtLogin = SMAppService.mainApp.status == .enabled
+    @State private var automaticUpdates = Updates.automaticChecks
     @State private var confirmReset = false
     @State private var permissions = Permissions()
 
@@ -157,6 +158,11 @@ struct SettingsView: View {
                                 launchAtLogin = SMAppService.mainApp.status == .enabled
                             }
                         }
+                    if Updates.available {
+                        Toggle("Check for updates automatically", isOn: $automaticUpdates)
+                            .onChange(of: automaticUpdates) { _, on in Updates.automaticChecks = on }
+                        Button("Check for Updates…") { Updates.checkNow() }
+                    }
                 }
 
                 if engine.state == .connected, engine.clipboardToastHidden != nil {

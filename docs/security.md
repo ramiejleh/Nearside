@@ -99,6 +99,18 @@ Out of scope: an attacker who has already unlocked the Mac as you, or who has ro
 - Clipboard history stays in your Mac account (mode 0600); concealed clipboard items are never
   recorded. Nothing is sent anywhere but between your two devices: no server, no telemetry.
 
+## Updates
+
+- **Mac app:** release builds check `https://ramiejleh.github.io/Nearside/appcast.xml` once a day with
+  Sparkle, over HTTPS.
+  - An update installs only if its EdDSA signature matches the public key built into the app, and its
+    Developer ID signature matches the installed app's.
+  - The private key never leaves the maintainer's keychain. Someone who takes over the website or the
+    GitHub release can't push an update without it.
+  - Development builds contain no feed or key, so they never update themselves.
+- **Phone app:** updated by the Mac from the APK inside the signed Mac app. Android also refuses an
+  update signed with a different key.
+
 ## Developer test hooks
 
 The Mac app reads a few `NEARSIDE_*` environment variables

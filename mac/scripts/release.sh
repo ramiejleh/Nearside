@@ -2,7 +2,8 @@
 # Builds a signed, notarised Nearside release for GitHub.
 #
 #   mac/scripts/release.sh <version> [--no-notarize]
-#     → mac/build/release/Nearside-<version>.zip (+ .sha256)
+#     → mac/build/release/Nearside-<version>.zip (+ .sha256), the Homebrew cask (nearside.rb),
+#       and a new entry at the top of site/appcast.xml (the update feed, served by Pages)
 #
 # Nothing personal lives in the repo; everything comes from your environment:
 #   NEARSIDE_KEYSTORE        path to the Android release keystore (required)
@@ -16,6 +17,8 @@
 #   keytool -genkeypair -v -keystore ~/nearside-release.jks -alias nearside \
 #     -keyalg RSA -keysize 4096 -validity 10000          (keep it and its password safe)
 #   xcrun notarytool store-credentials nearside --apple-id <id> --team-id <team> --password <app-specific>
+#   mac/.build/artifacts/sparkle/Sparkle/bin/generate_keys   (Sparkle's update-signing key: the
+#     private half stays in your login keychain; put the public half in bundle.sh)
 #
 # --no-notarize signs only (for trying the script before notarisation is set up).
 # This doesn't touch the normal development loop (debug APK + bundle.sh).
@@ -60,6 +63,11 @@ if [[ $NOTARIZE -eq 1 ]]; then
     || fail "notarytool profile \"$PROFILE\" not found or not working (see the top of this script, or use --no-notarize)"
 fi
 
+SPARKLE_BIN="$MAC_DIR/.build/artifacts/sparkle/Sparkle/bin"
+grep -q '^SPARKLE_PUBLIC_KEY="."' "$MAC_DIR/scripts/bundle.sh" \
+  || fail "no Sparkle public key in bundle.sh (run $SPARKLE_BIN/generate_keys once; see the top of this script)"
+[[ -n "$(git -C "$REPO_DIR" status --porcelain)" ]] && fail "commit everything first: the build number is the commit count"
+
 if [[ -z "${JAVA_HOME:-}" && -d "/Applications/Android Studio.app/Contents/jbr/Contents/Home" ]]; then
   export JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home"
 fi
@@ -77,10 +85,19 @@ APKSIGNER="$(ls -d "$SDK"/build-tools/*/apksigner 2>/dev/null | sort -V | tail -
 
 # --- Mac app: bundle, then sign with Developer ID and the hardened runtime. ------------
 echo "==> Bundling the Mac app $VERSION"
-APK="$APK" VERSION="$VERSION" "$MAC_DIR/scripts/bundle.sh"
+APK="$APK" VERSION="$VERSION" UPDATES=1 "$MAC_DIR/scripts/bundle.sh"
+BUILD="$(plutil -extract CFBundleVersion raw "$APP/Contents/Info.plist")"
 
 echo "==> Signing with $SIGN_ID"
-codesign --force --options runtime --timestamp --sign "$SIGN_ID" "$APP"
+# Inside out, never --deep: Sparkle's helpers, then the framework, then the app.
+sign() { codesign --force --options runtime --timestamp --sign "$SIGN_ID" "$@"; }
+SPARKLE="$APP/Contents/Frameworks/Sparkle.framework/Versions/B"
+sign "$SPARKLE/XPCServices/Installer.xpc"
+sign --preserve-metadata=entitlements "$SPARKLE/XPCServices/Downloader.xpc"
+sign "$SPARKLE/Autoupdate"
+sign "$SPARKLE/Updater.app"
+sign "$APP/Contents/Frameworks/Sparkle.framework"
+sign "$APP"
 codesign --verify --strict --verbose=2 "$APP"
 
 mkdir -p "$OUT"
@@ -106,5 +123,68 @@ fi
 # --- The download: the stapled app, zipped, with its checksum. ------------------------
 ditto -c -k --keepParent "$APP" "$ZIP"
 (cd "$OUT" && shasum -a 256 "$(basename "$ZIP")" > "$(basename "$ZIP").sha256")
-echo "==> Done: $ZIP"
+SHA="$(cut -d' ' -f1 "$ZIP.sha256")"
+URL="https://github.com/ramiejleh/Nearside/releases/download/v$VERSION/$(basename "$ZIP")"
+
+# --- The update feed: a signed entry for this release at the top of site/appcast.xml. -----
+echo "==> Adding $VERSION to the update feed"
+SIGNATURE="$("$SPARKLE_BIN/sign_update" "$ZIP")"   # sparkle:edSignature="…" length="…"
+PREVIOUS="$(git -C "$REPO_DIR" describe --tags --abbrev=0 2>/dev/null || true)"
+NOTES="$(git -C "$REPO_DIR" log -n 40 --format='%s' ${PREVIOUS:+"$PREVIOUS..HEAD"} --no-merges \
+  | sed 's/&/\&amp;/g; s/</\&lt;/g; s/>/\&gt;/g; s#.*#<li>&</li>#')"
+ITEM="    <item>
+      <title>Nearside $VERSION</title>
+      <pubDate>$(LC_ALL=C date -u '+%a, %d %b %Y %H:%M:%S +0000')</pubDate>
+      <sparkle:version>$BUILD</sparkle:version>
+      <sparkle:shortVersionString>$VERSION</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+      <description><![CDATA[<ul>
+$NOTES
+</ul>]]></description>
+      <enclosure url=\"$URL\" type=\"application/octet-stream\" $SIGNATURE/>
+    </item>"
+FEED="$REPO_DIR/site/appcast.xml"
+ITEM="$ITEM" python3 - "$FEED" <<'PY'
+import os, sys
+path = sys.argv[1]
+feed = open(path).read()
+marker = "<!-- releases: newest first -->"
+assert marker in feed, "appcast marker missing"
+open(path, "w").write(feed.replace(marker, marker + "\n" + os.environ["ITEM"], 1))
+PY
+
+# --- Homebrew: the cask for the ramiejleh/homebrew-tap repository. ---------------------
+cat > "$OUT/nearside.rb" <<CASK
+cask "nearside" do
+  version "$VERSION"
+  sha256 "$SHA"
+
+  url "https://github.com/ramiejleh/Nearside/releases/download/v#{version}/Nearside-#{version}.zip"
+  name "Nearside"
+  desc "Your Android phone on your Mac: clipboard, notifications, messages, files and apps"
+  homepage "https://ramiejleh.github.io/Nearside/"
+
+  auto_updates true
+  depends_on macos: ">= :sonoma"
+
+  app "Nearside.app"
+
+  zap trash: [
+    "~/Library/Application Support/Nearside",
+    "~/Library/Preferences/dev.nearside.mac.plist",
+    "~/Library/Caches/dev.nearside.mac",
+  ]
+end
+CASK
+
+echo "==> Done: $ZIP (build $BUILD)"
 cat "$ZIP.sha256"
+cat <<NEXT
+
+Next:
+  1. Try the zip: unzip it somewhere, open it, check it connects.
+  2. git tag v$VERSION && git push --tags
+  3. Make a GitHub release for v$VERSION with the zip and its .sha256.
+  4. Commit and push site/appcast.xml (Pages serves it; Macs then see the update).
+  5. Copy $OUT/nearside.rb to Casks/ in ramiejleh/homebrew-tap and push.
+NEXT

@@ -52,6 +52,11 @@ This product depends on, and the Mac app statically links, the following.
     Licensed under the Apache License, Version 2.0
     https://boringssl.googlesource.com/boringssl/+/refs/heads/main/LICENSE
 
+  Sparkle (bundled as Sparkle.framework, for app updates)
+    Copyright (c) 2006-2013 Andy Matuschak, and the Sparkle project contributors
+    Licensed under the MIT License; its own LICENSE, including the external licences it
+    lists, applies: https://github.com/sparkle-project/Sparkle/blob/2.x/LICENSE
+
 -------------------------------------------------------------------------------
 Techniques (no code copied)
 

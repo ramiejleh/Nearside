@@ -36,6 +36,7 @@ enum NearsideMain {
 
         _ = submenu("Nearside", [
             item("About Nearside", #selector(NSApplication.orderFrontStandardAboutPanel(_:))),
+        ] + (Updates.available ? [item("Check for Updates…", #selector(AppDelegate.checkForUpdates(_:)))] : []) + [
             .separator(),
             item("Hide Nearside", #selector(NSApplication.hide(_:)), "h"),
             item("Hide Others", #selector(NSApplication.hideOtherApplications(_:)), "h", [.command, .option]),
@@ -102,6 +103,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         engine.start()
         self.engine = engine
         statusItem = StatusItemController(engine: engine)
+        Updates.start()
         openAppForTesting(engine)
         snapshotLauncherForTesting(engine)
         snapshotSetupForTesting(engine)
@@ -111,6 +113,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc func showPhoneLauncher(_ sender: Any?) { statusItem?.phoneApps.showLauncher() }
 
     @objc func showPhoneWindow(_ sender: Any?) { statusItem?.phoneApps.openPhoneWindow() }
+
+    @objc func checkForUpdates(_ sender: Any?) { Updates.checkNow() }
 
     /// View → Show Statistics: the readout over every phone window (a menu checkmark when on).
     @objc func toggleStatistics(_ sender: Any?) {

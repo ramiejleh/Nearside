@@ -153,6 +153,19 @@ The [architecture notes](docs/architecture.md) go deeper.
 | **Phone** | Android 11 or later, on the same Wi-Fi network (or plugged in by USB once paired) |
 | **Phone apps on the Mac** | Developed and tested on Android 17 (Pixel 9 Pro); earlier versions untested |
 
+### Install
+
+Download `Nearside-<version>.zip` from the [latest release](https://github.com/ramiejleh/Nearside/releases/latest),
+unzip it and move Nearside to Applications. Or, with [Homebrew](https://brew.sh):
+
+```sh
+brew install --cask ramiejleh/tap/nearside
+```
+
+Releases are signed and notarised by Apple. Nearside checks for updates by itself, and
+**Settings → General → Check for Updates…** checks now. When the Mac app updates, it updates
+the phone app too.
+
 ### Build it yourself
 
 To build Nearside from source you need Xcode 26 or later and Android Studio (Gradle uses its
