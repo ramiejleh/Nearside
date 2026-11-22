@@ -57,7 +57,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
       <key>CFBundleURLSchemes</key><array><string>nearside</string></array>
     </dict>
   </array>
-  <key>NSHumanReadableCopyright</key><string>Apache-2.0</string>
+  <key>NSHumanReadableCopyright</key><string>AGPL-3.0-or-later</string>
   <!-- Wireless debugging: find the phone over Bonjour and connect to it on this network. -->
   <key>NSLocalNetworkUsageDescription</key><string>Nearside connects to your Android phone over this Wi-Fi network (Wireless debugging).</string>
   <key>NSBonjourServices</key>

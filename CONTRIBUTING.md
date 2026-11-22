@@ -36,7 +36,7 @@ The Mac app has test hooks driven by environment variables (`NEARSIDE_OPEN_APP`,
 - Anything that touches security (authentication, the helper's permissions, what the phone
   exposes) needs a short explanation of the threat it handles in the description.
 - By contributing you agree that your work is licensed under the project's
-  [Apache License 2.0](LICENSE).
+  [GNU Affero General Public License v3.0 or later](LICENSE).
 
 Code adapted from other projects must keep its licence notice in the file and be added to
 [NOTICE](NOTICE).

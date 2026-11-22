@@ -8,7 +8,7 @@
 Your phone's clipboard, notifications, messages, files and apps, on your Mac.
 Open source. No cloud, no account.
 
-[![License: Apache 2.0](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
+[![License: AGPL v3](https://img.shields.io/badge/license-AGPL%20v3-blue.svg)](LICENSE)
 [![macOS 14+](https://img.shields.io/badge/macOS-14%2B-000000?logo=apple&logoColor=white)](#requirements)
 [![Android 11+](https://img.shields.io/badge/Android-11%2B-3DDC84?logo=android&logoColor=white)](#requirements)
 [![CI](https://github.com/ramiejleh/Nearside/actions/workflows/ci.yml/badge.svg)](https://github.com/ramiejleh/Nearside/actions/workflows/ci.yml)
@@ -255,4 +255,8 @@ Continuity are trademarks of Apple Inc. Nearside is not affiliated with either.
 
 ## License
 
-[Apache License 2.0](LICENSE). Copyright 2026 The Nearside contributors.
+[GNU Affero General Public License v3.0](LICENSE) or later. Copyright 2026 The Nearside contributors.
+
+You may use, change and share Nearside freely. If you distribute it, or a changed version,
+or let people use a changed version over a network, you must release your source code under
+the same licence. The code adapted from scrcpy and AOSP stays under its Apache 2.0 notices.
