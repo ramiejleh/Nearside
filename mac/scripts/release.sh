@@ -70,7 +70,7 @@ if [[ $NOTARIZE -eq 1 ]]; then
 fi
 
 SPARKLE_BIN="$MAC_DIR/.build/artifacts/sparkle/Sparkle/bin"
-grep -q '^SPARKLE_PUBLIC_KEY="."' "$MAC_DIR/scripts/bundle.sh" \
+grep -q '^SPARKLE_PUBLIC_KEY="[^"]' "$MAC_DIR/scripts/bundle.sh" \
   || fail "no Sparkle public key in bundle.sh (run $SPARKLE_BIN/generate_keys once; see the top of this script)"
 [[ -n "$(git -C "$REPO_DIR" status --porcelain)" ]] && fail "commit everything first: the build number is the commit count"
 
