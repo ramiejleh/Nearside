@@ -15,7 +15,7 @@ BUILD="$(git -C "$REPO_DIR" rev-list --count HEAD 2>/dev/null || echo 1)"
 
 # App updates (Sparkle), for release builds only. The public half of the EdDSA key made by
 # Sparkle's generate_keys; the private half stays in the maintainer's login keychain.
-SPARKLE_PUBLIC_KEY=""
+SPARKLE_PUBLIC_KEY="o99LYavRnWTIRV05uCwQTZMcj5zKxEt4XBl9e4biNQo="
 FEED_URL="https://ramiejleh.github.io/Nearside/appcast.xml"
 UPDATE_KEYS=""
 if [[ "${UPDATES:-0}" == 1 ]]; then

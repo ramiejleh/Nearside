@@ -6,8 +6,9 @@
 #       and a new entry at the top of site/appcast.xml (the update feed, served by Pages)
 #
 # Nothing personal lives in the repo; everything comes from your environment:
-#   NEARSIDE_KEYSTORE        path to the Android release keystore (required)
-#   NEARSIDE_KEYSTORE_PASS   its password (required)
+#   NEARSIDE_KEYSTORE        path to the Android release keystore (default: ~/nearside-release.jks)
+#   NEARSIDE_KEYSTORE_PASS   its password (default: the keychain item "nearside-keystore", saved with
+#                            security add-generic-password -a nearside -s nearside-keystore -w)
 #   NEARSIDE_KEY_ALIAS       key alias (default: nearside)
 #   NEARSIDE_KEY_PASS        key password (default: the keystore password)
 #   NEARSIDE_SIGN_ID         codesign identity (default: the only "Developer ID Application" one)
@@ -43,9 +44,14 @@ ZIP="$OUT/Nearside-$VERSION.zip"
 PROFILE="${NEARSIDE_NOTARY_PROFILE:-nearside}"
 
 # --- Checks first, so a release never half-builds. -----------------------------------
-[[ -n "${NEARSIDE_KEYSTORE:-}" && -f "$NEARSIDE_KEYSTORE" ]] \
-  || fail "set NEARSIDE_KEYSTORE to your Android release keystore (see the top of this script)"
-[[ -n "${NEARSIDE_KEYSTORE_PASS:-}" ]] || fail "set NEARSIDE_KEYSTORE_PASS"
+NEARSIDE_KEYSTORE="${NEARSIDE_KEYSTORE:-$HOME/nearside-release.jks}"
+[[ -f "$NEARSIDE_KEYSTORE" ]] \
+  || fail "no Android release keystore at $NEARSIDE_KEYSTORE (see the top of this script)"
+if [[ -z "${NEARSIDE_KEYSTORE_PASS:-}" ]]; then
+  NEARSIDE_KEYSTORE_PASS="$(security find-generic-password -a nearside -s nearside-keystore -w 2>/dev/null)" \
+    || fail "set NEARSIDE_KEYSTORE_PASS, or save it in the keychain (see the top of this script)"
+fi
+export NEARSIDE_KEYSTORE_PASS
 # Gradle resolves relative paths from the app module, so hand it an absolute one.
 NEARSIDE_KEYSTORE="$(cd "$(dirname "$NEARSIDE_KEYSTORE")" && pwd)/$(basename "$NEARSIDE_KEYSTORE")"
 export NEARSIDE_KEYSTORE
