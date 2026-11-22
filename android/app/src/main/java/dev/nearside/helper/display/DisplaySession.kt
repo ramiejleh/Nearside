@@ -32,11 +32,15 @@ class DisplaySession(
 ) {
     companion object {
         // PUBLIC | OWN_CONTENT_ONLY | SUPPORTS_TOUCH | TRUSTED | OWN_DISPLAY_GROUP | ALWAYS_UNLOCKED |
-        // TOUCH_FEEDBACK_DISABLED | OWN_FOCUS. OWN_CONTENT_ONLY matters: without it an empty display
-        // mirrors the phone's own screen. No system decorations: on Android 17 they divert launches
-        // into desktop "desks" (and fail while locked). See docs/architecture.md.
+        // TOUCH_FEEDBACK_DISABLED | OWN_FOCUS | STEAL_TOP_FOCUS_DISABLED. OWN_CONTENT_ONLY matters:
+        // without it an empty display mirrors the phone's own screen. STEAL_TOP_FOCUS_DISABLED keeps
+        // the phone usable: otherwise our display becomes the phone's top-focused one, so the
+        // phone's on-screen keyboard is fought over (it won't stay open on the phone) and apps
+        // started on the phone open in a Mac window. The Mac's input targets our display by id, so
+        // it still arrives. No system decorations: on Android 17 they divert launches into desktop
+        // "desks" (and fail while locked). See docs/architecture.md.
         const val FLAGS = (1 shl 0) or (1 shl 3) or (1 shl 6) or (1 shl 10) or (1 shl 11) or (1 shl 12) or
-            (1 shl 13) or (1 shl 14)
+            (1 shl 13) or (1 shl 14) or (1 shl 16)
         private const val GRACE_MS = 30_000L
         /** Our windows' displays (a notification may be opened only onto one of them). */
         private val displays = java.util.concurrent.ConcurrentHashMap.newKeySet<Int>()
