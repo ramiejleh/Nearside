@@ -153,10 +153,10 @@ The [architecture notes](docs/architecture.md) go deeper.
 | **Phone** | Android 11 or later, on the same Wi-Fi network (or plugged in by USB once paired) |
 | **Phone apps on the Mac** | Developed and tested on Android 17 (Pixel 9 Pro); earlier versions untested |
 
-### Build and run
+### Build it yourself
 
-There are no signed releases yet, so build from source. You need Xcode 26 or later and Android Studio
-(Gradle uses its bundled JDK).
+To build Nearside from source you need Xcode 26 or later and Android Studio (Gradle uses its
+bundled JDK).
 
 ```sh
 git clone https://github.com/ramiejleh/Nearside.git
@@ -193,7 +193,6 @@ vulnerability? Please report it privately; see [SECURITY.md](SECURITY.md).
 Nearside is **alpha** software. It's built and used daily on a Pixel 9 Pro (Android 17) with a
 MacBook. Known limitations:
 
-- There's no signed, notarised release yet, so you build from source.
 - Apps that block screen capture (many banking apps) show black in a window. The window says so
   and offers to open the app on the phone.
 - Calls stay on the phone.

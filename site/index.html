@@ -32,7 +32,7 @@
     <a href="#apps">Phone apps</a>
     <a href="#everyday">Everyday</a>
     <a href="#how">How it works</a>
-    <a href="#build">Get it</a>
+    <a href="#support">Support</a>
     <a class="pill" href="https://github.com/ramiejleh/Nearside">GitHub</a>
   </nav>
 </header>
@@ -45,13 +45,13 @@
       <h1>Your Android phone, on the near side of your Mac.</h1>
       <p class="lede">Copy on one and paste on the other. Answer notifications and texts from the Mac. Drop files either way. Open any phone app in its own Mac window, with the phone still locked in your pocket.</p>
       <div class="actions">
-        <a class="button primary" href="#build">Build it from source</a>
-        <a class="button" href="https://github.com/ramiejleh/Nearside">View on GitHub</a>
+        <a class="button primary" href="https://github.com/ramiejleh/Nearside">View on GitHub</a>
+        <a class="button" href="#how">How it works</a>
       </div>
       <p class="fine">Free and open source. macOS 14 or later, Android 11 or later. No cloud, no account.</p>
     </div>
 
-    <div class="stage" role="img" aria-label="A clip, a notification and a phone app travel from an Android phone to a Mac">
+    <div class="stage" role="img" aria-label="A clip and a phone app travel from an Android phone to a Mac, then a message arrives on both at once">
       <div class="mac">
         <div class="screen">
           <div class="menubar"><span class="mini-mark"></span></div>
@@ -72,6 +72,11 @@
       <div class="phone">
         <div class="phone-screen">
           <span class="time">18:05</span>
+          <div class="lock-note">
+            <span class="who">Messages</span>
+            <b>Sam</b>
+            <span>Running five minutes late. Order me a flat white?</span>
+          </div>
           <span class="locked">
             <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="10" width="14" height="10" rx="2.5"/><path d="M8 10V7a4 4 0 0 1 8 0v3" fill="none" stroke-width="2"/></svg>
             Locked
@@ -79,7 +84,6 @@
         </div>
       </div>
       <div class="flyer f-clip">Flight departs 18:40 from gate B12</div>
-      <div class="flyer f-note"><b>Sam</b> Running five minutes late</div>
       <div class="flyer f-app"><img src="images/icon-calculator.png" alt=""></div>
     </div>
   </section>
@@ -104,7 +108,7 @@
       </div>
     </div>
     <figure class="wrap wide">
-      <img src="images/tablet.jpg" alt="Android Settings in a Mac window at tablet size, in its two-pane layout" loading="lazy">
+      <img src="images/window-tablet.png" alt="Android Settings in a Mac window at tablet size, in its two-pane layout" loading="lazy">
       <figcaption>Settings at tablet size, laid out by Android itself. Personal details replaced with demo content.</figcaption>
     </figure>
   </section>
@@ -154,25 +158,6 @@
     </div>
   </section>
 
-  <section id="build" class="build">
-    <div class="wrap split">
-      <div class="copy">
-        <h2>Get it running.</h2>
-        <p>Nearside is alpha software with no signed release yet, so you build it from source. You need Xcode 26 or later and Android Studio.</p>
-        <ol class="steps">
-          <li>Build the phone app and the Mac app, which carries the phone app inside it.</li>
-          <li>Open Nearside. On the phone, turn on Developer options, then Wireless debugging, and scan the pairing code your Mac shows.</li>
-          <li>That's the last time you touch the phone. The Mac installs its app and keeps everything connected.</li>
-        </ol>
-      </div>
-      <pre class="code" aria-label="Build commands"><code>git clone https://github.com/ramiejleh/Nearside.git
-cd Nearside
-export JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home"
-(cd android && ./gradlew assembleDebug)
-mac/scripts/bundle.sh
-open mac/build/Nearside.app</code></pre>
-    </div>
-  </section>
 
   <section id="support" class="support">
     <div class="wrap">

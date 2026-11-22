@@ -16,7 +16,7 @@ rely on Android internals that vary between versions and manufacturers.
 
 ## Building
 
-See [Build and run](README.md#build-and-run). For a development loop:
+See [Build it yourself](README.md#build-it-yourself). For a development loop:
 
 ```sh
 (cd android && ./gradlew assembleDebug) && adb install -r android/app/build/outputs/apk/debug/app-debug.apk
