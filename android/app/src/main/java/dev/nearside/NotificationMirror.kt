@@ -210,18 +210,27 @@ class NotificationMirror : NotificationListenerService() {
 
     /** Opens the notification's target on the phone (or on [display], a Mac window's), as tapping it would. */
     fun open(key: String, display: Int = -1) = main.post {
-        val n = active[key] ?: return@post
-        val target = n.contentIntent ?: return@post
+        val n = active[key] ?: runCatching { getActiveNotifications(arrayOf(key)) }.getOrNull()?.firstOrNull()?.notification
+            ?: run { // already gone here: the Mac's copy is stale, drop it
+            android.util.Log.i("Nearside", "notification to open is no longer showing")
+            HelperConnection.send(JSONObject().put("t", "notif-removed").put("key", key))
+            return@post
+        }
+        val target = n.contentIntent ?: run {
+            android.util.Log.i("Nearside", "notification to open has nothing to open")
+            return@post
+        }
         runCatching {
             if (display >= 0) {
                 if (HelperConnection.helper?.sendIntentOnDisplay(target, display) != true) error("the helper couldn't open it there")
             } else {
                 fire(target, null)
             }
-        }.onFailure { Status.lastEvent = "open failed: ${it.message}" }
+        }.onSuccess { android.util.Log.i("Nearside", "opened a notification${if (display >= 0) " on display $display" else ""}") }
+            .onFailure { Status.lastEvent = "open failed: ${it.message}"; android.util.Log.i("Nearside", "notification open failed: ${it.message}") }
         // Tapping an auto-cancel notification removes it; do the same.
+        // The removal is reported back as usual: the Mac's banner went, but its notification list keeps it until then.
         if (n.flags and Notification.FLAG_AUTO_CANCEL != 0) {
-            delivered.remove(key) // the Mac already removed its copy
             runCatching { cancelNotification(key) }
         }
     }

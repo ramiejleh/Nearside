@@ -42,6 +42,8 @@ class DisplaySession(
         private val displays = java.util.concurrent.ConcurrentHashMap.newKeySet<Int>()
         fun isOurs(displayId: Int) = displayId in displays
         private const val LAUNCH_TIMEOUT_MS = 10_000L
+        /** How long after a notification opens the window follows its app into another task. */
+        private const val FOLLOW_MS = 4_000L
         private const val FPS_DROP_DELAY_MS = 3_000L
         private val SECURE_FLAG = Regex("\\bfl=[^\\n]*\\bSECURE\\b")
     }
@@ -296,19 +298,75 @@ class DisplaySession(
     private fun openNotification(key: String) {
         val pkg = key.split('|').getOrNull(1)?.takeIf { it.matches(Regex("[A-Za-z0-9_.]+")) }
             ?: return fail(DisplayWire.ERR_NOT_FOUND, "not a notification")
-        val existing = Hidden.rootTasks().firstOrNull { it.packageName == pkg && it.displayId != displayId }
+        val before = Hidden.rootTasks().filter { it.packageName == pkg }
+        val existing = before.firstOrNull { it.displayId != displayId }
         // Android lets go of the old window's claim a moment after it's released: move after that.
         if (existing != null && server.releaseSoundOn(existing.displayId)) Thread.sleep(300)
         if (existing != null && Hidden.moveTask(existing.taskId, displayId, onTop = true)) {
             Log.d("display session $id: moved task ${existing.taskId} ($pkg) here for a notification")
         }
+        notifPkg = pkg
+        notifBefore = before.map { it.taskId }.toSet() - setOfNotNull(existing?.taskId)
+        notifUntil = SystemClock.uptimeMillis() + FOLLOW_MS
         AppLink.deliver(org.json.JSONObject().put("t", "notif-open").put("key", key).put("display", displayId))
+        if (isHome) pullNotificationTask()
         watcher.schedule({
             if (!closed && !isHome && Hidden.rootTasks().none { it.displayId == displayId }) {
                 Log.d("display session $id: the notification opened nothing; opening $pkg")
                 launchApp(pkg)
             }
         }, 2, TimeUnit.SECONDS)
+    }
+
+    // Many apps open a notification through a screen of their own that starts the real one in
+    // another task (often on the phone's screen, since it doesn't know about ours) and then goes.
+    // For a few seconds after a notification opens, the window follows the app to that task.
+    private var notifPkg: String? = null
+    private var notifBefore: Set<Int> = emptySet()
+    private var notifUntil = 0L
+
+    /** The task the notification's app went on to, if it has: one here, else a new one elsewhere. */
+    private fun notificationTask(tasks: List<Hidden.RootTask>): Hidden.RootTask? {
+        val pkg = notifPkg ?: return null
+        val others = tasks.filter { it.packageName == pkg && it.taskId != taskId }
+        return others.filter { it.displayId == displayId }.maxByOrNull { it.visible }
+            ?: others.firstOrNull { it.displayId != displayId && it.taskId !in notifBefore }
+    }
+
+    private fun following() = notifPkg != null && SystemClock.uptimeMillis() < notifUntil
+
+    /**
+     * The app window's task is leaving: true if it was a notification's go-between and the window
+     * now has the app's next task (or is still waiting for it to appear).
+     */
+    private fun followNotification(tasks: List<Hidden.RootTask>): Boolean {
+        if (!following()) return false
+        val next = notificationTask(tasks)
+        if (next == null) { // not started yet: look again shortly
+            watcher.schedule({ runCatching { watchTasks() } }, 300, TimeUnit.MILLISECONDS)
+            return true
+        }
+        if (next.displayId != displayId) Hidden.moveTask(next.taskId, displayId, onTop = true)
+        else if (!next.visible) Hidden.taskToFront(next.taskId)
+        Log.d("display session $id: the notification went on to task ${next.taskId}${if (next.displayId != displayId) " on display ${next.displayId}; moved it here" else ""}")
+        taskId = next.taskId
+        hiddenPolls = 0
+        notifPkg = null
+        sendTask()
+        return true
+    }
+
+    /** The phone window: brings the notification's app here if it opened on the phone's screen instead. */
+    private fun pullNotificationTask() {
+        if (closed || !following()) return
+        val next = notificationTask(Hidden.rootTasks())?.takeIf { it.displayId != displayId }
+        if (next == null) {
+            watcher.schedule({ runCatching { pullNotificationTask() } }, 300, TimeUnit.MILLISECONDS)
+            return
+        }
+        Hidden.moveTask(next.taskId, displayId, onTop = true)
+        Log.d("display session $id: the notification opened task ${next.taskId} on display ${next.displayId}; moved it here")
+        notifPkg = null
     }
 
     /** Files dropped on the window: the app on top of the display gets them, as a share. */
@@ -462,6 +520,8 @@ class DisplaySession(
                 taskId = mine.taskId
                 Log.d("display session $id: task $taskId (${mine.packageName})")
                 sendTask()
+            } else if (followNotification(tasks)) {
+                // its go-between came and went before we saw it
             } else if (SystemClock.uptimeMillis() - openedAt > LAUNCH_TIMEOUT_MS && !taskGone) {
                 taskGone = true
                 fail(DisplayWire.ERR_LAUNCH, "the app didn't open")
@@ -475,12 +535,13 @@ class DisplaySession(
             // closing it; on our display nothing is behind it, so the window would just go black.
             hiddenPolls = if (task.visible) 0 else hiddenPolls + 1
             if (hiddenPolls == 1) watcher.schedule({ runCatching { watchTasks() } }, 500, TimeUnit.MILLISECONDS) // still?
-            if (hiddenPolls < 2) return
+            if (hiddenPolls < 2 || followNotification(tasks)) return
             taskGone = true
             Log.d("display session $id: task $taskId went to the background")
             ctl?.send(DisplayWire.TASK_GONE, byteArrayOf(DisplayWire.GONE_EXITED.toByte()))
             return
         }
+        if (task == null && followNotification(tasks)) return
         taskGone = true
         // Moved elsewhere (into Home, another window, back onto the phone): its sound follows it.
         if (task != null && !isHome) releaseSound()
