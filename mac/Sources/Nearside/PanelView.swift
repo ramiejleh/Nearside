@@ -59,65 +59,65 @@ struct PanelView: View {
         }
     }
 
+    /// Two rows: who and how the phone is, then everything you can do.
     private var header: some View {
-        HStack(spacing: 10) {
-            LogoTile(size: 26)
-            Text(showingSettings ? "Settings" : "Nearside")
-                .font(.system(size: 14, weight: .semibold))
-                .fixedSize()
-                .contentTransition(.opacity)
-            Spacer()
-            StatusPill(state: engine.state, phoneName: engine.phoneName, inUseOn: engine.inUseOn, overUSB: engine.overUSB,
-                       status: engine.state == .connected ? engine.phoneStatus : nil)
-            if engine.state == .connected && !showingSettings {
-                Button(action: openApps) {
-                    Image(systemName: "apps.iphone")
-                        .font(.system(size: 13, weight: .medium))
-                        .frame(width: 24, height: 24)
-                        .contentShape(Circle())
-                }
-                .buttonStyle(.plain)
-                .foregroundStyle(.secondary)
-                .help("Open a phone app on your Mac")
+        VStack(spacing: 10) {
+            HStack(spacing: 10) {
+                LogoTile(size: 26)
+                Text("Nearside")
+                    .font(.system(size: 14, weight: .semibold))
+                    .fixedSize()
+                Spacer(minLength: 8)
+                StatusPill(state: engine.state, phoneName: engine.phoneName, inUseOn: engine.inUseOn, overUSB: engine.overUSB,
+                           status: engine.state == .connected ? engine.phoneStatus : nil)
             }
-            if (engine.state == .connected || engine.state == .searching) && !showingSettings {
-                Button(action: openMessages) {
-                    Image(systemName: "message")
-                        .font(.system(size: 13, weight: .medium))
-                        .frame(width: 24, height: 24)
-                        .contentShape(Circle())
-                }
-                .buttonStyle(.plain)
-                .foregroundStyle(.secondary)
-                .help("Text messages")
+            HStack(spacing: 6) {
+                let connected = engine.state == .connected
+                HeaderButton(title: "Apps", symbol: "apps.iphone", enabled: connected && !showingSettings,
+                             help: "Open a phone app on your Mac", action: openApps)
+                HeaderButton(title: "Messages", symbol: "message",
+                             enabled: (connected || engine.state == .searching) && !showingSettings,
+                             help: "Text messages", action: openMessages)
+                HeaderButton(title: "Send files", symbol: "paperplane", enabled: connected && !showingSettings,
+                             help: "Send files to your \(engine.phoneName) (or drop them here)", action: chooseFiles)
+                HeaderButton(title: "Settings", symbol: showingSettings ? "xmark" : "gearshape", selected: showingSettings,
+                             help: showingSettings ? "Close settings" : "Settings") { showingSettings.toggle() }
+                    .keyboardShortcut(",", modifiers: .command)
             }
-            if engine.state == .connected && !showingSettings {
-                Button(action: chooseFiles) {
-                    Image(systemName: "paperplane")
-                        .font(.system(size: 13, weight: .medium))
-                        .frame(width: 24, height: 24)
-                        .contentShape(Circle())
-                }
-                .buttonStyle(.plain)
-                .foregroundStyle(.secondary)
-                .help("Send files to your \(engine.phoneName) (or drop them here)")
-            }
-            Button {
-                showingSettings.toggle()
-            } label: {
-                Image(systemName: showingSettings ? "xmark" : "gearshape")
-                    .font(.system(size: 13, weight: .medium))
-                    .frame(width: 24, height: 24)
-                    .background(Color.primary.opacity(showingSettings ? 0.08 : 0), in: Circle())
-                    .contentShape(Circle())
-            }
-            .buttonStyle(.plain)
-            .foregroundStyle(.secondary)
-            .help(showingSettings ? "Close settings" : "Settings")
-            .keyboardShortcut(",", modifiers: .command)
         }
         .padding(.horizontal, 14)
-        .padding(.vertical, 11)
+        .padding(.top, 12)
+        .padding(.bottom, 10)
+    }
+}
+
+/// A pill button in the panel's second header row.
+private struct HeaderButton: View {
+    let title: String
+    let symbol: String
+    var enabled = true
+    var selected = false
+    let help: String
+    let action: () -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 4) {
+                Image(systemName: symbol).font(.system(size: 11, weight: .medium))
+                Text(title).font(.system(size: 11.5, weight: .medium)).lineLimit(1)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 5)
+            .background(Color.primary.opacity(selected ? 0.14 : hovering && enabled ? 0.1 : 0.06), in: Capsule())
+            .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(selected ? .primary : .secondary)
+        .disabled(!enabled)
+        .opacity(enabled || selected ? 1 : 0.45)
+        .onHover { hovering = $0 }
+        .help(help)
     }
 }
 
@@ -193,17 +193,16 @@ struct StatusPill: View {
                 .fill(color)
                 .frame(width: 7, height: 7)
                 .shadow(color: color.opacity(state == .connected ? 0.8 : 0), radius: 3)
-            // Connected with its status known: the icons say it all (the name is in the tooltip).
+            Text(status != nil ? phoneName : text)
+                .font(.system(size: 11.5, weight: .medium))
+                .lineLimit(1)
+                .truncationMode(.tail)
             if let status {
                 if overUSB {
                     Image(systemName: "cable.connector").font(.system(size: 10.5)).foregroundStyle(.secondary)
                 }
                 PhoneStatusIcons(status: status)
-            } else {
-                Text(text)
-                    .font(.system(size: 11.5, weight: .medium))
-                    .lineLimit(1)
-                    .truncationMode(.tail)
+                    .padding(.leading, 2)
             }
         }
         .padding(.horizontal, 9)
