@@ -215,9 +215,16 @@ public final class SyncEngine {
         ticker.tolerance = 0.5
         ticker.fire()
         // A new network (or the same one back) or the Mac waking: the phone may be reachable now.
+        // A connection made on the old network is dead even if TCP hasn't noticed: drop it first.
         network.pathUpdateHandler = { [weak self] path in
             guard path.status == .satisfied else { return }
-            Task { @MainActor in self?.tryAgainNow() }
+            Task { @MainActor in
+                guard let self else { return }
+                if self.state == .connected, await Task.detached(operation: { Native.dropIfNetworkChanged() }).value {
+                    self.log.info("network changed under the connection; reconnecting")
+                }
+                self.tryAgainNow()
+            }
         }
         network.start(queue: .main)
         NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.didWakeNotification, object: nil, queue: .main) { [weak self] _ in

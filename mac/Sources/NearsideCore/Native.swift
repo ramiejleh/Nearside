@@ -40,6 +40,14 @@ enum Native {
         lock.withLock { connection?.isAlive == true ? connection : nil }
     }
 
+    /// After a network change: drops the connection if the Mac's address it was made from is
+    /// gone, so the next try reconnects on the new network at once. True if it was dropped.
+    static func dropIfNetworkChanged() -> Bool {
+        guard let adb = lock.withLock({ connection }), adb.isAlive, adb.localAddressGone else { return false }
+        disconnect()
+        return true
+    }
+
     static func disconnect() {
         let old = lock.withLock { () -> AdbConnection? in
             defer { connection = nil }

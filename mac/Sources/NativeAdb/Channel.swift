@@ -33,10 +33,13 @@ protocol Channel: AnyObject, Sendable {
     func close()
     /// See `TCPSocket.setKeepalive`.
     func setKeepalive(busy: Bool)
+    /// See `TCPSocket.localAddressGone`.
+    var localAddressGone: Bool { get }
 }
 
 extension Channel {
     func setKeepalive(busy: Bool) {}
+    var localAddressGone: Bool { false } // USB: no network address
     func readExactly(_ count: Int) throws -> Data {
         var data = Data(count: count)
         var filled = 0
@@ -121,6 +124,50 @@ final class TCPSocket: Channel, @unchecked Sendable {
     /// are open: then a vanished phone is noticed within ~25 s (10 s quiet, 3 probes 5 s apart).
     /// Otherwise every 15 min: anything sent still notices a dead link quickly (above).
     func setKeepalive(busy: Bool) { Self.keepalive(fd, busy: busy) }
+
+    /// The Mac no longer has the address this connection was made from (it moved to another
+    /// network): the connection is dead, though TCP may take minutes to notice.
+    var localAddressGone: Bool {
+        var local = sockaddr_storage()
+        var length = socklen_t(MemoryLayout<sockaddr_storage>.size)
+        let named = withUnsafeMutablePointer(to: &local) {
+            $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { getsockname(fd, $0, &length) }
+        }
+        guard named == 0 else { return true }
+        return !Self.interfaceAddresses().contains { Self.sameAddress($0, local) }
+    }
+
+    private static func interfaceAddresses() -> [sockaddr_storage] {
+        var list: UnsafeMutablePointer<ifaddrs>?
+        guard getifaddrs(&list) == 0, let first = list else { return [] }
+        defer { freeifaddrs(list) }
+        return sequence(first: first, next: { $0.pointee.ifa_next }).compactMap { entry in
+            guard let address = entry.pointee.ifa_addr else { return nil }
+            var copy = sockaddr_storage()
+            withUnsafeMutableBytes(of: &copy) { out in
+                out.copyMemory(from: UnsafeRawBufferPointer(start: address, count: Int(address.pointee.sa_len)))
+            }
+            return copy
+        }
+    }
+
+    /// Same IP address (ports and scope aside).
+    static func sameAddress(_ a: sockaddr_storage, _ b: sockaddr_storage) -> Bool {
+        guard a.ss_family == b.ss_family else { return false }
+        var a = a, b = b
+        switch Int32(a.ss_family) {
+        case AF_INET:
+            return withUnsafeBytes(of: &a) { pa in withUnsafeBytes(of: &b) { pb in
+                pa.load(fromByteOffset: 4, as: UInt32.self) == pb.load(fromByteOffset: 4, as: UInt32.self) // sin_addr
+            } }
+        case AF_INET6:
+            return withUnsafeBytes(of: &a) { pa in withUnsafeBytes(of: &b) { pb in
+                pa[8..<24].elementsEqual(pb[8..<24]) // sin6_addr
+            } }
+        default:
+            return false
+        }
+    }
 
     private static func keepalive(_ fd: Int32, busy: Bool) {
         var idle: Int32 = busy ? 10 : 900, interval: Int32 = busy ? 5 : 30, count: Int32 = 3
@@ -259,6 +306,8 @@ final class TLSChannel: Channel, @unchecked Sendable {
     }
 
     func setKeepalive(busy: Bool) { socket.setKeepalive(busy: busy) }
+
+    var localAddressGone: Bool { socket.localAddressGone }
 
     static func errorString() -> String {
         let code = ERR_get_error()
