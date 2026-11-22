@@ -11,3 +11,13 @@ local.properties
 
 # Private notes (kept locally, never committed)
 vault/
+android/.kotlin/
+captures/
+xcuserdata/
+# Never commit builds or signing material
+*.apk
+*.aab
+*.jks
+*.keystore
+*.p12
+.env

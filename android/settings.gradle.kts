@@ -14,5 +14,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "nearside-poc"
+rootProject.name = "nearside"
 include(":app")

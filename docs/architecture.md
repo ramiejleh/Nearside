@@ -87,8 +87,9 @@ conversation read also presses that conversation notification's "Mark as read" a
 - **Phone → Mac:** the "Send to Mac" share target passes each file's descriptor to the helper,
   which stages it in a shell-only folder; the Mac pulls it into Downloads (quarantined) and the
   staged copy is deleted.
-- **Mac → phone:** files dropped on the menu-bar icon or panel are pushed into
-  `Download/Nearside`, with fresh timestamps and a media scan.
+- **Mac → phone:** files dropped on the menu-bar icon, the panel, or the drop shelf that slides
+  out under the icon while you drag toward the top of the screen are pushed into
+  `Download/Nearside`, with fresh timestamps and a media scan; a transfers list shows progress.
 - **Into a phone app:** files dropped on an app's window are pushed into the phone app's own
   folder and shared into the app on that display (`ACTION_SEND`) through a non-exported
   provider with a per-share read grant.
@@ -104,7 +105,9 @@ its task moved there) and the display is encoded and streamed to the Mac.
   virtual audio device captures only that display's sound (one per device, so one device per
   window). Plain displays with a UHID keyboard remain the fallback.
 - **Video:** HEVC from the phone's hardware encoder; the Mac decodes with VideoToolbox and draws
-  with Metal (vsync-paced by default, or one frame per refresh for the lowest latency). The
+  with Metal. **Smooth** motion (the default) holds frames in a small jitter buffer, only as deep
+  as the connection's recent unevenness needs (capped at 100 ms), and presents each at its own
+  time so motion is even; **Responsive** shows the newest frame at once. The
   phone measures how far behind the Mac is from per-frame acks and lowers the bitrate when
   Wi-Fi can't keep up. Windows you aren't looking at drop to a lower rate or pause; a shared
   budget keeps the encoder within what it can do; quality drops when the phone is warm.
@@ -123,11 +126,22 @@ its task moved there) and the display is encoded and streamed to the Mac.
   are about to be used and finished ten minutes after the last one closes.
 - **Moving back:** closing a window, or opening the app on the phone, moves the task to the
   phone (first resized to the phone's size, so apps restore their phone layout).
+- **Display flags:** `PUBLIC | OWN_CONTENT_ONLY | SUPPORTS_TOUCH | TRUSTED | OWN_DISPLAY_GROUP |
+  ALWAYS_UNLOCKED | TOUCH_FEEDBACK_DISABLED | OWN_FOCUS | STEAL_TOP_FOCUS_DISABLED`.
+  `OWN_CONTENT_ONLY` stops an empty display from mirroring the phone's screen. `OWN_FOCUS` with
+  `STEAL_TOP_FOCUS_DISABLED` keeps the phone fully usable while windows are open: a window's
+  display never becomes the phone's focused display, so the phone's on-screen keyboard and apps
+  started on the phone stay on the phone, while the Mac's input, aimed at the display by id,
+  still arrives. No system decorations: on Android 17 they divert launches into desktop "desks"
+  (which fail while the phone is locked); the phone's on-screen keyboard therefore never shows in
+  a window, and the Mac's keyboard types instead.
+- **Hidden windows:** a window left minimised or out of sight for a chosen time (Settings →
+  Return hidden apps to the phone) closes and its app goes back to the phone.
 - **Phone window:** a whole second phone with Nearside's own home screen (Android 17
   doesn't start the Pixel launcher on such displays), Recents built from task snapshots, and a
   dock.
 - **Locked phone:** displays are always-unlocked and keep a wake lock of their own, so apps work
-  with the phone locked in a pocket; the Mac asks for Touch ID first.
+  with the phone locked in a pocket; the Mac asks for Touch ID or your password first.
 
 ## Battery and idling
 

@@ -1,4 +1,4 @@
-// Adapted from scrcpy (Apache-2.0, Copyright (C) Genymobile):
+// Adapted from scrcpy (Apache-2.0, Copyright (C) 2018 Genymobile, Copyright (C) 2018-2026 Romain Vimont):
 // server/src/main/java/com/genymobile/scrcpy/Workarounds.java and FakeContext.java.
 // A process started with `app_process` has no Android Context. These hacks give it a
 // system context that identifies as the shell package, so system services treat the

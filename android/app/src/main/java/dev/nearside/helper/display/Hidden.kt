@@ -1,5 +1,5 @@
 // Reflection wrappers for the hidden system APIs the display feature uses, as the shell user.
-// Adapted from scrcpy (Apache-2.0, Copyright (C) Genymobile): server/.../wrappers/*.java.
+// Adapted from scrcpy (Apache-2.0, Copyright (C) 2018 Genymobile, Copyright (C) 2018-2026 Romain Vimont): server/.../wrappers/*.java.
 package dev.nearside.helper.display
 
 import android.annotation.SuppressLint

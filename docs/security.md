@@ -99,6 +99,14 @@ Out of scope: an attacker who has already unlocked the Mac as you, or who has ro
 - Clipboard history stays in your Mac account (mode 0600); concealed clipboard items are never
   recorded. Nothing is sent anywhere but between your two devices: no server, no telemetry.
 
+## Developer test hooks
+
+The Mac app reads a few `NEARSIDE_*` environment variables
+([development.md](development.md#test-hooks)) so its windows can be tested without clicking.
+They only take effect when someone starts the app's binary with them set, which already means
+running programs as you. Windows they open still go through the Touch ID gate; some can save
+what a window shows to a file of the caller's choosing.
+
 ## Known limitations
 
 - Any foreground phone app can invoke "Send to Mac" with a file of its choosing (Android's share

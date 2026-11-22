@@ -22,7 +22,7 @@ object Media {
         val service = Class.forName("android.media.session.ISessionManager\$Stub")
             .getMethod("asInterface", IBinder::class.java).invoke(null, binder)!!
         // (ComponentName, userId), then (…, package) on Android 17. A package narrows the list to
-        // that package's own sessions (the shell's: none), so it's left out (measured, MediaProbe).
+        // that package's own sessions (the shell's: none), so it's left out.
         val getSessions = service.javaClass.methods.first { it.name == "getSessions" }
         val args = arrayOfNulls<Any?>(getSessions.parameterCount).also { it[1] = 0 }
         @Suppress("UNCHECKED_CAST")

@@ -1,6 +1,7 @@
 // One phone app shown in one Mac window: its own virtual display, a hardware HEVC encoder fed by
 // that display, input injected into it, and the app's task tracked so the Mac knows when it ends.
-// Encoder setup and input injection adapted from scrcpy (Apache-2.0, Copyright (C) Genymobile).
+// Encoder setup and input injection adapted from scrcpy (Apache-2.0,
+// Copyright (C) 2018 Genymobile, Copyright (C) 2018-2026 Romain Vimont).
 package dev.nearside.helper.display
 
 import android.app.ActivityOptions
@@ -245,7 +246,7 @@ class DisplaySession(
     /**
      * Our home screen on this display: started (or brought to the front, with the current dock)
      * by the shell, which alone may start it. Its own task affinity keeps it — and the apps it
-     * opens — here (Gate A).
+     * opens — here.
      */
     private fun launchHome(toFront: Boolean) {
         val intent = Intent().setClassName("dev.nearside", "dev.nearside.phone.HomeActivity")

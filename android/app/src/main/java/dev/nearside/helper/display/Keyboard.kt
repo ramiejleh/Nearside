@@ -9,7 +9,8 @@
 // layouts put symbols on different keys (Danish: @ { } [ ]), which is why positions aren't sent.
 // What the layout can't produce directly is composed from its dead keys (é = ´ then e); the rest
 // (emoji, CJK) is pasted through the virtual device's clipboard, which is put back afterwards.
-// UHID setup adapted from scrcpy (Apache-2.0, Genymobile): server/.../control/UhidManager.java.
+// UHID setup adapted from scrcpy (Apache-2.0,
+// Copyright (C) 2018 Genymobile, Copyright (C) 2018-2026 Romain Vimont): server/.../control/UhidManager.java.
 package dev.nearside.helper.display
 
 import android.os.SystemClock

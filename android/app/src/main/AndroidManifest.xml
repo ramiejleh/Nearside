@@ -38,7 +38,6 @@
             </intent-filter>
         </activity>
 
-        <!-- "Send to Mac" in the share sheet. -->
         <!-- Home screen of the Mac's phone window; only the shell (our helper) holds this permission. -->
         <activity
             android:name=".phone.HomeActivity"
@@ -51,6 +50,7 @@
             android:resizeableActivity="true"
             android:theme="@android:style/Theme.DeviceDefault.NoActionBar" />
 
+        <!-- "Send to Mac" in the share sheet. -->
         <activity
             android:name=".ShareActivity"
             android:exported="true"
