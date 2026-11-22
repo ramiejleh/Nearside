@@ -153,7 +153,7 @@ The [architecture notes](docs/architecture.md) go deeper.
 
 ### Build and run
 
-There are no signed releases yet, so build from source. You need Xcode 16+ and Android Studio
+There are no signed releases yet, so build from source. You need Xcode 26 or later and Android Studio
 (Gradle uses its bundled JDK).
 
 ```sh

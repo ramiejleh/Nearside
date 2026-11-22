@@ -2,7 +2,7 @@
 
 ## Build and run
 
-Needs Xcode 16+ and Android Studio (its bundled JDK; a newer system JDK is too new for Gradle).
+Needs Xcode 26 or later and Android Studio (its bundled JDK; a newer system JDK is too new for Gradle).
 
 ```sh
 export JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home"
