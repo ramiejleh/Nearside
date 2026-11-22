@@ -136,8 +136,12 @@ URL="https://github.com/ramiejleh/Nearside/releases/download/v$VERSION/$(basenam
 echo "==> Adding $VERSION to the update feed"
 SIGNATURE="$("$SPARKLE_BIN/sign_update" "$ZIP")"   # sparkle:edSignature="…" length="…"
 PREVIOUS="$(git -C "$REPO_DIR" describe --tags --abbrev=0 2>/dev/null || true)"
-NOTES="$(git -C "$REPO_DIR" log -n 40 --format='%s' ${PREVIOUS:+"$PREVIOUS..HEAD"} --no-merges \
-  | sed 's/&/\&amp;/g; s/</\&lt;/g; s/>/\&gt;/g; s#.*#<li>&</li>#')"
+if [[ -n "$PREVIOUS" ]]; then
+  NOTES="$(git -C "$REPO_DIR" log -n 40 --format='%s' "$PREVIOUS..HEAD" --no-merges \
+    | sed 's/&/\&amp;/g; s/</\&lt;/g; s/>/\&gt;/g; s#.*#<li>&</li>#')"
+else
+  NOTES="<li>The first release.</li>"   # no earlier tag: the whole history isn't release notes
+fi
 ITEM="    <item>
       <title>Nearside $VERSION</title>
       <pubDate>$(LC_ALL=C date -u '+%a, %d %b %Y %H:%M:%S +0000')</pubDate>
