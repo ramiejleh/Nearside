@@ -43,11 +43,13 @@ final class HelperLink {
         ourNonce = Self.randomHex()
         sendRaw(["t": "hello-mac", "nonce": ourNonce, "id": Token.id, "name": Host.current().localizedName ?? "Mac", "passive": passive])
 
-        let reader = Thread { [weak self] in
+        // Weak, and only touched on the main queue (older compilers reject capturing self here).
+        nonisolated(unsafe) weak var link = self
+        let reader = Thread {
             while let data = try? stream.read() {
-                DispatchQueue.main.async { self?.received(data, on: stream) }
+                DispatchQueue.main.async { link?.received(data, on: stream) }
             }
-            DispatchQueue.main.async { self?.closed(stream) }
+            DispatchQueue.main.async { link?.closed(stream) }
         }
         reader.name = "helper-reader"
         reader.start()
