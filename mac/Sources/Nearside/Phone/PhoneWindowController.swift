@@ -176,6 +176,23 @@ final class PhoneWindowController: NSObject, NSWindowDelegate {
         WindowShot.saveSoon(window: window, stream: stream) // counted from opening: set NEARSIDE_TEST_SHOT_AFTER
     }
 
+    /// Made-up notifications for pictures (NEARSIDE_TEST_DEMO_NOTIFICATIONS=1).
+    private static var demoNotifications: [PhoneNotification] {
+        let now = Date()
+        func note(_ pkg: String, _ app: String, _ title: String, _ text: String, _ minutes: Double, _ actions: [(String, Bool)]) -> PhoneNotification {
+            PhoneNotification(key: "demo|\(pkg)|\(minutes)", package: pkg, app: app, title: title, text: text,
+                              posted: now.addingTimeInterval(-minutes * 60), actions: actions.map { .init(title: $0.0, isReply: $0.1) })
+        }
+        return [
+            note("com.whatsapp", "WhatsApp", "Sam", "Running five minutes late. Order me a flat white?", 2, [("Reply", true), ("Mark as read", false)]),
+            note("com.google.android.calendar", "Calendar", "Design review", "15:00 to 15:45, Room 4", 9, [("Snooze", false)]),
+            note("com.google.android.apps.messaging", "Messages", "Alex", "The tickets are booked. Platform 4, the 09:12 train.", 18, [("Reply", true), ("Mark as read", false)]),
+            note("com.google.android.deskclock", "Clock", "Timer", "Pasta is ready", 26, [("Stop", false)]),
+            note("com.google.android.gm", "Gmail", "Your order has shipped", "Arriving Thursday. Track your parcel in the app.", 41, [("Archive", false), ("Reply", true)]),
+            note("com.google.android.apps.photos", "Photos", "Memories from a year ago", "Take a look back at your trip", 75, []),
+        ]
+    }
+
     /// Test hook: NEARSIDE_TEST_PHONE=recents (or notifications) opens Recents (the notification
     /// panel) once showing and saves it to NEARSIDE_TEST_OVERLAY (png).
     private func testIfAsked() {
@@ -215,6 +232,7 @@ final class PhoneWindowController: NSObject, NSWindowDelegate {
                 return
             }
             if mode == "notifications" {
+                if ProcessInfo.processInfo.environment["NEARSIDE_TEST_DEMO_NOTIFICATIONS"] == "1" { engine?.showDemoNotifications(Self.demoNotifications) }
                 toggleNotifications(nil)
                 try? await Task.sleep(for: .seconds(2))
                 NSLog("Nearside: notifications: \(engine?.phoneNotifications.map { "\($0.app): \($0.title)" } ?? [])")
@@ -240,6 +258,8 @@ final class PhoneWindowController: NSObject, NSWindowDelegate {
 
     /// The Mac's favourite phone apps, then the most used, for the home screen's dock.
     private func dock() -> [String] {
+        // Test hook (pictures): NEARSIDE_TEST_DOCK=pkg,pkg,… instead of your favourites.
+        if let test = ProcessInfo.processInfo.environment["NEARSIDE_TEST_DOCK"] { return test.split(separator: ",").map(String.init) }
         var packages = library.favouriteApps().map(\.package)
         for app in library.recents(8) where packages.count < 5 && !packages.contains(app.package) { packages.append(app.package) }
         return Array(packages.prefix(5))

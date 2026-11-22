@@ -22,7 +22,7 @@ Open source. No cloud, no account.
 
 <img src="docs/images/hero.jpg" width="900" alt="Phone apps in their own Mac windows: WhatsApp, the phone window with its home screen and Play Store, next to Nearside's menu-bar panel with clipboard history">
 
-<sub>Real windows on a Mac. Personal content is blurred.</sub>
+<sub>Real windows on a Mac. Personal content is replaced with demo content.</sub>
 
 </div>
 
@@ -44,8 +44,6 @@ an encrypted link on your own network or a USB cable.
 ### Phone apps on your Mac
 Any app on your phone opens in its own Mac window, or you can open a whole second phone with its
 own home screen.
-
-<img src="docs/images/notifications.jpg" width="340" align="right" alt="The phone window with its notification panel open; notification text is blurred">
 
 - **Real windows.** They work with the Dock, ⌘-Tab, Mission Control and Spotlight, plus a
   launcher (⌥⌘P) with your recent and favourite apps. Optionally each phone app also becomes a
@@ -71,9 +69,13 @@ own home screen.
 - **Seamless hand-off.** Open the app on the phone and it moves back there. Close the window
   and it's on your phone, where you left it.
 
-<br clear="right">
+<p align="center">
+  <img src="docs/images/whatsapp.jpg" width="290" alt="WhatsApp in its own Mac window (demo chats)">
+  <img src="docs/images/phone.jpg" width="290" alt="The phone window: Nearside's home screen with every app and a dock">
+  <img src="docs/images/notifications.jpg" width="290" alt="The phone window's notification panel, with buttons and reply (demo notifications)">
+</p>
 
-<p align="center"><img src="docs/images/tablet.jpg" width="760" alt="Android Settings in a Mac window at tablet size, with the two-pane layout; personal details are blurred"></p>
+<p align="center"><img src="docs/images/tablet.jpg" width="760" alt="Android Settings in a Mac window at tablet size, with the two-pane layout"></p>
 
 ### Clipboard, both ways
 

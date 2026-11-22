@@ -7,6 +7,11 @@ public struct PhoneNotification: Identifiable, Equatable, Sendable {
         public let title: String
         /// Takes typed text (a reply).
         public let isReply: Bool
+
+        public init(title: String, isReply: Bool) {
+            self.title = title
+            self.isReply = isReply
+        }
     }
 
     /// The phone's notification key.
@@ -20,6 +25,16 @@ public struct PhoneNotification: Identifiable, Equatable, Sendable {
     public let actions: [Action]
 
     public var id: String { key }
+
+    public init(key: String, package: String, app: String, title: String, text: String, posted: Date, actions: [Action]) {
+        self.key = key
+        self.package = package
+        self.app = app
+        self.title = title
+        self.text = text
+        self.posted = posted
+        self.actions = actions
+    }
 
     /// The app's icon as the phone sent it with its first notification (cached per package).
     public static func iconURL(package: String) -> URL? {

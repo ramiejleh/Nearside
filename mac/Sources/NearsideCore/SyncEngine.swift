@@ -54,6 +54,15 @@ public final class SyncEngine {
     /// Filled while notifications are mirrored; emptied when the phone isn't connected.
     public private(set) var phoneNotifications: [PhoneNotification] = []
 
+    /// Test hook (pictures for the README and website): shows these instead of the phone's own,
+    /// and ignores the phone's until the app quits.
+    public func showDemoNotifications(_ demo: [PhoneNotification]) {
+        demoNotifications = true
+        phoneNotifications = demo
+    }
+
+    private var demoNotifications = false
+
     /// SMS for the Messages window.
     public let messages = MessagesStore()
 
@@ -395,7 +404,7 @@ public final class SyncEngine {
             persist()
             onArrival?(item)
         case "notif":
-            guard mirrorNotifications, let key = message["key"] as? String else { return }
+            guard mirrorNotifications, !demoNotifications, let key = message["key"] as? String else { return }
             let actions: [PhoneNotification.Action] = (message["actions"] as? [[String: Any]] ?? []).compactMap { action in
                 guard let title = action["title"] as? String else { return nil }
                 return .init(title: title, isReply: action["reply"] as? Bool ?? false)
@@ -414,12 +423,12 @@ public final class SyncEngine {
                                actions: actions.map { .init(title: $0.title, isReply: $0.isReply) },
                                quiet: message["quiet"] as? Bool ?? false)
         case "notif-active":
-            if mirrorNotifications, let keys = message["keys"] as? [String] {
+            if mirrorNotifications, !demoNotifications, let keys = message["keys"] as? [String] {
                 notifications.keepOnly(Set(keys))
                 phoneNotifications.removeAll { !keys.contains($0.key) }
             }
         case "notif-removed":
-            if let key = message["key"] as? String {
+            if !demoNotifications, let key = message["key"] as? String {
                 notifications.remove(key: key)
                 phoneNotifications.removeAll { $0.key == key }
             }

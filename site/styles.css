@@ -143,13 +143,14 @@ p { margin: 0; max-width: 62ch; }
   padding: .9cqw 1.3cqw; border-radius: 1.2cqw; background: #fff; color: #1C1C1F;
   font-size: 1.4cqw; line-height: 1.3; white-space: nowrap; box-shadow: 0 1cqw 2.5cqw rgba(0, 0, 0, .25);
 }
-.f-app { width: 14cqw; }
+.f-app { width: 5cqw; }
+.f-app img { border-radius: 50%; box-shadow: 0 .8cqw 2cqw rgba(0, 0, 0, .35); }
 
 /* The sequence: each thing leaves the locked phone, crosses, and lands. */
 @media (prefers-reduced-motion: no-preference) {
   .toast { animation: land .35s ease-out 1.75s both; }
   .banner { animation: land .35s ease-out 3.15s both; }
-  .window-landed { animation: land .4s ease-out 4.8s both; }
+  .window-landed { animation: open-app .5s cubic-bezier(.2, .8, .2, 1) 4.55s both; }
   .f-clip { animation: cross-clip 1.2s cubic-bezier(.5, 0, .2, 1) .6s both; }
   .f-note { animation: cross-note 1.2s cubic-bezier(.5, 0, .2, 1) 2s both; }
   .f-app { animation: cross-app 1.45s cubic-bezier(.5, 0, .2, 1) 3.4s both; }
@@ -167,12 +168,14 @@ p { margin: 0; max-width: 62ch; }
   85% { opacity: 1; }
   100% { left: 43cqw; top: 15.5cqw; opacity: 0; }
 }
+/* The app leaves the phone as its icon and opens into a window on the Mac. */
 @keyframes cross-app {
-  0% { left: 85cqw; top: 12cqw; width: 11cqw; opacity: 0; }
-  12% { opacity: 1; }
-  88% { opacity: 1; }
-  100% { left: 5cqw; top: 8.7cqw; width: 14cqw; opacity: 0; }
+  0% { left: 88cqw; top: 20cqw; opacity: 0; transform: scale(.6); }
+  12% { opacity: 1; transform: scale(1); }
+  90% { opacity: 1; transform: scale(1); }
+  100% { left: 9.5cqw; top: 19cqw; opacity: 0; transform: scale(1.6); }
 }
+@keyframes open-app { from { opacity: 0; transform: scale(.25); } to { opacity: 1; transform: none; } }
 
 /* Phone apps: the dusk band */
 .dusk { background: var(--dusk); color: var(--on-dusk); padding: clamp(64px, 9vw, 128px) 0; }
