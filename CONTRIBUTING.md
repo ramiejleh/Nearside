@@ -35,8 +35,10 @@ The Mac app has test hooks driven by environment variables (`NEARSIDE_OPEN_APP`,
 - Match the style around you: small functions, comments that say *why*, plain names.
 - Anything that touches security (authentication, the helper's permissions, what the phone
   exposes) needs a short explanation of the threat it handles in the description.
-- By contributing you agree that your work is licensed under the project's
-  [GNU Affero General Public License v3.0 or later](LICENSE).
+- Agree to the [Contributor License Agreement](CLA.md) by ticking its box in the pull
+  request. You keep the copyright in your work. You allow the project to ship it under the
+  [GNU Affero General Public License v3.0 or later](LICENSE), and also under other terms,
+  such as a commercial licence. Your work always stays available as open source.
 
 Code adapted from other projects must keep its licence notice in the file and be added to
 [NOTICE](NOTICE).
