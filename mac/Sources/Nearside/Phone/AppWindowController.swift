@@ -3,12 +3,14 @@ import AppKit
 import Carbon
 import SwiftUI
 
-/// One phone app in a native Mac window. Resizing the window resizes the app's display on the
-/// phone, so the app lays itself out again (as a Mac app would) instead of being scaled.
+/// One phone app in a Mac window, drawn like the phone window: borderless and rounded, with the
+/// vertical toolbar beside the app (close, minimise, Back, the sizes, Open on Phone) and no title
+/// bar. A size changes the app's display on the phone, so the app lays itself out again (as a Mac
+/// app would) instead of being scaled.
 @MainActor
 final class AppWindowController: NSObject, NSWindowDelegate {
     let app: PhoneApp
-    let window: NSWindow
+    let window: PhoneWindow
     private var session: PhoneAppSession! // made once the toolbar is in, so the size is final
     private let stream: StreamView
     private let overlay = OverlayHostingView(rootView: AppWindowOverlay(state: .opening, label: ""))
@@ -22,6 +24,8 @@ final class AppWindowController: NSObject, NSWindowDelegate {
     private var locked = false
     /// The vertical toolbar beside the app: Back, then the toolbox.
     private var tools: SideToolbar!
+    /// A message over the app for a few seconds (there's no title bar to say it in).
+    private let notice = NoticeView()
     /// The app's window blocks capture (FLAG_SECURE): the picture is black, so say why.
     private var secure = false
 
@@ -67,6 +71,9 @@ final class AppWindowController: NSObject, NSWindowDelegate {
         } else {
             window.setFrame(frame, display: true)
         }
+        // A phone's corner, scaled with the window (as the phone window's).
+        window.contentView?.layer?.cornerRadius = 30 * z
+        window.invalidateShadow()
     }
 
     /// `notification`: opened from that phone notification (its key): it opens in the window.
@@ -75,22 +82,24 @@ final class AppWindowController: NSObject, NSWindowDelegate {
         self.app = app
         self.onClosed = onClosed
         // A preset size (the toolbox), not resizable: the app lays out once per size.
-        window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 400, height: 800), styleMask: [.titled, .closable, .miniaturizable],
-                          backing: .buffered, defer: false)
+        window = PhoneWindow(contentRect: NSRect(x: 0, y: 0, width: 400, height: 800),
+                             styleMask: [.borderless, .miniaturizable], backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false
-        window.title = app.label
+        window.title = app.label // the Window menu, Mission Control
         window.tabbingMode = .disallowed
+        window.backgroundColor = .clear
+        window.isOpaque = false
+        window.hasShadow = true
+        window.collectionBehavior.insert(.fullScreenNone)
         window.setFrameAutosaveName("PhoneApp-\(app.package)") // where it was; its size comes from the preset
         let placed = window.setFrameUsingName("PhoneApp-\(app.package)")
-        if let icon {
-            // The app's icon in the title bar (as a document's) and on the minimised window.
-            window.representedURL = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent(app.label)
-            window.standardWindowButton(.documentIconButton)?.image = icon
-            window.miniwindowImage = icon
-        }
+        if let icon { window.miniwindowImage = icon }
 
         stream = StreamView(renderer: renderer)
         let container = NSView()
+        container.wantsLayer = true
+        container.layer?.masksToBounds = true
+        container.layer?.backgroundColor = NSColor.black.cgColor
         container.addSubview(stream)
         container.addSubview(overlay)
         window.contentView = container
@@ -98,15 +107,23 @@ final class AppWindowController: NSObject, NSWindowDelegate {
         super.init()
         // The app on the left, the toolbar on the right: nothing covers the app.
         tools = SideToolbar([
+            .button(id: "close", symbol: "xmark.circle.fill", label: "Close (⌘W)") { [weak self] in self?.window.performClose(nil) },
+            .button(id: "minimize", symbol: "minus.circle.fill", label: "Minimise (⌘M)") { [weak self] in self?.window.miniaturize(nil) },
+            .separator,
             .button(id: "back", symbol: "chevron.backward", label: "Back (⌘[)") { [weak self] in self?.goBack(nil) },
             .separator,
             .button(id: PhoneSize.phone.rawValue, symbol: PhoneSize.phone.symbol, label: "Phone size (⌃⌘1)") { [weak self] in self?.setSize(.phone) },
             .button(id: PhoneSize.foldable.rawValue, symbol: PhoneSize.foldable.symbol, label: "Foldable size (⌃⌘2)") { [weak self] in self?.setSize(.foldable) },
             .button(id: PhoneSize.tablet.rawValue, symbol: PhoneSize.tablet.symbol, label: "Tablet size (⌃⌘3)") { [weak self] in self?.setSize(.tablet) },
             .spacer,
+            .button(id: "warm", symbol: "thermometer.medium", label: "Lower quality: your phone is warm") {},
             .button(id: "toPhone", symbol: "iphone.and.arrow.forward", label: "Open on Phone") { [weak self] in self?.openOnPhone() },
         ])
+        tools.dragsWindow = true // no title bar: the toolbar's empty parts move the window
+        tools.setHidden("warm", true)
         container.addSubview(tools)
+        notice.isHidden = true
+        container.addSubview(notice)
         for view in [stream, overlay, tools] as [NSView] {
             view.translatesAutoresizingMaskIntoConstraints = false
             NSLayoutConstraint.activate([
@@ -120,6 +137,9 @@ final class AppWindowController: NSObject, NSWindowDelegate {
             overlay.leadingAnchor.constraint(equalTo: container.leadingAnchor),
             overlay.trailingAnchor.constraint(equalTo: tools.leadingAnchor),
             tools.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            notice.centerXAnchor.constraint(equalTo: stream.centerXAnchor),
+            notice.bottomAnchor.constraint(equalTo: stream.bottomAnchor, constant: -24),
+            notice.widthAnchor.constraint(lessThanOrEqualTo: stream.widthAnchor, constant: -32),
         ])
         updateToolbox()
         fitWindow(zoom: zoom, animate: false)
@@ -134,7 +154,7 @@ final class AppWindowController: NSObject, NSWindowDelegate {
         session.onState = { [weak self] state in self?.render(state) }
         session.onThermal = { [weak self] reduced in
             NSLog("Nearside: phone \(reduced ? "warm: quality reduced" : "cool again")")
-            self?.window.subtitle = reduced ? "Lower quality: your phone is warm" : ""
+            self?.tools.setHidden("warm", !reduced)
         }
         session.onSecure = { [weak self] on in
             guard let self else { return }
@@ -157,8 +177,8 @@ final class AppWindowController: NSObject, NSWindowDelegate {
         statsView.translatesAutoresizingMaskIntoConstraints = false
         container.addSubview(statsView, positioned: .below, relativeTo: overlay)
         NSLayoutConstraint.activate([
-            statsView.leadingAnchor.constraint(equalTo: stream.leadingAnchor, constant: 8),
-            statsView.topAnchor.constraint(equalTo: stream.topAnchor, constant: 8),
+            statsView.leadingAnchor.constraint(equalTo: stream.leadingAnchor, constant: 14),
+            statsView.topAnchor.constraint(equalTo: stream.topAnchor, constant: 14),
         ])
         stats = statsView
         stream.onDropFiles = { [weak self, weak engine] urls in
@@ -188,7 +208,7 @@ final class AppWindowController: NSObject, NSWindowDelegate {
 
     private func render(_ new: PhoneAppSession.State) {
         Trace.log("window shows \(new)")
-        if new == .showing, state != .showing { testInputIfAsked() }
+        if new == .showing, state != .showing { testInputIfAsked(); snapshotIfAsked() }
         state = new
         overlay.rootView = AppWindowOverlay(state: new, label: app.label, locked: locked, secure: secure,
                                             reopen: { [weak self] in self?.reopen() },
@@ -205,6 +225,17 @@ final class AppWindowController: NSObject, NSWindowDelegate {
                 overlay.cacheDisplay(in: overlay.bounds, to: rep)
                 try? rep.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: path))
             }
+        }
+    }
+
+    /// Test hook: NEARSIDE_TEST_WINDOW=<png> saves the window's chrome (toolbar, corners; the
+    /// picture itself is Metal and comes out black) a few seconds after the app shows.
+    private func snapshotIfAsked() {
+        guard let path = ProcessInfo.processInfo.environment["NEARSIDE_TEST_WINDOW"] else { return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3) { [weak self] in
+            guard let view = self?.window.contentView, let rep = view.bitmapImageRepForCachingDisplay(in: view.bounds) else { return }
+            view.cacheDisplay(in: view.bounds, to: rep)
+            try? rep.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: path))
         }
     }
 
@@ -433,11 +464,10 @@ final class AppWindowController: NSObject, NSWindowDelegate {
         }
     }
 
-    /// Dropped files the app couldn't take: said in the title bar for a few seconds.
+    /// Dropped files the app couldn't take: said over the app for a few seconds.
     func shareFailed(accepts: Bool) {
-        window.subtitle = accepts ? "Couldn't share the files with \(app.label)" : "\(app.label) can't open files like these"
+        notice.show(accepts ? "Couldn't share the files with \(app.label)" : "\(app.label) can't open files like these")
         NSSound.beep()
-        DispatchQueue.main.asyncAfter(deadline: .now() + 5) { [weak self] in self?.window.subtitle = "" }
     }
 
     /// A notification of this window's app: it opens here, as tapping it would.
@@ -577,11 +607,6 @@ final class AppWindowController: NSObject, NSWindowDelegate {
 
     @objc private func occlusionChanged() { updateVisibility() }
 
-    // The title-bar icon is only an icon: no path menu, no dragging a file.
-    func window(_ window: NSWindow, shouldPopUpDocumentPathMenu menu: NSMenu) -> Bool { false }
-    func window(_ window: NSWindow, shouldDragDocumentWith event: NSEvent, from dragImageLocation: NSPoint,
-                with pasteboard: NSPasteboard) -> Bool { false }
-
     func windowWillClose(_ notification: Notification) {
         returnTimer?.invalidate()
         stats?.stop()
@@ -603,6 +628,53 @@ extension AppWindowController {
     func updateToolbox() {
         guard let tools else { return }
         for size in PhoneSize.allCases { tools.setSelected(size.rawValue, size == self.size) }
+    }
+}
+
+/// A short message in a dark capsule over the picture; it fades after a few seconds.
+final class NoticeView: NSView {
+    private let label = NSTextField(labelWithString: "")
+    private var hide: DispatchWorkItem?
+
+    init() {
+        super.init(frame: .zero)
+        wantsLayer = true
+        layer?.backgroundColor = NSColor.black.withAlphaComponent(0.75).cgColor
+        layer?.cornerRadius = 14
+        translatesAutoresizingMaskIntoConstraints = false
+        label.font = .systemFont(ofSize: 12.5, weight: .medium)
+        label.textColor = .white
+        label.alignment = .center
+        label.lineBreakMode = .byWordWrapping
+        label.maximumNumberOfLines = 2
+        label.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(label)
+        NSLayoutConstraint.activate([
+            label.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 14),
+            label.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -14),
+            label.topAnchor.constraint(equalTo: topAnchor, constant: 7),
+            label.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -7),
+        ])
+        setAccessibilityRole(.staticText)
+    }
+
+    required init?(coder: NSCoder) { fatalError() }
+
+    override func hitTest(_ point: NSPoint) -> NSView? { nil } // clicks go to the app
+
+    func show(_ text: String, for seconds: Double = 5) {
+        label.stringValue = text
+        setAccessibilityLabel(text)
+        alphaValue = 1
+        isHidden = false
+        NSAccessibility.post(element: self, notification: .announcementRequested,
+                             userInfo: [.announcement: text, .priority: NSAccessibilityPriorityLevel.high.rawValue])
+        hide?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            NSAnimationContext.runAnimationGroup({ $0.duration = 0.3; self?.animator().alphaValue = 0 }) { self?.isHidden = true }
+        }
+        hide = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + seconds, execute: work)
     }
 }
 

@@ -1057,10 +1057,20 @@ class DisplaySession(
      * Ends the session. With [toPhone], the app moves back to the phone *under* whatever is showing
      * there, so it waits in Recents instead of popping up (releasing the display alone would put it
      * on top). Then the display and encoder go.
+     *
+     * The server hears of it after this session's lock is let go: it rebalances the other windows,
+     * which takes the server's lock and theirs, and two windows closing at once (a Mac that went
+     * away with both open: their grace periods end together) each held their own lock while waiting
+     * for the other's, and no window could open again until the helper restarted.
      */
-    @Synchronized
     fun close(toPhone: Boolean, onTop: Boolean = false) {
-        if (closed) return
+        if (closeLocked(toPhone, onTop)) server.ended(this)
+    }
+
+    /** True if this call closed it. */
+    @Synchronized
+    private fun closeLocked(toPhone: Boolean, onTop: Boolean): Boolean {
+        if (closed) return false
         closed = true
         val onOurs = Hidden.rootTasks().filter { it.displayId == displayId }
         // Pause what's playing first: once the capture stops, the rest would come out of the
@@ -1086,8 +1096,8 @@ class DisplaySession(
         device?.close()
         codec?.let { runCatching { it.stop() }; it.release() }
         watcher.shutdownNow()
-        server.ended(this)
         Log.d("display session $id: closed (${apps.size} app(s) back to the phone)")
+        return true
     }
 
     val isClosed get() = closed

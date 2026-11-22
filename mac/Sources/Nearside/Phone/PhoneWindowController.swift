@@ -400,7 +400,8 @@ extension PhoneWindowController: NSMenuItemValidation {
     }
 }
 
-/// Borderless, yet a normal window: it can be key (typing), and closes and minimises.
+/// Borderless, yet a normal window: it can be key (typing), and closes and minimises. The phone
+/// window and every app window.
 final class PhoneWindow: NSWindow {
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { true }
@@ -413,8 +414,10 @@ final class PhoneWindow: NSWindow {
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
         if event.type == .keyDown, event.charactersIgnoringModifiers == "=",
            event.modifierFlags.intersection(.deviceIndependentFlagsMask) == .command {
-            (delegate as? PhoneWindowController)?.zoomIn(nil)
-            return true
+            if let target = delegate as? NSObject, target.responds(to: #selector(PhoneWindowController.zoomIn(_:))) {
+                target.perform(#selector(PhoneWindowController.zoomIn(_:)), with: nil)
+                return true
+            }
         }
         return super.performKeyEquivalent(with: event)
     }
