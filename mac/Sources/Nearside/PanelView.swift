@@ -64,9 +64,11 @@ struct PanelView: View {
             LogoTile(size: 26)
             Text(showingSettings ? "Settings" : "Nearside")
                 .font(.system(size: 14, weight: .semibold))
+                .fixedSize()
                 .contentTransition(.opacity)
             Spacer()
-            StatusPill(state: engine.state, phoneName: engine.phoneName, inUseOn: engine.inUseOn, overUSB: engine.overUSB)
+            StatusPill(state: engine.state, phoneName: engine.phoneName, inUseOn: engine.inUseOn, overUSB: engine.overUSB,
+                       status: engine.state == .connected ? engine.phoneStatus : nil)
             if engine.state == .connected && !showingSettings {
                 Button(action: openApps) {
                     Image(systemName: "apps.iphone")
@@ -177,6 +179,7 @@ struct StatusPill: View {
     let phoneName: String
     var inUseOn: String? = nil
     var overUSB = false
+    var status: PhoneStatus? = nil
 
     var body: some View {
         let (color, text): (Color, String) = switch state {
@@ -190,14 +193,76 @@ struct StatusPill: View {
                 .fill(color)
                 .frame(width: 7, height: 7)
                 .shadow(color: color.opacity(state == .connected ? 0.8 : 0), radius: 3)
-            Text(text)
-                .font(.system(size: 11.5, weight: .medium))
-                .lineLimit(1)
+            // Connected with its status known: the icons say it all (the name is in the tooltip).
+            if let status {
+                if overUSB {
+                    Image(systemName: "cable.connector").font(.system(size: 10.5)).foregroundStyle(.secondary)
+                }
+                PhoneStatusIcons(status: status)
+            } else {
+                Text(text)
+                    .font(.system(size: 11.5, weight: .medium))
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+            }
         }
         .padding(.horizontal, 9)
         .padding(.vertical, 4)
         .background(.quaternary.opacity(0.6), in: Capsule())
-        .help(state == .searching ? "Make sure the phone is on the same Wi-Fi with Wireless debugging on, or plug it in with a USB cable." : "")
+        .help(state == .searching ? "Make sure the phone is on the same Wi-Fi with Wireless debugging on, or plug it in with a USB cable."
+              : status.map { "\(phoneName)\(overUSB ? ", connected by USB" : ""). \(PhoneStatusIcons.description($0))" } ?? "")
+    }
+}
+
+/// The phone's signal and battery, as small as its own status bar shows them.
+struct PhoneStatusIcons: View {
+    let status: PhoneStatus
+
+    var body: some View {
+        HStack(spacing: 5) {
+            if let bars = status.signal {
+                HStack(spacing: 2) {
+                    if let network = status.network {
+                        Text(network).font(.system(size: 9.5, weight: .semibold))
+                    }
+                    Image(systemName: "cellularbars", variableValue: Double(bars) / 4)
+                        .font(.system(size: 10.5))
+                }
+            }
+            HStack(spacing: 2) {
+                Image(systemName: Self.batterySymbol(status))
+                    .font(.system(size: 12))
+                    .foregroundStyle(status.battery <= PhoneStatus.LowBatteryAlert.threshold && !status.charging ? .red : .primary)
+                Text("\(status.battery)%")
+                    .font(.system(size: 11, weight: .medium))
+                    .monospacedDigit()
+            }
+        }
+        .foregroundStyle(.secondary)
+        .fixedSize()
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(Self.description(status))
+    }
+
+    static func batterySymbol(_ status: PhoneStatus) -> String {
+        if status.charging { return "battery.100percent.bolt" }
+        return switch status.battery {
+        case 88...: "battery.100percent"
+        case 63..<88: "battery.75percent"
+        case 38..<63: "battery.50percent"
+        case 13..<38: "battery.25percent"
+        default: "battery.0percent"
+        }
+    }
+
+    /// For the tooltip and VoiceOver: "Battery 82%, charging. 5G, 3 of 4 bars. On Wi-Fi."
+    static func description(_ status: PhoneStatus) -> String {
+        var parts = ["Battery \(status.battery)%\(status.charging ? ", charging" : "")."]
+        if let bars = status.signal {
+            parts.append("\(status.network.map { "\($0), " } ?? "")\(bars) of 4 bars.")
+        }
+        if status.wifi { parts.append("On Wi-Fi.") }
+        return parts.joined(separator: " ")
     }
 }
 

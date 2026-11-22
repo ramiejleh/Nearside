@@ -50,6 +50,15 @@ public final class SyncEngine {
     /// Whether Android's phone-wide "pasted from your clipboard" toast is off; nil until read.
     public private(set) var clipboardToastHidden: Bool?
 
+    /// The phone's battery, signal and network while connected; nil until its app reports them.
+    public private(set) var phoneStatus: PhoneStatus?
+
+    /// Notify once when the phone's battery runs low (see `PhoneStatus.LowBatteryAlert`).
+    public var lowBatteryAlert: Bool {
+        didSet { defaults.set(lowBatteryAlert, forKey: "lowBatteryAlert") }
+    }
+    @ObservationIgnored private var lowBattery = PhoneStatus.LowBatteryAlert()
+
     /// The phone's current notifications, newest first (the phone window's notification panel).
     /// Filled while notifications are mirrored; emptied when the phone isn't connected.
     public private(set) var phoneNotifications: [PhoneNotification] = []
@@ -150,6 +159,7 @@ public final class SyncEngine {
         phoneName = defaults.string(forKey: "phoneName") ?? "Phone"
         mirrorNotifications = defaults.object(forKey: "mirrorNotifications") as? Bool ?? true
         textMessages = defaults.object(forKey: "textMessages") as? Bool ?? true
+        lowBatteryAlert = defaults.object(forKey: "lowBatteryAlert") as? Bool ?? true
         // Set up = completed the pairing flow, which is the only place a phone (its serial and
         // its key) gets pinned. A setup from before key pinning has no key: it pairs once more.
         let paired = defaults.bool(forKey: "setupComplete") && defaults.string(forKey: "phoneSerial") != nil
@@ -194,6 +204,7 @@ public final class SyncEngine {
             guard let self, state == .connected else { return }
             state = .searching
             appLinked = false
+            phoneStatus = nil // sent again when the phone is back
             phoneNotifications = [] // the phone sends them all again when it's back
         }
 
@@ -370,7 +381,7 @@ public final class SyncEngine {
             applyNotificationAccess()
             if let serial = adbSerial {
                 Task {
-                    await Task.detached { Adb.grantPostNotifications(serial) }.value
+                    await Task.detached { Adb.grantPostNotifications(serial); Adb.grantPhoneStatus(serial) }.value
                     clipboardToastHidden = await Task.detached { Adb.clipboardToastHidden(serial) }.value
                 }
             }
@@ -381,6 +392,14 @@ public final class SyncEngine {
             receiveFile(message)
         case "app":
             appLinked = message["linked"] as? Bool ?? false
+            if !appLinked { phoneStatus = nil }
+        case "phone-status":
+            guard let status = PhoneStatus(message: message) else { return }
+            phoneStatus = status
+            if lowBattery.update(status), lowBatteryAlert {
+                notifications.showLocal(id: "low-battery", title: "\(phoneName) battery low",
+                                        body: "\(status.battery)% left. Charge it soon.")
+            }
         case "display-ticket", "display-apps", "display-icons", "display-layouts":
             if let req = message["req"] as? Int, let waiting = displayRequests.removeValue(forKey: req) {
                 waiting.resume(returning: HelperReply(message))

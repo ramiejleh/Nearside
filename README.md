@@ -88,6 +88,10 @@ without opening anything on the phone.
 - Items that password managers mark as concealed are never recorded.
 - You can also hide Android's "pasted from your clipboard" message from the Mac.
 
+### Phone status
+The menu bar shows your phone's battery, signal and network (5G, LTE) while it's connected,
+and tells you once when its battery runs low.
+
 ### Notifications
 Your phone's notifications appear as native macOS notifications, with their buttons and inline
 replies. Dismiss one on either device and it's gone on both. **Open on Mac** opens a

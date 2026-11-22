@@ -209,6 +209,11 @@ public enum Adb {
         _ = shell(serial, "pm grant \(appPackage) android.permission.POST_NOTIFICATIONS")
     }
 
+    /// Lets the phone app read the network type (5G, LTE) for the Mac's phone status.
+    static func grantPhoneStatus(_ serial: String) {
+        _ = shell(serial, "pm grant \(appPackage) android.permission.READ_PHONE_STATE")
+    }
+
     /// Grants or revokes reading/sending SMS and reading contacts (for names in Messages).
     static func setSmsAccess(_ serial: String, allowed: Bool) {
         let verb = allowed ? "grant" : "revoke"

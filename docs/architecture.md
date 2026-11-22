@@ -94,6 +94,18 @@ conversation read also presses that conversation notification's "Mark as read" a
   folder and shared into the app on that display (`ACTION_SEND`) through a non-exported
   provider with a per-share read grant.
 
+### Phone status
+`PhoneStatus` in the phone app reads the battery (the sticky `ACTION_BATTERY_CHANGED`), the
+signal bars and network type (a `TelephonyCallback`), and whether it's on Wi-Fi (the default
+network's capabilities).
+- **Only while a Mac is connected:** the listeners start when one connects and stop when it
+  leaves.
+- **Only on change:** `{"t":"phone-status",…}` goes out when something the Mac shows changes. Changes to
+  the battery percent alone are sent at most every 30 s.
+- **On the Mac:** it shows in the panel's status pill, and one notification at 20% unless the
+  phone is charging.
+- **Permission:** the network type needs `READ_PHONE_STATE`, which the Mac grants over adb.
+
 ## Phone apps on the Mac
 
 Each window is an Android **virtual display** the helper creates; the app is launched on it (or

@@ -5,6 +5,7 @@ import android.os.Binder
 import android.os.RemoteException
 import dev.nearside.FileNotifications
 import dev.nearside.NotificationMirror
+import dev.nearside.PhoneStatus
 import dev.nearside.SmsBridge
 import dev.nearside.Status
 import dev.nearside.phone.InUseNotification
@@ -35,6 +36,7 @@ object HelperConnection {
             macConnected = connected
             Status.lastEvent = if (connected) "Mac connected" else "Mac disconnected"
             if (connected) NotificationMirror.macConnected()
+            context?.let { PhoneStatus.macConnectionChanged(it, connected) }
         }
     }
 
@@ -48,11 +50,13 @@ object HelperConnection {
                 if (helper === h) {
                     helper = null
                     macConnected = false
+                    PhoneStatus.macConnectionChanged(appContext, false)
                     Status.lastEvent = "helper stopped"
                 }
             }, 0)
         }.onFailure { helper = null } // already dead
         macConnected = runCatching { h.isMacConnected }.getOrDefault(false)
+        PhoneStatus.macConnectionChanged(appContext, macConnected)
     }
 
     /** True when the message reached a connected Mac. */

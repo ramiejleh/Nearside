@@ -16,6 +16,10 @@
 
     <!-- "Received from your Mac" for files; granted by the Mac over adb. -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- Phone status on the Mac: the network type (5G, LTE) and whether it's on Wi-Fi.
+         READ_PHONE_STATE is granted by the Mac at setup; nothing asks on the phone. -->
+    <uses-permission android:name="android.permission.READ_PHONE_STATE" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
 
     <!-- SMS in the Mac's Messages window; granted by the Mac over adb. -->
     <uses-permission android:name="android.permission.READ_SMS" />

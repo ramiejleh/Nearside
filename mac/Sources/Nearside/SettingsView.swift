@@ -178,6 +178,10 @@ struct SettingsView: View {
                 do {
                     Section("Phone") {
                         LabeledContent("Paired with", value: engine.state == .needsSetup ? "Nothing yet" : engine.phoneName)
+                        Toggle(isOn: Binding(get: { engine.lowBatteryAlert }, set: { engine.lowBatteryAlert = $0 })) {
+                            Text("Notify when the battery is low")
+                            Text("Once, at \(PhoneStatus.LowBatteryAlert.threshold)%, unless it's charging.")
+                        }
                         if engine.state == .connected {
                             LabeledContent("Phone app") {
                                 Label(engine.appLinked ? "Linked" : "Not linked",
