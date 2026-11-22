@@ -40,6 +40,17 @@ Out of scope: an attacker who has already unlocked the Mac as you, or who has ro
   on your phone over their cable. The signature can't be reused on Wi-Fi (TLS 1.3 signs
   differently), and nothing of yours is sent to their device.
 
+## Phone-app launchers (optional)
+
+- With **Add to Applications** on, each phone app gets a small launcher app in
+  `~/Applications/Nearside Phone Apps` (for Raycast, Alfred, Launchpad). A launcher only opens
+  `nearside://open?package=<package>`. Nearside accepts that link only for a package of the
+  phone's own app list (letters, digits, dots, underscores), and opening it goes through the same
+  Touch ID gate as any window. Anything can send the link (a web page, after the browser asks),
+  but all it can do is open one of your phone's apps in a window, behind that gate.
+- Nearside removes only launchers it made (marked in their Info.plist); turning the setting off
+  removes them all.
+
 ## Mac ⇄ helper
 
 - Each Mac has a 256-bit token (`~/Library/Application Support/Nearside/token`, mode 0600)

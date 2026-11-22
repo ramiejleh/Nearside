@@ -58,7 +58,10 @@ Any app on your phone, in its own native Mac window — or a whole second phone 
 screen:
 
 - **Real windows**: Dock, ⌘-Tab, Mission Control, Spotlight, a launcher (⌥⌘P) with your recent
-  and favourite apps.
+  and favourite apps. Optionally each phone app becomes a small Mac app too, so Raycast, Alfred
+  and Launchpad find it.
+- **Your notifications in the phone window**: a panel (⌘3) with the phone's current
+  notifications; open one there, reply, use its buttons, or dismiss it.
 - **Phone, foldable and tablet sizes**: apps lay themselves out for each, exactly as they would
   on that device.
 - **Input that feels native**: trackpad scrolling with real flings, pinch, right-click, hover,

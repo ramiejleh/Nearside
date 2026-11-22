@@ -62,6 +62,7 @@ enum NearsideMain {
             item("Back", #selector(AppWindowController.goBack(_:)), "["),
             item("Home", #selector(PhoneWindowController.goHome(_:)), "1"),
             item("Recents", #selector(PhoneWindowController.toggleRecents(_:)), "2"),
+            item("Notifications", #selector(PhoneWindowController.toggleNotifications(_:)), "3"),
             .separator(),
             item("Phone Size", #selector(PhoneWindowController.sizePhone(_:)), "1", [.command, .control]),
             item("Foldable Size", #selector(PhoneWindowController.sizeFoldable(_:)), "2", [.command, .control]),
@@ -116,6 +117,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationDockMenu(_ sender: NSApplication) -> NSMenu? { statusItem?.phoneApps.dockMenu() }
+
+    /// A phone-app launcher (Raycast, Alfred, Launchpad…): nearside://open?package=<package>.
+    func application(_ application: NSApplication, open urls: [URL]) {
+        for url in urls {
+            guard let package = PhoneAppLaunchers.package(from: url) else { continue }
+            statusItem?.phoneApps.open(package: package)
+        }
+    }
 
     /// A phone app picked in Spotlight.
     func application(_ application: NSApplication, continue userActivity: NSUserActivity,

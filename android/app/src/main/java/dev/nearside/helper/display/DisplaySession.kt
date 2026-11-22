@@ -204,7 +204,8 @@ class DisplaySession(
                 audio.stop()
                 Log.d("display session $id: sound plays on the phone")
             }
-            DisplayWire.NOTIFICATION -> if (!isHome) utf8(b).let { key -> watcher.execute { openNotification(key) } }
+            // An app window: its app's notification. The phone window: any, from its notification panel.
+            DisplayWire.NOTIFICATION -> utf8(b).let { key -> watcher.execute { openNotification(key) } }
             DisplayWire.SHARE -> utf8(b).lines().filter { it.isNotBlank() }.take(50).let { names -> watcher.execute { shareInto(names) } }
             DisplayWire.RECENTS -> if (isHome) watcher.execute { runCatching { sendRecents() } }
             DisplayWire.TASK_FRONT -> if (isHome && b.remaining() >= 4) b.int.let { t -> if (onDisplay(t)) Hidden.taskToFront(t) }
@@ -303,7 +304,7 @@ class DisplaySession(
         }
         AppLink.deliver(org.json.JSONObject().put("t", "notif-open").put("key", key).put("display", displayId))
         watcher.schedule({
-            if (!closed && Hidden.rootTasks().none { it.displayId == displayId }) {
+            if (!closed && !isHome && Hidden.rootTasks().none { it.displayId == displayId }) {
                 Log.d("display session $id: the notification opened nothing; opening $pkg")
                 launchApp(pkg)
             }

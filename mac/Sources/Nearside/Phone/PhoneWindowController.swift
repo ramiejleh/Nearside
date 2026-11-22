@@ -5,7 +5,8 @@ import SwiftUI
 /// The phone window: a whole phone of its own on the Mac, separate from the real phone's screen.
 /// Our home screen runs on its display, and apps opened there stay there. It looks like a phone:
 /// borderless and rounded, with the vertical toolbar beside the screen (never over it): close,
-/// minimise, Back / Home / Recents, and the toolbox's sizes (Phone / Foldable / Tablet). The
+/// minimise, Back / Home / Recents / Notifications, and the toolbox's sizes (Phone / Foldable /
+/// Tablet). The
 /// display is the size's dp at the phone's density; Larger / Smaller only scale the picture.
 @MainActor
 final class PhoneWindowController: NSObject, NSWindowDelegate {
@@ -17,6 +18,9 @@ final class PhoneWindowController: NSObject, NSWindowDelegate {
     /// hidden Recents swallowed the phone window's clicks and drags (user report).
     private let recents: OverlayHostingView<RecentsView>
     private let recentsModel = RecentsModel()
+    /// The notification panel (⌘3, the bell): pass-through while hidden, as Recents.
+    private var notificationPanel: OverlayHostingView<NotificationPanel>!
+    private weak var engine: SyncEngine?
     private var tools: SideToolbar!
     private let library: PhoneAppLibrary
     private let onClosed: (PhoneWindowController) -> Void
@@ -43,6 +47,7 @@ final class PhoneWindowController: NSObject, NSWindowDelegate {
     init?(engine: SyncEngine, library: PhoneAppLibrary, renderer: MetalRenderer, onClosed: @escaping (PhoneWindowController) -> Void) {
         self.library = library
         self.onClosed = onClosed
+        self.engine = engine
         let size = PhoneSize(rawValue: UserDefaults.standard.string(forKey: "PhoneWindow.size") ?? "") ?? .phone
         // The display: the size's dp at 2 px per dp (crisp on Retina at actual size).
         let display = PhoneDisplaySize.forPreset(size.dp(phone: PhoneInfo.screenDp), density: PhoneInfo.densityDpi)
@@ -60,7 +65,7 @@ final class PhoneWindowController: NSObject, NSWindowDelegate {
         let placed = window.setFrameUsingName("PhoneWindow")
 
         stream = StreamView(renderer: renderer)
-        stream.macShortcuts = ["1", "2", "=", "+", "-", "0", "w", "m"]
+        stream.macShortcuts = ["1", "2", "3", "=", "+", "-", "0", "w", "m"]
         recents = OverlayHostingView(rootView: RecentsView(model: recentsModel, library: library))
         recents.isHidden = true
 
@@ -71,6 +76,12 @@ final class PhoneWindowController: NSObject, NSWindowDelegate {
         for view in [stream, overlay, recents] as [NSView] { container.addSubview(view) }
         window.contentView = container
         super.init()
+        notificationPanel = OverlayHostingView(rootView: NotificationPanel(
+            engine: engine, library: library,
+            onOpen: { [weak self] note in self?.openNotification(note) },
+            onClose: { [weak self] in self?.hideNotifications() }))
+        notificationPanel.isHidden = true
+        container.addSubview(notificationPanel)
         tools = SideToolbar([
             .button(id: "close", symbol: "xmark.circle.fill", label: "Close (⌘W)") { [weak self] in self?.window.performClose(nil) },
             .button(id: "minimize", symbol: "minus.circle.fill", label: "Minimise (⌘M)") { [weak self] in self?.window.miniaturize(nil) },
@@ -78,6 +89,7 @@ final class PhoneWindowController: NSObject, NSWindowDelegate {
             .button(id: "back", symbol: "chevron.backward", label: "Back (⌘[)") { [weak self] in self?.goBack(nil) },
             .button(id: "home", symbol: "circle", label: "Home (⌘1)") { [weak self] in self?.goHome(nil) },
             .button(id: "recents", symbol: "square.on.square", label: "Recents (⌘2)") { [weak self] in self?.toggleRecents(nil) },
+            .button(id: "notifications", symbol: "bell", label: "Notifications (⌘3)") { [weak self] in self?.toggleNotifications(nil) },
             .separator,
             .button(id: PhoneSize.phone.rawValue, symbol: PhoneSize.phone.symbol, label: "Phone size (⌃⌘1)") { [weak self] in self?.setSize(.phone) },
             .button(id: PhoneSize.foldable.rawValue, symbol: PhoneSize.foldable.symbol, label: "Foldable size (⌃⌘2)") { [weak self] in self?.setSize(.foldable) },
@@ -89,7 +101,7 @@ final class PhoneWindowController: NSObject, NSWindowDelegate {
         tools.setHidden("warm", true)
         container.addSubview(tools)
         // The screen on the left, the toolbar on the right: nothing covers the app.
-        for view in [stream, overlay, recents, tools] as [NSView] {
+        for view in [stream, overlay, recents, notificationPanel, tools] as [NSView] {
             view.translatesAutoresizingMaskIntoConstraints = false
             NSLayoutConstraint.activate([
                 view.topAnchor.constraint(equalTo: container.topAnchor),
@@ -102,6 +114,7 @@ final class PhoneWindowController: NSObject, NSWindowDelegate {
         }
         tools.trailingAnchor.constraint(equalTo: container.trailingAnchor).isActive = true
         updateSizes()
+        watchNotificationCount()
         window.delegate = self
         fitWindow(zoom: zoom, animate: false)
         if !placed { window.center() }
@@ -162,11 +175,11 @@ final class PhoneWindowController: NSObject, NSWindowDelegate {
         testIfAsked()
     }
 
-    /// Test hook: NEARSIDE_TEST_PHONE=recents opens Recents once showing and saves it to
-    /// NEARSIDE_TEST_OVERLAY (png).
+    /// Test hook: NEARSIDE_TEST_PHONE=recents (or notifications) opens Recents (the notification
+    /// panel) once showing and saves it to NEARSIDE_TEST_OVERLAY (png).
     private func testIfAsked() {
         let mode = ProcessInfo.processInfo.environment["NEARSIDE_TEST_PHONE"]
-        guard mode == "recents" || mode == "close" || mode == "bar" || mode == "drag" else { return }
+        guard mode == "recents" || mode == "close" || mode == "bar" || mode == "drag" || mode == "notifications" else { return }
         Task { @MainActor [weak self] in
             try? await Task.sleep(for: .seconds(Double(ProcessInfo.processInfo.environment["NEARSIDE_TEST_WAIT"] ?? "") ?? 12))
             guard let self else { return }
@@ -197,6 +210,20 @@ final class PhoneWindowController: NSObject, NSWindowDelegate {
                 guard let view = window.contentView, let path = ProcessInfo.processInfo.environment["NEARSIDE_TEST_OVERLAY"],
                       let rep = view.bitmapImageRepForCachingDisplay(in: view.bounds) else { return }
                 view.cacheDisplay(in: view.bounds, to: rep)
+                try? rep.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: path))
+                return
+            }
+            if mode == "notifications" {
+                toggleNotifications(nil)
+                try? await Task.sleep(for: .seconds(2))
+                NSLog("Nearside: notifications: \(engine?.phoneNotifications.map { "\($0.app): \($0.title)" } ?? [])")
+                // NEARSIDE_TEST_DISMISS=<app name>: dismisses that app's notifications through the panel's path.
+                if let app = ProcessInfo.processInfo.environment["NEARSIDE_TEST_DISMISS"], let engine {
+                    engine.phoneNotifications.filter { $0.app == app }.forEach { engine.dismissPhoneNotification($0.key) }
+                }
+                guard let path = ProcessInfo.processInfo.environment["NEARSIDE_TEST_OVERLAY"],
+                      let rep = notificationPanel.bitmapImageRepForCachingDisplay(in: notificationPanel.bounds) else { return }
+                notificationPanel.cacheDisplay(in: notificationPanel.bounds, to: rep)
                 try? rep.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: path))
                 return
             }
@@ -249,7 +276,7 @@ final class PhoneWindowController: NSObject, NSWindowDelegate {
     func setLocked(_ locked: Bool) {
         guard locked != self.locked else { return }
         self.locked = locked
-        if locked { stream.cancelInput(); hideRecents() }
+        if locked { stream.cancelInput(); hideRecents(); hideNotifications() }
         stream.session = locked ? nil : session
         updateVisibility()
         render(state)
@@ -260,12 +287,14 @@ final class PhoneWindowController: NSObject, NSWindowDelegate {
     @objc func goBack(_ sender: Any?) {
         guard !locked else { return }
         if !recents.isHidden { return hideRecents() }
+        if !notificationPanel.isHidden { return hideNotifications() }
         session.back()
     }
 
     @objc func goHome(_ sender: Any?) {
         guard !locked else { return }
         hideRecents()
+        hideNotifications()
         session.home()
     }
 
@@ -275,6 +304,7 @@ final class PhoneWindowController: NSObject, NSWindowDelegate {
     }
 
     private func showRecents() {
+        hideNotifications()
         recentsModel.tasks = nil
         recentsModel.snapshots = [:]
         session.requestRecents()
@@ -288,6 +318,45 @@ final class PhoneWindowController: NSObject, NSWindowDelegate {
         guard !recents.isHidden else { return }
         recents.isHidden = true
         window.makeFirstResponder(stream)
+    }
+
+    // MARK: - Notifications (the bell, ⌘3)
+
+    @objc func toggleNotifications(_ sender: Any?) {
+        guard !locked else { return }
+        if notificationPanel.isHidden { showNotifications() } else { hideNotifications() }
+    }
+
+    private func showNotifications() {
+        hideRecents()
+        notificationPanel.alphaValue = 0
+        notificationPanel.isHidden = false
+        NSAnimationContext.runAnimationGroup { $0.duration = 0.18; notificationPanel.animator().alphaValue = 1 }
+        tools.setSelected("notifications", true)
+        window.makeFirstResponder(notificationPanel)
+    }
+
+    private func hideNotifications() {
+        guard let notificationPanel, !notificationPanel.isHidden else { return }
+        notificationPanel.isHidden = true
+        tools.setSelected("notifications", false)
+        window.makeFirstResponder(stream)
+    }
+
+    /// Opens it in this window, as tapping it on the phone would (its app comes here).
+    private func openNotification(_ note: PhoneNotification) {
+        session.openNotification(note.key)
+        hideNotifications()
+    }
+
+    /// The bell shows a badge while the phone has notifications.
+    private func watchNotificationCount() {
+        guard let engine else { return }
+        let count = withObservationTracking { engine.phoneNotifications.count } onChange: { [weak self] in
+            DispatchQueue.main.async { self?.watchNotificationCount() }
+        }
+        tools.setSymbol("notifications", count > 0 ? "bell.badge" : "bell",
+                        label: count > 0 ? "Notifications: \(count) (⌘3)" : "Notifications (⌘3)")
     }
 
     private func pick(_ task: PhoneTask) {
@@ -393,7 +462,7 @@ final class PhoneWindowController: NSObject, NSWindowDelegate {
 
 extension PhoneWindowController: NSMenuItemValidation {
     func validateMenuItem(_ item: NSMenuItem) -> Bool {
-        if [#selector(goBack(_:)), #selector(goHome(_:)), #selector(toggleRecents(_:))].contains(item.action) {
+        if [#selector(goBack(_:)), #selector(goHome(_:)), #selector(toggleRecents(_:)), #selector(toggleNotifications(_:))].contains(item.action) {
             return !locked && state == .showing
         }
         return true

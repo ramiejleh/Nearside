@@ -11,6 +11,7 @@ struct SettingsView: View {
     @AppStorage("showArrivalToast") private var showArrivalToast = true
     @State private var phoneAppsAuth = AuthGate.mode
     @AppStorage(PhoneSpotlight.enabledKey) private var phoneAppsInSpotlight = true
+    @AppStorage(PhoneAppLaunchers.enabledKey) private var phoneAppLaunchers = false
     @AppStorage("PhoneApps.motion") private var phoneAppsMotion = "smooth"
     @AppStorage("PhoneApps.notificationClick") private var notificationClick = "phone"
     @AppStorage(PhoneQuality.key) private var phoneQuality = PhoneQuality.auto.rawValue
@@ -67,6 +68,14 @@ struct SettingsView: View {
                     }
                     .onChange(of: phoneAppsInSpotlight) { _, on in
                         if on { PhoneWindowManager.shared?.library.refresh() } else { PhoneSpotlight.remove() }
+                    }
+                    Toggle(isOn: $phoneAppLaunchers) {
+                        Text("Add to Applications")
+                        Text("For Raycast, Alfred and Launchpad: each phone app becomes a small app in Applications › Nearside Phone Apps that opens it here.")
+                    }
+                    .onChange(of: phoneAppLaunchers) { _, on in
+                        if !on { PhoneAppLaunchers.removeAll() }
+                        PhoneWindowManager.shared?.indexApps() // the launchers, and Spotlight's entries follow
                     }
                     Picker(selection: $phoneAppsMotion) {
                         Text("Smooth").tag("smooth")

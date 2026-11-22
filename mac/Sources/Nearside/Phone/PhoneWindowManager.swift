@@ -28,7 +28,8 @@ final class PhoneWindowManager {
         self.engine = engine
         library = PhoneAppLibrary(engine: engine)
         Self.shared = self
-        library.onChange = { apps in PhoneSpotlight.index(apps, icon: { [weak self] in self?.library.iconPNG($0) }) }
+        library.onChange = { [weak self] _ in self?.indexApps() }
+        indexApps() // the saved list: launchers and Spotlight are there before the phone answers
         launcher.isLocked = { [weak self] in self?.auth.isLocked ?? true }
         auth.onLock = { [weak self] in
             self?.windows.forEach { $0.setLocked(true) }
@@ -163,6 +164,22 @@ final class PhoneWindowManager {
     }
 
     /// From Spotlight: the app's `pkg/activity`.
+    /// Spotlight's entries and the launchers, from the app list as it is (a setting changed, or
+    /// the list did).
+    func indexApps() {
+        PhoneSpotlight.index(library.apps, icon: { [library] in library.iconPNG($0) })
+        PhoneAppLaunchers.sync(library.apps, icon: { [library] in library.iconPNG($0) })
+    }
+
+    /// From a launcher: only an app the phone has (a link can't open anything else). Just after
+    /// launch the list may still be loading: then once more when it's in.
+    func open(package: String, retry: Bool = true) {
+        if let app = library.app(package: package) { return open(app) }
+        guard retry else { return NSLog("Nearside: no phone app \(package)") }
+        library.refresh()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 4) { [weak self] in self?.open(package: package, retry: false) }
+    }
+
     func open(id: String) {
         if let app = library.app(id: id) { return open(app) }
         let parts = id.split(separator: "/", maxSplits: 1).map(String.init)
@@ -313,7 +330,9 @@ enum PhoneSpotlight {
     @MainActor
     static func index(_ apps: [PhoneApp], icon: (PhoneApp) -> Data?) {
         let index = CSSearchableIndex.default()
-        guard enabled else {
+        // With the launchers on, Spotlight lists those as apps: no second entry per app.
+        guard enabled, !PhoneAppLaunchers.enabled else {
+            UserDefaults.standard.removeObject(forKey: "PhoneApps.spotlightSignature")
             index.deleteSearchableItems(withDomainIdentifiers: [domain]) { _ in }
             return
         }

@@ -52,7 +52,7 @@ without clicking:
 | `NEARSIDE_TEST_CLOSE_AFTER` | Seconds before `close` / how long `hide` lasts |
 | `NEARSIDE_TEST_HIDE_AFTER` | Seconds before `hide` minimises the window (default 0) |
 | `NEARSIDE_TEST_FILE` | File for `drop` |
-| `NEARSIDE_TEST_PHONE` | Phone window: `recents`, `close`, `bar` |
+| `NEARSIDE_TEST_PHONE` | Phone window: `recents`, `notifications`, `close`, `bar`, `drag` |
 | `NEARSIDE_TEST_WAIT` | Seconds before the phone-window test runs |
 | `NEARSIDE_TEST_OVERLAY` | Save a window's overlay to this PNG |
 | `NEARSIDE_TEST_LAUNCHER` | Save the launcher to this PNG (with `NEARSIDE_TEST_QUERY`, `NEARSIDE_TEST_MOVES=down,right`) |

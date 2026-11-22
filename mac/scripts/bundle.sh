@@ -49,6 +49,14 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <key>LSMinimumSystemVersion</key><string>14.0</string>
   <!-- Menu-bar app: no Dock icon or menus until a phone-app window opens. -->
   <key>LSUIElement</key><true/>
+  <!-- nearside://open?package=… : the phone-app launchers in ~/Applications (PhoneAppLaunchers). -->
+  <key>CFBundleURLTypes</key>
+  <array>
+    <dict>
+      <key>CFBundleURLName</key><string>dev.nearside.mac.phone-app</string>
+      <key>CFBundleURLSchemes</key><array><string>nearside</string></array>
+    </dict>
+  </array>
   <key>NSHumanReadableCopyright</key><string>Apache-2.0</string>
   <!-- Wireless debugging: find the phone over Bonjour and connect to it on this network. -->
   <key>NSLocalNetworkUsageDescription</key><string>Nearside connects to your Android phone over this Wi-Fi network (Wireless debugging).</string>

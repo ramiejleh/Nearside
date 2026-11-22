@@ -50,6 +50,10 @@ public final class SyncEngine {
     /// Whether Android's phone-wide "pasted from your clipboard" toast is off; nil until read.
     public private(set) var clipboardToastHidden: Bool?
 
+    /// The phone's current notifications, newest first (the phone window's notification panel).
+    /// Filled while notifications are mirrored; emptied when the phone isn't connected.
+    public private(set) var phoneNotifications: [PhoneNotification] = []
+
     /// SMS for the Messages window.
     public let messages = MessagesStore()
 
@@ -68,7 +72,7 @@ public final class SyncEngine {
     public var mirrorNotifications: Bool {
         didSet {
             defaults.set(mirrorNotifications, forKey: "mirrorNotifications")
-            if !mirrorNotifications { notifications.removeAll() }
+            if !mirrorNotifications { notifications.removeAll(); phoneNotifications = [] }
             applyNotificationAccess()
         }
     }
@@ -181,6 +185,7 @@ public final class SyncEngine {
             guard let self, state == .connected else { return }
             state = .searching
             appLinked = false
+            phoneNotifications = [] // the phone sends them all again when it's back
         }
 
         // Keep the helper and tunnel alive: whenever we're idle, try to (re)establish them.
@@ -391,24 +396,57 @@ public final class SyncEngine {
             onArrival?(item)
         case "notif":
             guard mirrorNotifications, let key = message["key"] as? String else { return }
-            notifications.show(key: key,
-                               package: message["pkg"] as? String ?? "",
-                               app: message["app"] as? String ?? "Phone",
-                               title: message["title"] as? String ?? "",
-                               text: message["text"] as? String ?? "",
+            let actions: [PhoneNotification.Action] = (message["actions"] as? [[String: Any]] ?? []).compactMap { action in
+                guard let title = action["title"] as? String else { return nil }
+                return .init(title: title, isReply: action["reply"] as? Bool ?? false)
+            }
+            let note = PhoneNotification(key: key, package: message["pkg"] as? String ?? "",
+                                         app: message["app"] as? String ?? "Phone",
+                                         title: message["title"] as? String ?? "",
+                                         text: message["text"] as? String ?? "",
+                                         posted: (message["when"] as? NSNumber).map { Date(timeIntervalSince1970: $0.doubleValue / 1000) } ?? Date(),
+                                         actions: actions)
+            phoneNotifications.removeAll { $0.key == key }
+            phoneNotifications.append(note)
+            phoneNotifications.sort { $0.posted > $1.posted }
+            notifications.show(key: key, package: note.package, app: note.app, title: note.title, text: note.text,
                                iconPNG: (message["icon"] as? String).flatMap { Data(base64Encoded: $0) },
-                               actions: (message["actions"] as? [[String: Any]] ?? []).compactMap { action in
-                                   guard let title = action["title"] as? String else { return nil }
-                                   return .init(title: title, isReply: action["reply"] as? Bool ?? false)
-                               },
+                               actions: actions.map { .init(title: $0.title, isReply: $0.isReply) },
                                quiet: message["quiet"] as? Bool ?? false)
         case "notif-active":
-            if mirrorNotifications, let keys = message["keys"] as? [String] { notifications.keepOnly(Set(keys)) }
+            if mirrorNotifications, let keys = message["keys"] as? [String] {
+                notifications.keepOnly(Set(keys))
+                phoneNotifications.removeAll { !keys.contains($0.key) }
+            }
         case "notif-removed":
-            if let key = message["key"] as? String { notifications.remove(key: key) }
+            if let key = message["key"] as? String {
+                notifications.remove(key: key)
+                phoneNotifications.removeAll { $0.key == key }
+            }
         default:
             break
         }
+    }
+
+    // MARK: Notification panel (the phone window)
+
+    /// Dismisses a phone notification, as swiping it away on the phone would.
+    public func dismissPhoneNotification(_ key: String) {
+        phoneNotifications.removeAll { $0.key == key }
+        notifications.remove(key: key)
+        link.send(["t": "notif-dismiss", "key": key])
+    }
+
+    /// Dismisses them all.
+    public func clearPhoneNotifications() {
+        phoneNotifications.map(\.key).forEach(dismissPhoneNotification)
+    }
+
+    /// One of its buttons; `text` for a reply.
+    public func runPhoneNotificationAction(_ key: String, index: Int, text: String? = nil) {
+        var message: [String: Any] = ["t": "notif-action", "key": key, "i": index]
+        if let text { message["text"] = text }
+        link.send(message)
     }
 
     // MARK: Files
