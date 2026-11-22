@@ -80,6 +80,21 @@ object AppLink {
             return macConnected()
         }
 
+        @Volatile private var wirelessCache: Pair<Long, Boolean>? = null
+
+        override fun isWirelessDebuggingOn(): Boolean {
+            if (Binder.getCallingUid() != appUid) throw SecurityException("not the Nearside app")
+            // The settings command, as the shell: reading through a stand-in app context is refused.
+            // The app's screen asks every second while open: answer from a 3 s cache.
+            val now = android.os.SystemClock.uptimeMillis()
+            wirelessCache?.let { (at, on) -> if (now - at < 3000) return on }
+            return runCatching {
+                val process = Runtime.getRuntime().exec(arrayOf("settings", "get", "global", "adb_wifi_enabled"))
+                process.inputStream.bufferedReader().readText().trim() == "1"
+            }.onFailure { Log.d("reading adb_wifi_enabled failed: $it") }.getOrDefault(false)
+                .also { wirelessCache = now to it }
+        }
+
         override fun sendFile(name: String, fd: ParcelFileDescriptor): Boolean {
             if (Binder.getCallingUid() != appUid) throw SecurityException("not the Nearside app")
             if (!macConnected()) return false

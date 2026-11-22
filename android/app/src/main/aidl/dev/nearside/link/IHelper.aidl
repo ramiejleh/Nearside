@@ -21,4 +21,6 @@ interface IHelper {
     boolean sendFile(String name, in ParcelFileDescriptor fd);
     /** The same as sendIntent, opening on display [displayId] (a Mac window's). */
     boolean sendIntentOnDisplay(in PendingIntent intent, int displayId);
+    /** Whether wireless debugging is on (apps can't read that setting; the shell can). */
+    boolean isWirelessDebuggingOn();
 }
