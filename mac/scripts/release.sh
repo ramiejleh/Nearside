@@ -113,8 +113,8 @@ if [[ $NOTARIZE -eq 1 ]]; then
   echo "==> Notarising (usually a few minutes)"
   SUBMIT="$OUT/notarize-upload.zip"
   ditto -c -k --keepParent "$APP" "$SUBMIT"
-  if ! xcrun notarytool submit "$SUBMIT" --keychain-profile "$PROFILE" --wait | tee "$OUT/notarize.log" \
-      | grep -q "status: Accepted"; then
+  xcrun notarytool submit "$SUBMIT" --keychain-profile "$PROFILE" --wait | tee "$OUT/notarize.log" || true
+  if ! grep -q "status: Accepted" "$OUT/notarize.log"; then
     id="$(sed -n 's/^ *id: //p' "$OUT/notarize.log" | head -1)"
     [[ -n "$id" ]] && xcrun notarytool log "$id" --keychain-profile "$PROFILE" || true
     fail "notarisation was not accepted (log above)"
