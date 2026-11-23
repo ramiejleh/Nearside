@@ -38,7 +38,7 @@ object AppLink {
     /** Called each time the app (re)links, e.g. to re-post the apps-in-use notification. */
     var onLinked: () -> Unit = {}
     var onUnlinked: () -> Unit = {}
-    private val RESERVED = setOf("clip", "hello", "challenge", "auth", "hello-mac", "app", "file-ready")
+    private val RESERVED = setOf("clip", "hello", "challenge", "auth", "hello-mac", "app", "file-ready", "call-number")
     /** Shared files wait here (shell-owned) until the Mac has pulled them over adb. */
     private val STAGING = File("/data/local/tmp/nearside-out")
     private val files = Executors.newSingleThreadExecutor()

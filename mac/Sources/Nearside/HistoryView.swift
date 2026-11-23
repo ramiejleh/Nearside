@@ -65,6 +65,7 @@ struct HistoryView: View {
                                            isNew: highlighted.contains(item.id),
                                            now: context.date,
                                            onUse: { engine.use(item) },
+                                           onCall: engine.state == .connected ? { engine.calls.place($0) } : nil,
                                            onDelete: {
                                                withAnimation(.easeOut(duration: 0.2)) { engine.delete(item) }
                                            })
@@ -132,6 +133,7 @@ struct HistoryRow: View {
     let isNew: Bool
     let now: Date
     let onUse: () -> Void
+    var onCall: ((String) -> Void)?
     let onDelete: () -> Void
 
     @State private var hovering = false
@@ -200,6 +202,9 @@ struct HistoryRow: View {
         .onTapGesture { use() }
         .contextMenu {
             Button("Copy to Mac and Phone") { use() }
+            if let onCall, let number = PhoneCalls.dialable(item.text) {
+                Button("Call \(number) from \(phoneName)") { onCall(number) }
+            }
             Divider()
             Button("Delete", role: .destructive, action: onDelete)
         }

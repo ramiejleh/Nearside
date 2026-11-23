@@ -24,6 +24,11 @@ final class PhoneWindowManager {
     private var hotKey: HotKey?
     private var opening: Set<String> = []
 
+    /// A call in an app that has a window here shows in that window, not in the pinned call card.
+    private func callWindowsChanged() {
+        engine.calls.windowPackages = Set(windows.map(\.app.package))
+    }
+
     init(engine: SyncEngine) {
         self.engine = engine
         library = PhoneAppLibrary(engine: engine)
@@ -78,6 +83,7 @@ final class PhoneWindowManager {
                                                        onClosed: { [weak self] in self?.closed($0) }) else { return }
             library.markUsed(app)
             windows.append(controller)
+            callWindowsChanged()
             updateActivationPolicy()
             controller.show()
         }
@@ -114,6 +120,7 @@ final class PhoneWindowManager {
                                                        notification: key, onClosed: { [weak self] in self?.closed($0) }) else { return }
             library.markUsed(app)
             windows.append(controller)
+            callWindowsChanged()
             updateActivationPolicy()
             controller.show()
         }
@@ -212,6 +219,7 @@ final class PhoneWindowManager {
 
     private func closed(_ controller: AppWindowController) {
         windows.removeAll { $0 === controller }
+        callWindowsChanged()
         focusOrder.removeAll { $0 === controller }
         showDockIcon(for: windows.last)
         // Let the close finish before the Dock icon goes (switching policy mid-close drops focus).

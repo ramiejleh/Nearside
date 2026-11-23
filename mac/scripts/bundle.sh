@@ -81,6 +81,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <!-- Wireless debugging: find the phone over Bonjour and connect to it on this network. -->
   <!-- "Mac screenshots go to the phone": screenshots are saved on the Desktop by default. -->
   <key>NSDesktopFolderUsageDescription</key><string>Nearside sends your new screenshots to your phone, if you turn that on in Settings.</string>
+  <key>NSMicrophoneUsageDescription</key><string>Phone apps in Mac windows (calls, voice messages) hear this Mac's microphone while they record.</string>
   <key>NSLocalNetworkUsageDescription</key><string>Nearside connects to your Android phone over this Wi-Fi network (Wireless debugging).</string>
   <key>NSBonjourServices</key>
   <array>
@@ -92,5 +93,5 @@ cat > "$APP/Contents/Info.plist" <<PLIST
 PLIST
 
 # Ad-hoc signature so macOS will run it locally. Release builds need a Developer ID + notarization.
-codesign --force --sign - "$APP"
+codesign --force --sign - --entitlements "$MAC_DIR/Nearside.entitlements" "$APP"
 echo "Built $APP"

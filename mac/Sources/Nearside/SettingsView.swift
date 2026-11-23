@@ -45,6 +45,21 @@ struct SettingsView: View {
                     }
                 }
 
+                Section("Calls") {
+                    Toggle(isOn: Binding(get: { engine.showCalls }, set: { engine.showCalls = $0 })) {
+                        Text("Show incoming calls")
+                        Text(engine.mirrorNotifications
+                             ? "Answer or decline phone and app calls here. You talk on your \(engine.phoneName)."
+                             : "Needs “Mirror phone notifications” on: calls come from the phone's call notification.")
+                    }
+                    .disabled(!engine.mirrorNotifications)
+                    Toggle(isOn: Binding(get: { engine.ringOnMac }, set: { engine.ringOnMac = $0 })) {
+                        Text("Ring on this Mac")
+                        Text("A soft ring while a call comes in.")
+                    }
+                    .disabled(!engine.mirrorNotifications || !engine.showCalls)
+                }
+
                 Section("Text messages") {
                     Toggle(isOn: Binding(get: { engine.textMessages }, set: { engine.textMessages = $0 })) {
                         Text("Read and send SMS")

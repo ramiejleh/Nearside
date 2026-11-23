@@ -106,6 +106,22 @@ public final class SyncEngine {
     }
     @ObservationIgnored private let macScreenshots = MacScreenshots()
 
+    /// Calls on the phone (from its call notifications, so they need notification mirroring).
+    public let calls = PhoneCalls()
+
+    /// Show incoming calls on the Mac, with Answer and Decline.
+    public var showCalls: Bool {
+        didSet {
+            defaults.set(showCalls, forKey: "showCalls")
+            if !showCalls { calls.connectionLost() }
+        }
+    }
+
+    /// Ring on the Mac while a call comes in.
+    public var ringOnMac: Bool {
+        didSet { defaults.set(ringOnMac, forKey: "ringOnMac") }
+    }
+
     /// Read and send SMS from the Mac. Turning it off revokes the phone app's SMS and contacts
     /// permissions, so nothing on the phone can read texts at all.
     public var textMessages: Bool {
@@ -121,7 +137,7 @@ public final class SyncEngine {
     public var mirrorNotifications: Bool {
         didSet {
             defaults.set(mirrorNotifications, forKey: "mirrorNotifications")
-            if !mirrorNotifications { notifications.removeAll(); phoneNotifications = [] }
+            if !mirrorNotifications { notifications.removeAll(); phoneNotifications = []; calls.connectionLost() }
             applyNotificationAccess()
         }
     }
@@ -194,6 +210,8 @@ public final class SyncEngine {
         recentPhotos = defaults.object(forKey: "recentPhotos") as? Bool ?? true
         screenshotsToMac = defaults.bool(forKey: "screenshotsToMac")
         screenshotsToPhone = defaults.bool(forKey: "screenshotsToPhone")
+        showCalls = defaults.object(forKey: "showCalls") as? Bool ?? true
+        ringOnMac = defaults.object(forKey: "ringOnMac") as? Bool ?? true
         // Set up = completed the pairing flow, which is the only place a phone (its serial and
         // its key) gets pinned. A setup from before key pinning has no key: it pairs once more.
         let paired = defaults.bool(forKey: "setupComplete") && defaults.string(forKey: "phoneSerial") != nil
@@ -236,6 +254,7 @@ public final class SyncEngine {
         }
         try? FileManager.default.removeItem(at: Self.photoCache)
         photos.send = { [weak self] in self?.link.send($0) }
+        calls.send = { [weak self] in self?.link.send($0) }
         photos.onNewScreenshot = { [weak self] in self?.receiveScreenshot($0) }
         if screenshotsToMac { photos.setWatching("screenshots", true) }
         macScreenshots.onNew = { [weak self] url in self?.sendScreenshot(url) }
@@ -243,6 +262,7 @@ public final class SyncEngine {
         link.onDisconnect = { [weak self] in
             guard let self, state == .connected else { return }
             photos.connectionLost()
+            calls.connectionLost()
             state = .searching
             appLinked = false
             phoneStatus = nil // sent again when the phone is back
@@ -442,9 +462,11 @@ public final class SyncEngine {
             receiveFile(message)
         case "app":
             appLinked = message["linked"] as? Bool ?? false
-            if appLinked { photos.linked() } else { phoneStatus = nil; photos.connectionLost() }
+            if appLinked { photos.linked() } else { phoneStatus = nil; photos.connectionLost(); calls.connectionLost() }
         case "photos", "photo-thumb":
             if recentPhotos || screenshotsToMac { photos.handle(message) }
+        case "call", "call-ended", "call-number":
+            if showCalls, mirrorNotifications { calls.handle(message) }
         case "phone-status":
             guard let status = PhoneStatus(message: message) else { return }
             phoneStatus = status

@@ -103,7 +103,7 @@ sign --preserve-metadata=entitlements "$SPARKLE/XPCServices/Downloader.xpc"
 sign "$SPARKLE/Autoupdate"
 sign "$SPARKLE/Updater.app"
 sign "$APP/Contents/Frameworks/Sparkle.framework"
-sign "$APP"
+sign --entitlements "$MAC_DIR/Nearside.entitlements" "$APP"
 codesign --verify --strict --verbose=2 "$APP"
 
 mkdir -p "$OUT"

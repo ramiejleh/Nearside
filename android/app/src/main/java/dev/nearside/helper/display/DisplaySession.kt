@@ -523,6 +523,8 @@ class DisplaySession(
             val mine = tasks.firstOrNull { it.displayId == displayId }
             if (mine != null) {
                 taskId = mine.taskId
+                appPkg = mine.packageName
+                appTasksSeen = tasks.filter { it.packageName == appPkg }.map { it.taskId }.toSet()
                 Log.d("display session $id: task $taskId (${mine.packageName})")
                 sendTask()
             } else if (followNotification(tasks)) {
@@ -535,6 +537,11 @@ class DisplaySession(
         }
         if (taskGone) return
         val task = tasks.firstOrNull { it.taskId == taskId }
+        try {
+            if ((task == null || (task.displayId == displayId && !task.visible)) && followApp(tasks)) return
+        } finally {
+            appPkg?.let { pkg -> appTasksSeen = appTasksSeen + tasks.filter { it.packageName == pkg }.map { it.taskId } }
+        }
         if (task?.displayId == displayId) {
             // Back on an app's first screen sends it to the background (Android 12+) instead of
             // closing it; on our display nothing is behind it, so the window would just go black.
@@ -553,6 +560,32 @@ class DisplaySession(
         val reason = if (task != null) DisplayWire.GONE_MOVED else DisplayWire.GONE_EXITED
         Log.d("display session $id: task $taskId ${if (task != null) "moved to display ${task.displayId}" else "ended"}")
         ctl?.send(DisplayWire.TASK_GONE, byteArrayOf(reason.toByte()))
+    }
+
+    /** The window's app, and every task of it seen so far: a new one can be told apart. */
+    private var appPkg: String? = null
+    private var appTasksSeen: Set<Int> = emptySet()
+
+    /**
+     * The window's task went to the background or ended, because the app went on to another task
+     * of its own: WhatsApp's call screen is one, opened here or on the phone's screen. The window
+     * follows it, and when that ends, goes back to the app's task still here.
+     */
+    private fun followApp(tasks: List<Hidden.RootTask>): Boolean {
+        val pkg = appPkg ?: return false
+        val others = tasks.filter { it.packageName == pkg && it.taskId != taskId }
+        val ended = tasks.none { it.taskId == taskId }
+        val next = others.firstOrNull { it.displayId == displayId && it.visible }
+            ?: others.firstOrNull { it.displayId != displayId && it.taskId !in appTasksSeen && it.visible }
+            ?: others.firstOrNull { it.displayId == displayId }.takeIf { ended }
+            ?: return false
+        if (next.displayId != displayId) Hidden.moveTask(next.taskId, displayId, onTop = true)
+        else if (!next.visible) Hidden.taskToFront(next.taskId)
+        Log.d("display session $id: $pkg went on from task $taskId to task ${next.taskId}${if (next.displayId != displayId) " on display ${next.displayId}; moved it here" else ""}")
+        taskId = next.taskId
+        hiddenPolls = 0
+        sendTask()
+        return true
     }
 
     private fun sendTask() {

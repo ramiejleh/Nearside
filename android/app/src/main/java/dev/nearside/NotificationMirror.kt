@@ -42,6 +42,13 @@ class NotificationMirror : NotificationListenerService() {
         private const val CATCH_UP_BANNERS = 3
         /** After a reply from the Mac, the app re-posts with our reply added: don't re-alert. */
         private const val QUIET_AFTER_ACTION_MS = 8_000L
+        /** CallStyle's extras (hidden constants; their values are stable across releases). */
+        private const val EXTRA_CALL_TYPE = "android.callType"
+        private val CALL_INTENTS = listOf(
+            "answer" to "android.answerIntent",
+            "decline" to "android.declineIntent",
+            "hangup" to "android.hangUpIntent",
+        )
 
         /** Called (on any thread) when the Mac connects: send what it missed. */
         fun macConnected() {
@@ -83,6 +90,10 @@ class NotificationMirror : NotificationListenerService() {
     override fun onNotificationRemoved(sbn: StatusBarNotification) {
         active.remove(sbn.key)
         quietUntil.remove(sbn.key)
+        if (calls.remove(sbn.key) != null) {
+            HelperConnection.send(JSONObject().put("t", "call-ended").put("key", sbn.key))
+            return
+        }
         if (delivered.remove(sbn.key) != null) {
             HelperConnection.send(JSONObject().put("t", "notif-removed").put("key", sbn.key))
         }
@@ -95,6 +106,7 @@ class NotificationMirror : NotificationListenerService() {
     private fun mirror(sbn: StatusBarNotification, quiet: Boolean): Boolean {
         val n = sbn.notification
         if (sbn.packageName == packageName) return false
+        if (isCall(n)) return mirrorCall(sbn)
         // Ongoing (music, navigation, foreground services) and group summaries aren't alerts.
         if (sbn.isOngoing || n.flags and Notification.FLAG_GROUP_SUMMARY != 0) return false
         val extras = n.extras
@@ -142,6 +154,7 @@ class NotificationMirror : NotificationListenerService() {
         val sorted = showing.sortedByDescending { it.postTime }
         val sentBefore = delivered.keys.toSet()
         delivered.clear()
+        calls.clear()
         iconsSent.clear() // a new connection: maybe another Mac, without our icons
         var banners = 0
         for (sbn in sorted) {
@@ -234,6 +247,74 @@ class NotificationMirror : NotificationListenerService() {
             runCatching { cancelNotification(key) }
         }
     }
+
+    // MARK: Calls
+
+    /** Call notifications the Mac has, by key: what it was sent (so unchanged re-posts aren't re-sent). */
+    private val calls = HashMap<String, String>()
+
+    /** A call screen's notification (CallStyle): the Phone app's and VoIP apps' alike. */
+    private fun isCall(n: Notification) =
+        n.extras.getString(Notification.EXTRA_TEMPLATE) == "android.app.Notification\$CallStyle"
+
+    /**
+     *   → {"t":"call","key","pkg","app","state":"incoming"|"ongoing"|"screening","name","photo"?,
+     *      "since"?,"can":["answer","decline","hangup"]}
+     *   → {"t":"call-ended","key"}
+     *   ← {"t":"call-action","key","do":"answer"|"decline"|"hangup"}
+     * The phone keeps its own call screen; these are its buttons, pressed from the Mac.
+     */
+    private fun mirrorCall(sbn: StatusBarNotification): Boolean {
+        val n = sbn.notification
+        active[sbn.key] = n
+        if (!HelperConnection.macConnected) return false
+        val extras = n.extras
+        val state = when (extras.getInt(EXTRA_CALL_TYPE)) {
+            1 -> "incoming"
+            2 -> "ongoing"
+            3 -> "screening"
+            else -> return false
+        }
+        @Suppress("DEPRECATION") val person = extras.getParcelable<android.app.Person>("android.callPerson")
+        val name = (person?.name ?: extras.getCharSequence(Notification.EXTRA_TITLE))?.toString().orEmpty().take(100)
+        val can = JSONArray()
+        CALL_INTENTS.forEach { (action, extra) -> if (callIntent(n, extra) != null) can.put(action) }
+        val since = if (extras.getBoolean(Notification.EXTRA_SHOW_CHRONOMETER)) n.`when` else 0L
+        val fingerprint = "$state\u0000$name\u0000$can\u0000$since"
+        if (calls[sbn.key] == fingerprint) return false
+        val msg = JSONObject().put("t", "call").put("key", sbn.key).put("pkg", sbn.packageName)
+            .put("app", appLabel(sbn.packageName)).put("state", state).put("name", name).put("can", can)
+        if (since > 0) msg.put("since", since)
+        if (sbn.key !in calls) callPhoto(person)?.let { msg.put("photo", it) }
+        android.util.Log.i("Nearside", "call notification: $state, buttons $can")
+        if (!HelperConnection.send(msg)) return false
+        calls[sbn.key] = fingerprint
+        return true
+    }
+
+    /** Answer, decline or hang up from the Mac: the call notification's own button. */
+    fun callAction(key: String, action: String) = main.post {
+        val n = active[key]?.takeIf { isCall(it) } ?: return@post
+        val extra = CALL_INTENTS.firstOrNull { it.first == action }?.second ?: return@post
+        val intent = callIntent(n, extra) ?: return@post
+        runCatching { fire(intent, null) }
+            .onSuccess { android.util.Log.i("Nearside", "call: $action from the Mac") }
+            .onFailure { android.util.Log.i("Nearside", "call: $action failed: $it") }
+    }
+
+    private fun callIntent(n: Notification, extra: String): PendingIntent? =
+        @Suppress("DEPRECATION") n.extras.getParcelable<PendingIntent>(extra)
+
+    /** The caller's picture, if the call has one: a small JPEG. */
+    private fun callPhoto(person: android.app.Person?): String? = runCatching {
+        val drawable = person?.icon?.loadDrawable(this) ?: return null
+        val size = 160
+        val bitmap = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
+        drawable.setBounds(0, 0, size, size)
+        drawable.draw(Canvas(bitmap))
+        val jpeg = ByteArrayOutputStream().also { bitmap.compress(Bitmap.CompressFormat.JPEG, 85, it) }
+        Base64.encodeToString(jpeg.toByteArray(), Base64.NO_WRAP)
+    }.getOrNull()
 
     /** Through the helper when linked (it may open activities from the background); else directly. */
     private fun fire(intent: PendingIntent, fillIn: Intent?) {

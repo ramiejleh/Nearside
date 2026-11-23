@@ -45,6 +45,10 @@ public enum DisplayWire {
     static let black: UInt8 = 0x40
     static let config: UInt8 = 0x30, frame: UInt8 = 0x31
     static let audioConfig: UInt8 = 0x32, audio: UInt8 = 0x33
+    /// This Mac's microphone, on the audio stream: MIC (phone → Mac) u8 on/off, an app in the
+    /// window records; MIC_AUDIO (Mac → phone) 48 kHz mono s16le PCM; MIC_UNAVAILABLE (Mac → phone).
+    static let mic: UInt8 = 0x34, micAudio: UInt8 = 0x35, micUnavailable: UInt8 = 0x36
+    public static let micSampleRate = 48_000
 
     public enum Role: UInt8, Sendable { case control = 1, video = 2, audio = 3 }
     static let version: UInt16 = 1
@@ -80,9 +84,15 @@ public enum DisplayWire {
         case audioConfig(sampleRate: Int, channels: Int)
         /// One Opus packet (20 ms); empty: silence follows (the phone sends nothing until there's sound).
         case audio(ptsMicros: Int64, data: Data)
+        /// An app in the window started (or stopped) recording: send this Mac's microphone.
+        case mic(Bool)
     }
 
     // MARK: Encoding
+
+    /// 16-bit samples of this Mac's microphone.
+    static func micAudioPacket(_ pcm: Data) -> Data { packet(micAudio, pcm) }
+    static func micUnavailablePacket() -> Data { packet(micUnavailable) }
 
     static func packet(_ type: UInt8, _ body: Data = Data()) -> Data {
         var d = Data([type, 0])
@@ -257,6 +267,8 @@ public enum DisplayWire {
             let rate = Int(p.readBE(UInt32.self, at: s)), channels = Int(p[s + 4])
             guard (8000...96000).contains(rate), (1...2).contains(channels) else { return nil }
             return .audioConfig(sampleRate: rate, channels: channels)
+        case mic where p.count >= 1:
+            return .mic(p[s] != 0)
         case audio where p.count >= 8:
             return .audio(ptsMicros: Int64(bitPattern: p.readBE(UInt64.self, at: s)), data: p.subdata(in: s + 8..<p.endIndex))
         default:

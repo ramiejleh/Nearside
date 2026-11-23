@@ -103,7 +103,7 @@ struct MessagesView: View {
         } else if !store.loaded {
             ProgressView("Loading texts from your \(engine.phoneName)…")
         } else if let id = store.selected, let thread = store.threads.first(where: { $0.id == id }) {
-            ConversationView(store: store, thread: thread)
+            ConversationView(store: store, thread: thread, call: { engine.calls.place($0) })
         } else {
             ContentUnavailableView("Pick a conversation", systemImage: "bubble.left.and.bubble.right",
                                    description: Text("Plain SMS only: RCS chats stay in Google Messages (reply to those from their notifications)."))
@@ -185,6 +185,7 @@ private struct Avatar: View {
 private struct ConversationView: View {
     let store: MessagesStore
     let thread: MessagesStore.Thread
+    let call: (String) -> Void
     @State private var draft = ""
 
     private static let bottom = "bottom"
@@ -213,6 +214,14 @@ private struct ConversationView: View {
         }
         .navigationTitle(thread.title)
         .navigationSubtitle(thread.name == nil ? "" : thread.address)
+        .toolbar {
+            if PhoneCalls.dialable(thread.address) != nil {
+                ToolbarItem {
+                    Button { call(thread.address) } label: { Label("Call", systemImage: "phone") }
+                        .help("Call \(thread.title) from your phone")
+                }
+            }
+        }
     }
 
     private func transcript(_ messages: [MessagesStore.Message]) -> some View {

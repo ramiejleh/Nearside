@@ -320,6 +320,10 @@ public final class PhoneAppSession: @unchecked Sendable {
         }
         previous?.close()
         if late { stream.close(); return }
+        // This Mac's microphone, while an app in the window records. Written off the audio thread.
+        let sending = DispatchQueue(label: "nearside.mic")
+        let mic = MicCapture { chunk in sending.async { try? stream.write(DisplayWire.micAudioPacket(chunk), timeout: 1) } }
+        defer { mic.stop() }
         var (reader, pending) = start
         while true {
             for message in pending {
@@ -330,6 +334,16 @@ public final class PhoneAppSession: @unchecked Sendable {
                 case let .audio(pts, data):
                     if data.isEmpty { player.silence() }
                     else { player.play(data, ptsMicros: pts, receivedMicros: monotonicMicros()) }
+                case let .mic(on):
+                    NSLog("Nearside: phone app \(target): \(on ? "records: this Mac's microphone on" : "stopped recording")")
+                    mic.want(on)
+                    if on {
+                        Task.detached {
+                            if await MicCapture.allowed(), mic.start() { return }
+                            NSLog("Nearside: no microphone on this Mac; the phone's is used")
+                            sending.async { try? stream.write(DisplayWire.micUnavailablePacket(), timeout: 1) }
+                        }
+                    }
                 default: break
                 }
             }

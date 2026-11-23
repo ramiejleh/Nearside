@@ -84,6 +84,7 @@ object HelperConnection {
                 Thread { dev.nearside.phone.DroppedFiles.share(c, names, msg.optString("pkg"), msg.optInt("display", -1)) }.start()
             }
             "photos-watch", "photos-thumbs" -> context?.let { PhotoFeed.handle(it, msg) }
+            "call-action" -> NotificationMirror.instance?.callAction(msg.optString("key"), msg.optString("do"))
             "display-state" -> context?.let { InUseNotification.update(it, msg.optInt("open")) }
             "notif-action" -> NotificationMirror.instance?.runAction(
                 msg.optString("key"),

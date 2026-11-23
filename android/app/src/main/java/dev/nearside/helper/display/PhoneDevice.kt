@@ -136,8 +136,9 @@ class PhoneDevice private constructor(private val device: Any, val deviceId: Int
     }.onFailure { Log.d("virtual touchscreen failed: ${it.cause ?: it}") }.getOrNull()
 
     /** The device's audio for [display]: apps there play into it (not the phone's speaker). */
-    fun createAudioDevice(display: VirtualDisplay, executor: java.util.concurrent.Executor): Any? =
-        runCatching { call(device, "createVirtualAudioDevice", display, executor, null) }
+    /** [callback]: a VirtualAudioDevice.AudioConfigurationChangeCallback, or null. */
+    fun createAudioDevice(display: VirtualDisplay, executor: java.util.concurrent.Executor, callback: Any?): Any? =
+        runCatching { call(device, "createVirtualAudioDevice", display, executor, callback) }
             .onFailure { Log.d("virtual audio device failed: ${it.cause ?: it}") }.getOrNull()
 
     // MARK: Clipboard

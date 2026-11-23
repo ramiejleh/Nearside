@@ -177,6 +177,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let (root, size): (AnyView, NSSize) = switch which {
         case "settings": (AnyView(SettingsView(engine: engine, onDone: {}, openSetup: {})), NSSize(width: 380, height: 540))
         case "messages": (AnyView(MessagesView(engine: engine)), NSSize(width: 820, height: 560))
+        case "call": (AnyView(VStack(spacing: 20) {
+            RingingCard(engine: engine, key: "demo", onResize: {})
+            InCallCard(engine: engine, key: "demo2")
+        }.padding(20)), NSSize(width: 400, height: 200))
         default: (AnyView(PanelView(engine: engine, openMessages: {}, openSetup: {}, openApps: {})), NSSize(width: 380, height: 540))
         }
         let dark = env["NEARSIDE_TEST_DARK"] == "1"
@@ -220,6 +224,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 while engine.state != .connected { try? await Task.sleep(for: .milliseconds(300)) }
                 NSLog("Nearside: test layouts: \(await engine.phoneKeyboardLayouts() ?? [])")
             }
+        }
+        // NEARSIDE_TEST_CALL=incoming: a ringing demo call and an ongoing one in the call panel (nothing reaches the phone).
+        if let state = ProcessInfo.processInfo.environment["NEARSIDE_TEST_CALL"] {
+            engine.calls.send = { _ in }
+            engine.calls.handle(["t": "call", "key": "demo", "pkg": "com.google.android.dialer", "app": "Phone",
+                                 "state": state, "name": "Alex Morgan", "can": ["answer", "decline", "hangup"],
+                                 "since": Date().addingTimeInterval(-74).timeIntervalSince1970 * 1000])
+            engine.calls.handle(["t": "call-number", "number": "+15550100", "dialer": "com.google.android.dialer"])
+            engine.calls.handle(["t": "call", "key": "demo2", "pkg": "com.whatsapp", "app": "WhatsApp",
+                                 "state": "ongoing", "name": "Sam Rivera", "can": ["hangup"],
+                                 "since": Date().addingTimeInterval(-74).timeIntervalSince1970 * 1000])
+            return
         }
         // NEARSIDE_OPEN_NOTIFICATION=<key>: that phone notification's "Open on Mac".
         if let key = ProcessInfo.processInfo.environment["NEARSIDE_OPEN_NOTIFICATION"] {
@@ -279,6 +295,7 @@ final class StatusItemController: NSObject {
     private lazy var messagesWindow = MessagesWindowController(engine: engine)
     private lazy var setupWindow = SetupWindowController(engine: engine)
     private(set) lazy var phoneApps = PhoneWindowManager(engine: engine)
+    private var callPanel: CallPanelController?
 
     init(engine: SyncEngine) {
         self.engine = engine
@@ -327,6 +344,7 @@ final class StatusItemController: NSObject {
         engine.onOpenNotificationOnMac = { [weak self] key, pkg, app in
             self?.phoneApps.openNotification(key: key, package: pkg, label: app)
         }
+        callPanel = CallPanelController(engine: engine, anchor: { [weak button] in button?.window?.frame })
         _ = phoneApps // its hot key (⌥⌘P) works from launch
 
         // First run (or re-pairing needed): open the setup wizard straight away.

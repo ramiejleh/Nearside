@@ -40,6 +40,9 @@ object DisplayWire {
     const val CONFIG = 0x30; const val FRAME = 0x31
     // phone → Mac (audio stream): AUDIO_CONFIG u32 rate, u8 channels; AUDIO u64 pts µs, Opus packet
     const val AUDIO_CONFIG = 0x32; const val AUDIO = 0x33
+    // the Mac's microphone (audio stream): MIC u8 on/off (phone → Mac: an app here records);
+    // MIC_AUDIO 48 kHz mono s16le PCM and MIC_UNAVAILABLE (Mac → phone)
+    const val MIC = 0x34; const val MIC_AUDIO = 0x35; const val MIC_UNAVAILABLE = 0x36
 
     const val ROLE_CONTROL = 1; const val ROLE_VIDEO = 2; const val ROLE_AUDIO = 3
     const val NAV_BACK = 1; const val NAV_HOME = 2

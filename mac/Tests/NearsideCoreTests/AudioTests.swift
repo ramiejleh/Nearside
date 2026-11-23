@@ -127,3 +127,16 @@ struct AudioTests {
         #expect(out == [4, 4, 5, 5])
     }
 }
+
+@Suite struct MicWireTests {
+    @Test func recordingStateAndMicPackets() {
+        var reader = DisplayWire.Reader()
+        let messages = reader.feed(DisplayWire.packet(DisplayWire.mic, Data([1])) + DisplayWire.packet(DisplayWire.mic, Data([0]))
+                                   + DisplayWire.packet(DisplayWire.mic)) // empty: ignored
+        #expect(messages == [.mic(true), .mic(false)])
+        let pcm = Data(repeating: 7, count: 1920)
+        let packet = DisplayWire.micAudioPacket(pcm)
+        #expect(packet.prefix(2) == Data([DisplayWire.micAudio, 0]) && packet.count == 6 + 1920 && packet.suffix(1920) == pcm)
+        #expect(DisplayWire.micUnavailablePacket() == Data([DisplayWire.micUnavailable, 0, 0, 0, 0, 0]))
+    }
+}

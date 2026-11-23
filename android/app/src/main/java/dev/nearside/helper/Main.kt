@@ -137,6 +137,7 @@ object Main {
 
         AppLink.toMac = { msg -> client != null && send(msg) }
         AppLink.macConnected = { client != null }
+        Calls.toMac = { msg -> client != null && send(msg) }
         AppLink.start()
 
         Thread({ acceptLoop(server, token, clipboard, main) }, "accept").start()
@@ -232,12 +233,15 @@ object Main {
         send(JSONObject().put("t", "hello").put("sdk", android.os.Build.VERSION.SDK_INT))
         send(JSONObject().put("t", "app").put("linked", AppLink.isLinked))
         AppLink.macConnectionChanged(true)
+        Calls.macConnectionChanged(true)
         try {
             socket.inputStream.bufferedReader().forEachLine { line ->
                 val msg = runCatching { JSONObject(line) }.getOrNull() ?: return@forEachLine
                 val type = msg.optString("t")
                 if (type.startsWith("display-")) {
                     handleDisplay(msg, token)
+                } else if (type == "call-place" || type == "call-mute") {
+                    Calls.handle(msg)
                 } else if (type != "clip") {
                     AppLink.deliver(msg) // everything else is for the app's features
                 } else {
@@ -256,6 +260,7 @@ object Main {
             if (client === writer) {
                 client = null
                 AppLink.macConnectionChanged(false)
+                Calls.macConnectionChanged(false)
             }
             if (owner?.writer === writer) owner = null
             runCatching { socket.close() }
