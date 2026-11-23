@@ -90,6 +90,19 @@ Out of scope: an attacker who has already unlocked the Mac as you, or who has ro
 - Files dropped into a window are shared with that one app through a non-exported provider with
   a per-share read grant.
 
+## Calls and the microphone
+
+- Call buttons on the Mac only press the phone's own call buttons, over the authenticated link;
+  nothing answers by itself, and the phone keeps its call screen.
+- Calling from the Mac takes digits and a leading `+` only, checked on both devices: `*` and `#`
+  would make service codes (call forwarding) that change the phone's settings.
+- Mute fails closed: a mute set from the Mac stays through a dropped link until the phone has
+  seen the call end three checks in a row, and the phone reports the microphone's real state on
+  reconnecting.
+- The Mac's microphone opens only while an app in a phone window records, so macOS's orange dot
+  shows exactly then. It needs macOS's microphone permission and can be turned off in Settings,
+  which stops it at once, mid-recording.
+
 ## Files and data
 
 - Received files are quarantined (`com.apple.quarantine`), so Gatekeeper checks anything
@@ -102,8 +115,8 @@ Out of scope: an attacker who has already unlocked the Mac as you, or who has ro
   thumbnails in memory only. Full files are pulled when the user takes one, into a cache emptied
   at launch, and only from plain paths under `/sdcard/`.
 - Phone status (battery, signal bars, network type, Wi-Fi on or off) goes only to the
-  connected Mac. `READ_PHONE_STATE` is used for the network type alone: no phone number,
-  identifiers or call state are read.
+  connected Mac. `READ_PHONE_STATE` is used for the network type alone. Call state and the
+  caller's number are read by the helper only while a Mac is connected, for the call card.
 - Clipboard history stays in your Mac account (mode 0600); concealed clipboard items are never
   recorded. Nothing is sent anywhere but between your two devices: no server, no telemetry.
 

@@ -52,6 +52,13 @@ stream; control packets are read up to 1 MiB. Unknown or short packets are ignor
 | 0x47 | SOUND | u8 0 = the window's sound stays on the phone (sent right after OPEN) |
 | 0x48 | TOUCHES | u32 gen, u64 event µs, u8 n, n × (u8 action, u8 pointer, f32 x, f32 y): fingers that changed together (pinch, rotate) |
 
+On the audio stream, after a MIC on from the phone:
+
+| Type | Name | Payload |
+|---|---|---|
+| 0x35 | MIC_AUDIO | 20 ms of the Mac's microphone, 48 kHz mono 16-bit PCM (little-endian) |
+| 0x36 | MIC_UNAVAILABLE | (empty) no microphone on this Mac (no permission, or the setting is off): the display's apps record from the phone |
+
 ## Phone → Mac
 
 | Type | Name | Stream | Payload |
@@ -70,6 +77,7 @@ stream; control packets are read up to 1 MiB. Unknown or short packets are ignor
 | 0x31 | FRAME | video | u32 gen, u64 pts µs, u64 encode µs, u8 keyframe, HEVC data |
 | 0x32 | AUDIO_CONFIG | audio | u32 sample rate, u8 channels |
 | 0x33 | AUDIO | audio | u64 pts µs, one 20 ms Opus packet; no packet: silence follows (nothing is sent until there's sound) |
+| 0x34 | MIC | audio | u8 1: an app on the display started recording (send the Mac's microphone), 0: stopped |
 
 `gen` increases with every resize; input carrying an old `gen` is dropped, so a touch meant for
 the previous size never lands in the wrong place.

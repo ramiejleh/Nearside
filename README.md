@@ -56,7 +56,8 @@ own home screen.
   on that device.
 - **Input that feels native.** Trackpad scrolling with real flings, pinch, right-click and
   hover. Your Mac keyboard works in its own layout, and ⌘C / ⌘V copy and paste across devices.
-- **Sound** plays on the Mac, per window, or on the phone if you prefer.
+- **Sound** plays on the Mac, per window, or on the phone if you prefer. Apps that record (a
+  WhatsApp call, a voice message) hear the Mac's microphone, only while they record.
 - **Works with the phone locked** and its screen off. Your Mac asks for Touch ID or your
   password first: after it wakes, every time, or never.
 - **Leaves the phone alone.** Windows never take the phone's focus, so you can keep using the
@@ -92,6 +93,12 @@ without opening anything on the phone.
 The panel shows your phone's newest photos and screenshots while it's open. Drag one into any
 app or folder to get the full file, or click to open it. You can also have each new phone
 screenshot land in Downloads, and each Mac screenshot go to the phone's gallery.
+
+### Calls
+Incoming calls ring on the Mac with Answer, Decline, or decline with a text, for phone calls and
+app calls (WhatsApp, Messenger, Signal) alike. During a call a small card under the menu-bar icon
+shows the time, Mute and End. Call a number from Messages or from clipboard history. A phone
+call itself still talks through the phone; a call in an app window talks through the Mac.
 
 ### Phone status
 The menu bar shows your phone's battery, signal and network (5G, LTE) while it's connected,
@@ -217,7 +224,8 @@ MacBook. Known limitations:
 
 - Apps that block screen capture (many banking apps) show black in a window. The window says so
   and offers to open the app on the phone.
-- Calls stay on the phone.
+- A phone call's sound stays on the phone (Android doesn't let the Mac's microphone into a
+  cellular call). Calls in app windows, such as WhatsApp, talk through the Mac.
 - The phone's own on-screen keyboard can't show in a Mac window; you type with the Mac's.
 - The Android app isn't on Google Play, because it needs SMS and notification access that
   Google restricts.

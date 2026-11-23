@@ -104,6 +104,22 @@ conversation read also presses that conversation notification's "Mark as read" a
 - **Mac → phone:** Mac screenshots are found with a live Spotlight query (`kMDItemIsScreenCapture`) and pushed to `Pictures/Nearside` with a media scan.
   - Spotlight hides files the app may not read, so turning it on reads the screenshot folder once, which makes macOS ask for Desktop access.
 
+### Calls
+- **Incoming and ongoing calls** come from the phone's call notifications (`Notification.CallStyle`),
+  which the Phone app and VoIP apps post alike. `NotificationMirror` sends them as
+  `{"t":"call","key","state":"incoming"|"ongoing"|"screening","name","photo","since","can":[…]}`
+  and `call-ended`; the Mac's buttons run the notification's own answer, decline and hang-up
+  intents (`call-action`). The phone keeps its call screen.
+- **The helper** (`Calls`, as shell) adds the ringing phone call's number (`call-number`, from
+  `PhoneStateListener` with `READ_CALL_LOG`), places calls from the Mac (`call-place`, via
+  `TelecomManager.placeCall`, digits only) and mutes the phone's microphone (`call-mute`).
+  `TelephonyManager` and `TelecomManager` are built with the helper's own context: the system
+  context fails the package check.
+- **On the Mac:** `PhoneCalls` keeps the calls; `CallPanel` shows a ringing card at the top right
+  and, during a call, a card pinned under the menu-bar icon, unless the call's app is open in a
+  Mac window.
+- **Missed calls** are the Phone app's own notification, mirrored with its buttons.
+
 ### Phone status
 `PhoneStatus` in the phone app reads the battery (the sticky `ACTION_BATTERY_CHANGED`), the
 signal bars and network type (a `TelephonyCallback`), and whether it's on Wi-Fi (the default
@@ -164,6 +180,15 @@ its task moved there) and the display is encoded and streamed to the Mac.
   dock.
 - **Locked phone:** displays are always-unlocked and keep a wake lock of their own, so apps work
   with the phone locked in a pocket; the Mac asks for Touch ID or your password first.
+
+### The Mac's microphone
+Each window's virtual audio device also injects sound: what apps on that display record comes
+from the injection, never the phone's microphone (it's set up when the window opens, before
+anything records). The device's recording callback tells the Mac (`MIC` on the audio stream)
+when an app there starts or stops recording; only then does the Mac open its microphone and send
+48 kHz mono PCM back (`MIC_AUDIO`). A Mac that can't, or whose setting is off, sends
+`MIC_UNAVAILABLE` and the window's apps record from the phone again. If an app's call screen
+opens as another task (WhatsApp, Messenger), the window follows it there and back.
 
 ## Battery and idling
 
