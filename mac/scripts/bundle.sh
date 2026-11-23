@@ -79,6 +79,8 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   </array>
   <key>NSHumanReadableCopyright</key><string>AGPL-3.0-or-later</string>
   <!-- Wireless debugging: find the phone over Bonjour and connect to it on this network. -->
+  <!-- "Mac screenshots go to the phone": screenshots are saved on the Desktop by default. -->
+  <key>NSDesktopFolderUsageDescription</key><string>Nearside sends your new screenshots to your phone, if you turn that on in Settings.</string>
   <key>NSLocalNetworkUsageDescription</key><string>Nearside connects to your Android phone over this Wi-Fi network (Wireless debugging).</string>
   <key>NSBonjourServices</key>
   <array>

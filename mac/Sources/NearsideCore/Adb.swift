@@ -214,6 +214,11 @@ public enum Adb {
         _ = shell(serial, "pm grant \(appPackage) android.permission.READ_PHONE_STATE")
     }
 
+    /// Grants or revokes the phone app's access to photos (for the panel's recent photos).
+    static func setPhotoAccess(_ serial: String, allowed: Bool) {
+        _ = shell(serial, "pm \(allowed ? "grant" : "revoke") \(appPackage) android.permission.READ_MEDIA_IMAGES")
+    }
+
     /// Grants or revokes reading/sending SMS and reading contacts (for names in Messages).
     static func setSmsAccess(_ serial: String, allowed: Bool) {
         let verb = allowed ? "grant" : "revoke"
@@ -236,6 +241,8 @@ public enum Adb {
     }
 
     static let phoneInbox = "/sdcard/Download/Nearside"
+    /// Mac screenshots, where the phone's gallery shows them.
+    static let phoneScreenshots = "/sdcard/Pictures/Nearside"
     /// Files dropped on a phone-app window: the Nearside app serves them to the app (DroppedFiles).
     static let appShareFolder = "/sdcard/Android/data/dev.nearside/files/shared"
 
@@ -248,7 +255,8 @@ public enum Adb {
     /// exists. Returns the name it got on the phone, or an error message.
     static func push(_ serial: String, file: URL, to folder: String = phoneInbox) -> Swift.Result<String, PushError> {
         // The app makes its own folder (one the shell made there would be closed to the app).
-        if folder == phoneInbox { _ = shell(serial, "mkdir -p \(shellQuote(folder))") }
+        let shared = folder != appShareFolder // in the phone's shared storage, for every app
+        if shared { _ = shell(serial, "mkdir -p \(shellQuote(folder))") }
         let name = FileNames.safe(file.lastPathComponent)
         var candidate = name
         var n = 2
@@ -264,7 +272,7 @@ public enum Adb {
         } catch {
             return .failure(PushError(message: "\(error)"))
         }
-        if folder == phoneInbox { // shows in Downloads (app drops are the app's own files)
+        if shared { // shows in Downloads or the gallery (app drops are the app's own files)
             let uri = URL(fileURLWithPath: remote).absoluteString
             _ = shell(serial, "am broadcast -a android.intent.action.MEDIA_SCANNER_SCAN_FILE -d \(shellQuote(uri))")
         }

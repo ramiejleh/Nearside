@@ -20,6 +20,8 @@
          READ_PHONE_STATE is granted by the Mac at setup; nothing asks on the phone. -->
     <uses-permission android:name="android.permission.READ_PHONE_STATE" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <!-- Recent photos in the Mac's panel; granted or revoked by the Mac's setting. -->
+    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
 
     <!-- SMS in the Mac's Messages window; granted by the Mac over adb. -->
     <uses-permission android:name="android.permission.READ_SMS" />

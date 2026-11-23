@@ -88,6 +88,11 @@ without opening anything on the phone.
 - Items that password managers mark as concealed are never recorded.
 - You can also hide Android's "pasted from your clipboard" message from the Mac.
 
+### Photos and screenshots
+The panel shows your phone's newest photos and screenshots while it's open. Drag one into any
+app or folder to get the full file, or click to open it. You can also have each new phone
+screenshot land in Downloads, and each Mac screenshot go to the phone's gallery.
+
 ### Phone status
 The menu bar shows your phone's battery, signal and network (5G, LTE) while it's connected,
 and tells you once when its battery runs low.

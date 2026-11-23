@@ -140,6 +140,21 @@ struct SettingsView: View {
                     Text("What macOS lets Nearside do. If something stops working, check here first.")
                 }
 
+                Section("Photos") {
+                    Toggle(isOn: Binding(get: { engine.recentPhotos }, set: { engine.recentPhotos = $0 })) {
+                        Text("Show the phone's recent photos")
+                        Text("In this panel, while it's open. Drag one out to keep it.")
+                    }
+                    Toggle(isOn: Binding(get: { engine.screenshotsToMac }, set: { engine.screenshotsToMac = $0 })) {
+                        Text("New phone screenshots go to this Mac")
+                        Text("Each one lands in Downloads.")
+                    }
+                    Toggle(isOn: Binding(get: { engine.screenshotsToPhone }, set: { engine.screenshotsToPhone = $0 })) {
+                        Text("Mac screenshots go to the phone")
+                        Text("Into Pictures/Nearside, where the phone's gallery shows them.")
+                    }
+                }
+
                 Section("History") {
                     Picker("Keep", selection: Binding(get: { engine.historyLimit }, set: { engine.historyLimit = $0 })) {
                         Text("50 items").tag(50)

@@ -285,6 +285,7 @@ final class StatusItemController: NSObject {
         super.init()
         popover.behavior = .transient
         popover.animates = true
+        popover.delegate = self
         popover.contentViewController = NSHostingController(rootView: PanelView(engine: engine, openMessages: { [weak self] in
             self?.popover.performClose(nil)
             self?.messagesWindow.show()
@@ -373,5 +374,16 @@ extension AppDelegate: NSMenuItemValidation {
     func validateMenuItem(_ item: NSMenuItem) -> Bool {
         if item.action == #selector(toggleStatistics(_:)) { item.state = StatsOverlay.enabled ? .on : .off }
         return true
+    }
+}
+
+extension StatusItemController: NSPopoverDelegate {
+    // The phone's recent photos are only watched while the panel is open.
+    func popoverWillShow(_ notification: Notification) {
+        if engine.recentPhotos { engine.photos.panelOpened() }
+    }
+
+    func popoverDidClose(_ notification: Notification) {
+        engine.photos.panelClosed()
     }
 }

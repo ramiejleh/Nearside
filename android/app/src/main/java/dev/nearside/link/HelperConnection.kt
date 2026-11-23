@@ -6,6 +6,7 @@ import android.os.RemoteException
 import dev.nearside.FileNotifications
 import dev.nearside.NotificationMirror
 import dev.nearside.PhoneStatus
+import dev.nearside.PhotoFeed
 import dev.nearside.SmsBridge
 import dev.nearside.Status
 import dev.nearside.phone.InUseNotification
@@ -37,6 +38,7 @@ object HelperConnection {
             Status.lastEvent = if (connected) "Mac connected" else "Mac disconnected"
             if (connected) NotificationMirror.macConnected()
             context?.let { PhoneStatus.macConnectionChanged(it, connected) }
+            if (!connected) context?.let { PhotoFeed.macDisconnected(it) }
         }
     }
 
@@ -79,6 +81,7 @@ object HelperConnection {
                 val names = msg.optJSONArray("names")?.let { a -> (0 until a.length()).map { a.optString(it) } }.orEmpty()
                 Thread { dev.nearside.phone.DroppedFiles.share(c, names, msg.optString("pkg"), msg.optInt("display", -1)) }.start()
             }
+            "photos-watch", "photos-thumbs" -> context?.let { PhotoFeed.handle(it, msg) }
             "display-state" -> context?.let { InUseNotification.update(it, msg.optInt("open")) }
             "notif-action" -> NotificationMirror.instance?.runAction(
                 msg.optString("key"),

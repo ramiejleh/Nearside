@@ -75,6 +75,36 @@ public final class SyncEngine {
     /// SMS for the Messages window.
     public let messages = MessagesStore()
 
+    /// The phone's newest photos and screenshots (the panel's strip).
+    public let photos = RecentPhotos()
+
+    /// Show the phone's recent photos in the panel. Turning it off revokes the phone app's photo
+    /// permission, so nothing on the phone can list them.
+    public var recentPhotos: Bool {
+        didSet {
+            defaults.set(recentPhotos, forKey: "recentPhotos")
+            if !recentPhotos { photos.panelClosed() }
+            applyPhotoAccess()
+        }
+    }
+
+    /// Each new phone screenshot lands in Downloads.
+    public var screenshotsToMac: Bool {
+        didSet {
+            defaults.set(screenshotsToMac, forKey: "screenshotsToMac")
+            photos.setWatching("screenshots", screenshotsToMac)
+        }
+    }
+
+    /// Each new Mac screenshot goes to the phone (Pictures/Nearside).
+    public var screenshotsToPhone: Bool {
+        didSet {
+            defaults.set(screenshotsToPhone, forKey: "screenshotsToPhone")
+            macScreenshots.isOn = screenshotsToPhone
+        }
+    }
+    @ObservationIgnored private let macScreenshots = MacScreenshots()
+
     /// Read and send SMS from the Mac. Turning it off revokes the phone app's SMS and contacts
     /// permissions, so nothing on the phone can read texts at all.
     public var textMessages: Bool {
@@ -160,6 +190,9 @@ public final class SyncEngine {
         mirrorNotifications = defaults.object(forKey: "mirrorNotifications") as? Bool ?? true
         textMessages = defaults.object(forKey: "textMessages") as? Bool ?? true
         lowBatteryAlert = defaults.object(forKey: "lowBatteryAlert") as? Bool ?? true
+        recentPhotos = defaults.object(forKey: "recentPhotos") as? Bool ?? true
+        screenshotsToMac = defaults.bool(forKey: "screenshotsToMac")
+        screenshotsToPhone = defaults.bool(forKey: "screenshotsToPhone")
         // Set up = completed the pairing flow, which is the only place a phone (its serial and
         // its key) gets pinned. A setup from before key pinning has no key: it pairs once more.
         let paired = defaults.bool(forKey: "setupComplete") && defaults.string(forKey: "phoneSerial") != nil
@@ -200,8 +233,15 @@ public final class SyncEngine {
             if let text { message["text"] = text }
             self?.link.send(message)
         }
+        try? FileManager.default.removeItem(at: Self.photoCache)
+        photos.send = { [weak self] in self?.link.send($0) }
+        photos.onNewScreenshot = { [weak self] in self?.receiveScreenshot($0) }
+        if screenshotsToMac { photos.setWatching("screenshots", true) }
+        macScreenshots.onNew = { [weak self] url in self?.sendScreenshot(url) }
+        macScreenshots.isOn = screenshotsToPhone
         link.onDisconnect = { [weak self] in
             guard let self, state == .connected else { return }
+            photos.connectionLost()
             state = .searching
             appLinked = false
             phoneStatus = nil // sent again when the phone is back
@@ -393,13 +433,16 @@ public final class SyncEngine {
                 }
             }
             applySmsAccess()
+            applyPhotoAccess()
         case "sms-threads", "sms-thread", "sms-sent", "sms-read", "sms-changed", "sms-error":
             messages.handle(message)
         case "file-ready":
             receiveFile(message)
         case "app":
             appLinked = message["linked"] as? Bool ?? false
-            if !appLinked { phoneStatus = nil }
+            if appLinked { photos.linked() } else { phoneStatus = nil; photos.connectionLost() }
+        case "photos", "photo-thumb":
+            if recentPhotos || screenshotsToMac { photos.handle(message) }
         case "phone-status":
             guard let status = PhoneStatus(message: message) else { return }
             phoneStatus = status
@@ -584,6 +627,67 @@ public final class SyncEngine {
 
     private func setStatus(_ id: UUID, _ status: Transfer.Status) {
         if let i = transfers.firstIndex(where: { $0.id == id }) { transfers[i].status = status }
+    }
+
+    // MARK: Photos
+
+    /// The phone app may read photos while the strip or screenshot hand-off needs them.
+    private func applyPhotoAccess() {
+        let allowed = recentPhotos || screenshotsToMac
+        guard state == .connected, let serial = adbSerial else { return }
+        Task { await Task.detached { Adb.setPhotoAccess(serial, allowed: allowed) }.value }
+    }
+
+    /// Pulls a phone photo into a cache folder (for a drag or a preview). The files are the
+    /// user's own photos, so they're kept out of Downloads until the user drops one somewhere.
+    public func fetchPhoto(_ photo: PhonePhoto) async -> URL? {
+        guard state == .connected, let serial = adbSerial else { return nil }
+        let folder = Self.photoCache.appendingPathComponent(String(photo.id), isDirectory: true)
+        let local = folder.appendingPathComponent(FileNames.safe(photo.name))
+        if FileManager.default.fileExists(atPath: local.path) { return local }
+        try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let remote = photo.path
+        guard await Task.detached(operation: { Adb.pull(serial, remote: remote, to: local) }).value else { return nil }
+        Self.quarantine(local)
+        return local
+    }
+
+    /// Emptied at launch: only what the user drags out of it is kept (in their own folders).
+    nonisolated static let photoCache = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
+        .appendingPathComponent("dev.nearside.mac/Photos", isDirectory: true)
+
+    /// A screenshot just taken on the phone: into Downloads, like a file sent to the Mac.
+    private func receiveScreenshot(_ photo: PhonePhoto) {
+        guard screenshotsToMac, state == .connected, let serial = adbSerial else { return }
+        let transfer = Transfer(id: UUID(), name: photo.name, direction: .toMac, status: .inProgress)
+        addTransfer(transfer)
+        let downloads = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask)[0]
+        let destination = FileNames.unique(FileNames.safe(photo.name), in: downloads)
+        let remote = photo.path, phone = phoneName
+        Task {
+            guard await Task.detached(operation: { Adb.pull(serial, remote: remote, to: destination) }).value else {
+                setStatus(transfer.id, .failed("Couldn't copy it from the phone."))
+                return
+            }
+            Self.quarantine(destination)
+            setStatus(transfer.id, .done(destination))
+            notifications.showLocal(id: Self.fileNotificationPrefix + destination.path,
+                                    title: "Screenshot from your \(phone)",
+                                    body: "\(destination.lastPathComponent) · in Downloads. Click to show it.")
+        }
+    }
+
+    /// A screenshot just taken on this Mac: to the phone's Pictures/Nearside.
+    private func sendScreenshot(_ url: URL) {
+        guard screenshotsToPhone, state == .connected, let serial = adbSerial else { return }
+        let transfer = Transfer(id: UUID(), name: url.lastPathComponent, direction: .toPhone, status: .inProgress)
+        addTransfer(transfer)
+        Task {
+            switch await Task.detached(operation: { Adb.push(serial, file: url, to: Adb.phoneScreenshots) }).value {
+            case .success: setStatus(transfer.id, .done(nil))
+            case .failure(let error): setStatus(transfer.id, .failed(Self.friendly(error.message)))
+            }
+        }
     }
 
     /// Makes the phone app's SMS/contacts permissions match the setting (on every connect).

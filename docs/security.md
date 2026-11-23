@@ -96,6 +96,11 @@ Out of scope: an attacker who has already unlocked the Mac as you, or who has ro
   executable, and always announced with a notification.
 - The share target only accepts `content://` URIs from other apps' providers (never
   `file://`, never our own files). File names are sanitised on both sides.
+- Photos: the phone app holds `READ_MEDIA_IMAGES` only while "Show the phone's recent photos" or
+  "New phone screenshots go to this Mac" is on (the Mac revokes it otherwise). It lists photos
+  only while the Mac asks: the panel is open, or the screenshot hand-off is on. The Mac keeps
+  thumbnails in memory only. Full files are pulled when the user takes one, into a cache emptied
+  at launch, and only from plain paths under `/sdcard/`.
 - Phone status (battery, signal bars, network type, Wi-Fi on or off) goes only to the
   connected Mac. `READ_PHONE_STATE` is used for the network type alone: no phone number,
   identifiers or call state are read.

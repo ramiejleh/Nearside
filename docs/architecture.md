@@ -94,6 +94,16 @@ conversation read also presses that conversation notification's "Mark as read" a
   folder and shared into the app on that display (`ACTION_SEND`) through a non-exported
   provider with a per-share read grant.
 
+### Photos and screenshots
+- **On the phone:** `PhotoFeed` in the phone app lists the 12 newest images from MediaStore, only while the Mac asks (`photos-watch`). The Mac asks while the panel is open, or while phone screenshots go to the Mac.
+  - A ContentObserver sends the list again when it changes.
+  - Thumbnails go one per message, and only for ids the Mac doesn't have (Binder messages are limited to about 1 MB).
+- **Phone → Mac:** the Mac pulls a full photo with adb sync from its `/sdcard/…` path, only when the user drags or opens it, into a cache folder that's emptied at launch.
+  - It only accepts plain paths under `/sdcard/`.
+  - New screenshots, when that setting is on, are pulled into Downloads, quarantined.
+- **Mac → phone:** Mac screenshots are found with a live Spotlight query (`kMDItemIsScreenCapture`) and pushed to `Pictures/Nearside` with a media scan.
+  - Spotlight hides files the app may not read, so turning it on reads the screenshot folder once, which makes macOS ask for Desktop access.
+
 ### Phone status
 `PhoneStatus` in the phone app reads the battery (the sticky `ACTION_BATTERY_CHANGED`), the
 signal bars and network type (a `TelephonyCallback`), and whether it's on Wi-Fi (the default

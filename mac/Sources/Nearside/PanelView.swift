@@ -30,6 +30,10 @@ struct PanelView: View {
                                                   working: engine.reinstallingPhoneApp) { engine.reinstallPhoneApp() }
                         }
                         if !engine.transfers.isEmpty { TransfersView(engine: engine) }
+                        if engine.state == .connected, engine.recentPhotos, !engine.photos.items.isEmpty {
+                            PhotoStrip(engine: engine)
+                            Divider()
+                        }
                         HistoryView(engine: engine, highlighted: highlighted)
                     }
                 }
