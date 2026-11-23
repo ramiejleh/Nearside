@@ -75,6 +75,8 @@ object HelperConnection {
             "ping" -> send(JSONObject().put("t", "pong").put("id", msg.opt("id")))
             "notif-dismiss" -> NotificationMirror.instance?.dismiss(msg.optString("key"))
             "file-received" -> context?.let { FileNotifications.received(it, msg.optString("name")) }
+            "screenshot-received" -> context?.let { FileNotifications.screenshotReceived(it, msg.optString("name")) }
+            "screenshot-sent" -> context?.let { FileNotifications.screenshotSent(it, msg.optString("name")) }
             "sms-threads", "sms-thread", "sms-send", "sms-read" -> context?.let { SmsBridge.handle(it, msg) }
             "notif-open" -> NotificationMirror.instance?.open(msg.optString("key"), msg.optInt("display", -1))
             "share-into" -> context?.let { c ->

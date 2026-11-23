@@ -693,6 +693,7 @@ public final class SyncEngine {
             }
             Self.quarantine(destination)
             setStatus(transfer.id, .done(destination))
+            link.send(["t": "screenshot-sent", "name": destination.lastPathComponent]) // the phone says so too
             notifications.showLocal(id: Self.fileNotificationPrefix + destination.path,
                                     title: "Screenshot from your \(phone)",
                                     body: "\(destination.lastPathComponent) · in Downloads. Click to show it.")
@@ -704,9 +705,15 @@ public final class SyncEngine {
         guard screenshotsToPhone, state == .connected, let serial = adbSerial else { return }
         let transfer = Transfer(id: UUID(), name: url.lastPathComponent, direction: .toPhone, status: .inProgress)
         addTransfer(transfer)
+        let phone = phoneName
         Task {
             switch await Task.detached(operation: { Adb.push(serial, file: url, to: Adb.phoneScreenshots) }).value {
-            case .success: setStatus(transfer.id, .done(nil))
+            case .success(let name):
+                setStatus(transfer.id, .done(nil))
+                link.send(["t": "screenshot-received", "name": name]) // the phone shows it, and opens it on a tap
+                notifications.showLocal(id: Self.fileNotificationPrefix + url.path,
+                                        title: "Screenshot sent to your \(phone)",
+                                        body: "\(name) · in Pictures/Nearside on the phone.")
             case .failure(let error): setStatus(transfer.id, .failed(Self.friendly(error.message)))
             }
         }
