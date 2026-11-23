@@ -259,6 +259,7 @@ public final class SyncEngine {
         try? FileManager.default.removeItem(at: Self.photoCache)
         photos.send = { [weak self] in self?.link.send($0) }
         calls.send = { [weak self] in self?.link.send($0) }
+        calls.onAudioRoute = { [weak self] in self?.routeCallAudio(toMac: $0) }
         photos.onNewScreenshot = { [weak self] in self?.receiveScreenshot($0) }
         if screenshotsToMac { photos.setWatching("screenshots", true) }
         macScreenshots.onNew = { [weak self] url in self?.sendScreenshot(url) }
@@ -436,6 +437,28 @@ public final class SyncEngine {
     }
 
     func sendToHelper(_ message: [String: Any]) { link.send(message) }
+
+    // MARK: Call audio
+
+    @ObservationIgnored private var callAudio: CallAudioSession?
+
+    /// A phone call's sound and microphone to this Mac, or back to the phone.
+    private func routeCallAudio(toMac: Bool) {
+        callAudio?.onEnded = nil
+        callAudio?.stop()
+        callAudio = nil
+        guard toMac else { return }
+        let session = CallAudioSession(token: Token.value) { [weak self] in await self?.displayTicket() }
+        session.onEnded = { [weak self, weak session] in
+            Task { @MainActor in
+                guard let self, let session, self.callAudio === session else { return }
+                self.callAudio = nil
+                self.calls.audioEnded()
+            }
+        }
+        callAudio = session
+        session.start()
+    }
 
     // MARK: Messages
 

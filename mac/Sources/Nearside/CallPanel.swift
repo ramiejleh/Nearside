@@ -168,7 +168,7 @@ struct RingingCard: View {
                             RoundButton(symbol: "phone.down.fill", color: .red, help: "Decline") { engine.calls.act(.decline, on: call) }
                         }
                         if call.can.contains(.answer) {
-                            RoundButton(symbol: "phone.fill", color: .green, help: "Answer") { engine.calls.act(.answer, on: call) }
+                            RoundButton(symbol: "phone.fill", color: .green, help: "Answer") { answer(call) }
                         }
                     }
                 }
@@ -205,6 +205,16 @@ struct RingingCard: View {
         }
     }
 
+    /// Answered here, it's talked here: a phone call's sound comes to this Mac (PhoneCalls), and
+    /// an app's call opens in a Mac window (its sound and this Mac's microphone go with it).
+    private func answer(_ call: PhoneCall) {
+        engine.calls.act(.answer, on: call)
+        guard !engine.calls.isPhoneCall(call) else { return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
+            engine.onOpenNotificationOnMac?(call.key, call.package, call.app)
+        }
+    }
+
     private func decline(_ call: PhoneCall, sending text: String, to number: String) {
         engine.messages.send(text, to: number)
         engine.calls.act(.decline, on: call)
@@ -224,17 +234,32 @@ struct InCallCard: View {
                     Text(call.title).font(.system(size: 12.5, weight: .semibold)).lineLimit(1)
                     HStack(spacing: 4) {
                         Circle().fill(.green).frame(width: 6, height: 6)
+                        let place = engine.calls.isPhoneCall(call)
+                            ? (engine.calls.audioOnMac ? "On this Mac" : "On your \(engine.phoneName)") : call.kind
                         if let since = call.since {
                             TimelineView(.periodic(from: .now, by: 1)) { context in
-                                Text("\(call.kind) · \(Self.duration(context.date.timeIntervalSince(since)))").monospacedDigit()
+                                Text("\(place) · \(Self.duration(context.date.timeIntervalSince(since)))").monospacedDigit()
                             }
                         } else {
-                            Text(call.kind)
+                            Text(place)
                         }
                     }
                     .font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(1)
                 }
                 Spacer(minLength: 6)
+                if engine.calls.isPhoneCall(call) {
+                    let here = engine.calls.audioOnMac
+                    RoundButton(symbol: here ? "iphone" : "laptopcomputer", color: .gray,
+                                help: here ? "Talk on your \(engine.phoneName)" : "Talk on this Mac", size: 28) {
+                        engine.calls.moveAudio(toMac: !here)
+                    }
+                } else {
+                    // An app's call (this card only shows while it has no Mac window): its call
+                    // screen into a window here, where this Mac's sound and microphone take over.
+                    RoundButton(symbol: "laptopcomputer", color: .gray, help: "Talk on this Mac", size: 28) {
+                        engine.onOpenNotificationOnMac?(call.key, call.package, call.app)
+                    }
+                }
                 let muted = engine.calls.muted
                 RoundButton(symbol: muted ? "mic.slash.fill" : "mic.fill", color: muted ? .orange : .gray,
                             help: muted ? "Unmute your phone's microphone" : "Mute your phone's microphone", size: 28) {

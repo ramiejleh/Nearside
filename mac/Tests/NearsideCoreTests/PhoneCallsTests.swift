@@ -123,3 +123,78 @@ import Testing
         #expect(calls.pinned?.key == "k") // the window closed during the call
     }
 }
+
+@MainActor @Suite struct CallAudioRouteTests {
+    private func call(_ state: String, pkg: String = "com.google.android.dialer", can: [String] = ["answer", "decline", "hangup"]) -> [String: Any] {
+        ["t": "call", "key": "k", "pkg": pkg, "app": "Phone", "state": state, "name": "Alex", "can": can]
+    }
+
+    @Test func answeredHereTalksHere() {
+        let calls = PhoneCalls()
+        var routes: [Bool] = []
+        calls.onAudioRoute = { routes.append($0) }
+        calls.handle(call("incoming"))
+        calls.act(.answer, on: calls.ringing!)
+        #expect(routes.isEmpty) // not until it connects
+        calls.handle(call("ongoing"))
+        #expect(routes == [true] && calls.audioOnMac)
+        calls.handle(["t": "call-ended", "key": "k"])
+        #expect(routes == [true, false] && !calls.audioOnMac)
+    }
+
+    @Test func answeredOnThePhoneStaysThereUntilMoved() {
+        let calls = PhoneCalls()
+        var routes: [Bool] = []
+        calls.onAudioRoute = { routes.append($0) }
+        calls.handle(call("incoming"))
+        calls.handle(call("ongoing"))
+        #expect(routes.isEmpty)
+        calls.moveAudio(toMac: true)
+        calls.moveAudio(toMac: false)
+        #expect(routes == [true, false])
+    }
+
+    @Test func placedHereOrWithThePhoneAppInAWindowTalksHere() {
+        let placed = PhoneCalls()
+        var routes: [Bool] = []
+        placed.onAudioRoute = { routes.append($0) }
+        placed.place("5551234")
+        placed.handle(call("ongoing"))
+        #expect(routes == [true])
+
+        let window = PhoneCalls()
+        window.handle(call("ongoing"))
+        window.windowPackages = ["com.google.android.dialer"]
+        #expect(window.audioOnMac)
+    }
+
+    @Test func openOnPhoneFromThePhoneAppWindowMovesItBack() {
+        let calls = PhoneCalls()
+        calls.handle(call("ongoing"))
+        calls.windowPackages = ["com.google.android.dialer"]
+        #expect(calls.audioOnMac)
+        calls.moveAudio(toMac: false) // "Open on Phone"
+        calls.windowPackages = [] // its window closes
+        #expect(!calls.audioOnMac)
+        calls.windowPackages = ["com.google.android.dialer"] // opened here again: but it was moved
+        #expect(calls.audioOnMac) // opening the Phone app here again is a new choice: here
+    }
+
+    @Test func appCallsUseTheirWindowNotTheCallStream() {
+        let calls = PhoneCalls()
+        var routes: [Bool] = []
+        calls.onAudioRoute = { routes.append($0) }
+        calls.handle(call("incoming", pkg: "com.whatsapp"))
+        calls.act(.answer, on: calls.ringing!)
+        calls.handle(call("ongoing", pkg: "com.whatsapp"))
+        #expect(routes.isEmpty)
+    }
+
+    @Test func theStreamEndingOnItsOwnShowsThePhone() {
+        let calls = PhoneCalls()
+        calls.handle(call("ongoing"))
+        calls.moveAudio(toMac: true)
+        calls.audioEnded()
+        #expect(!calls.audioOnMac)
+    }
+}

@@ -21,7 +21,7 @@ object Calls {
     /** Set by Main. */
     lateinit var toMac: (JSONObject) -> Boolean
 
-    private val telephony by lazy {
+    internal val telephony by lazy {
         // A bare app_process hasn't set up the telephony framework (apps get it at startup).
         runCatching {
             val manager = Class.forName("android.os.TelephonyServiceManager").getConstructor().newInstance()
@@ -31,9 +31,9 @@ object Calls {
         shellOwned(TelephonyManager::class.java)
     }
     private val telecom by lazy { shellOwned(TelecomManager::class.java) }
-    private val audio by lazy { shellOwned(android.media.AudioManager::class.java) }
+    internal val audio by lazy { shellOwned(android.media.AudioManager::class.java) }
     /** We muted the microphone: kept through a Mac dropping off mid-call, undone when the call ends. */
-    @Volatile private var mutedByMac = false
+    @Volatile internal var mutedByMac = false
 
     /** Made with our context: the system's own (what getSystemService gives) fails the package check. */
     private fun <T> shellOwned(type: Class<T>): T? = runCatching {
@@ -91,7 +91,8 @@ object Calls {
     lateinit var macConnected: () -> Boolean
 
     private fun mute(on: Boolean) {
-        runCatching { audio!!.isMicrophoneMute = on }
+        // While the call's sound is on the Mac the phone's microphone stays off whatever this says.
+        runCatching { audio!!.isMicrophoneMute = on || CallAudio.active }
             .onSuccess { mutedByMac = on; Log.d("microphone ${if (on) "muted" else "unmuted"} from the Mac") }
             .onFailure { Log.d("mute failed: ${it.cause ?: it}") }
     }

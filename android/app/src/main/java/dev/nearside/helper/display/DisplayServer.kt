@@ -45,6 +45,8 @@ object DisplayWire {
     const val MIC = 0x34; const val MIC_AUDIO = 0x35; const val MIC_UNAVAILABLE = 0x36
 
     const val ROLE_CONTROL = 1; const val ROLE_VIDEO = 2; const val ROLE_AUDIO = 3
+    /** A phone call's sound, both ways (no window; see CallAudio). */
+    const val ROLE_CALL = 4
     const val NAV_BACK = 1; const val NAV_HOME = 2
     /** OPEN target for the phone window: our home screen, with apps opened from it on top. */
     const val HOME_TARGET = "home"
@@ -281,6 +283,7 @@ class DisplayServer(
             conn.send(DisplayWire.HELLO, hmac(t.token, "nearside-display-server:$role:$sid:$ticket"))
             when (role) {
                 DisplayWire.ROLE_CONTROL -> control(conn, sid)
+                DisplayWire.ROLE_CALL -> { conn.setTimeout(0); dev.nearside.helper.CallAudio.attach(conn) }
                 DisplayWire.ROLE_VIDEO, DisplayWire.ROLE_AUDIO -> {
                     // The control stream's OPEN may still be starting the session.
                     var session = sessions[sid]

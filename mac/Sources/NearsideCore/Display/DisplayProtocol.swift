@@ -50,7 +50,7 @@ public enum DisplayWire {
     static let mic: UInt8 = 0x34, micAudio: UInt8 = 0x35, micUnavailable: UInt8 = 0x36
     public static let micSampleRate = 48_000
 
-    public enum Role: UInt8, Sendable { case control = 1, video = 2, audio = 3 }
+    public enum Role: UInt8, Sendable { case control = 1, video = 2, audio = 3, call = 4 }
     static let version: UInt16 = 1
     /// A 4K keyframe is far below this.
     public static let maxPacket = 16 * 1024 * 1024

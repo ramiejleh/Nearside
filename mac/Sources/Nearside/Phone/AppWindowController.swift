@@ -493,6 +493,8 @@ final class AppWindowController: NSObject, NSWindowDelegate {
 
     /// The app, in front on the phone; the window closes.
     fileprivate func openOnPhone() {
+        // A phone call in the Phone app goes with it: its sound and microphone back to the phone.
+        PhoneWindowManager.shared?.callMovedToPhone(package: app.package)
         session.openOnPhone()
         window.close()
     }

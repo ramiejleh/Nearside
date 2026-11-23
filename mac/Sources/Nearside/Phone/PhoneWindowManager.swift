@@ -24,6 +24,11 @@ final class PhoneWindowManager {
     private var hotKey: HotKey?
     private var opening: Set<String> = []
 
+    /// "Open on Phone" on `package`'s window: a phone call in it talks on the phone again.
+    func callMovedToPhone(package: String) {
+        if engine.calls.ongoing?.package == package { engine.calls.moveAudio(toMac: false) }
+    }
+
     /// A call in an app that has a window here shows in that window, not in the pinned call card.
     private func callWindowsChanged() {
         engine.calls.windowPackages = Set(windows.map(\.app.package))
