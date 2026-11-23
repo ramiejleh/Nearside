@@ -35,6 +35,16 @@ final class Webcam: NSObject {
     @ObservationIgnored private var sink: CMIOStreamID = 0
     @ObservationIgnored private var session: CameraSession?
     @ObservationIgnored private var feeder: SinkFeeder?
+    /// The phone's Stop: no camera until the app using Nearside Camera stops and starts it again.
+    @ObservationIgnored private var stoppedOnPhone = false
+    /// After the stream failed (not stopped by us): the next try waits until then.
+    @ObservationIgnored private var retryAfter = Date.distantPast
+
+    /// The phone's "Stop" on its in-use notification.
+    func phoneStopped() {
+        stoppedOnPhone = true
+        stopFeeding()
+    }
 
     init(engine: SyncEngine) {
         self.engine = engine
@@ -72,7 +82,8 @@ final class Webcam: NSObject {
         guard device != 0 else { return }
         let used = Self.readInUse(device)
         if used != inUse { inUse = used }
-        if used, session == nil, engine.state == .connected { startFeeding() }
+        if !used { stoppedOnPhone = false } // the app let go: the next start is a new one
+        if used, session == nil, !stoppedOnPhone, Date() >= retryAfter, engine.state == .connected { startFeeding() }
         if !used, session != nil { stopFeeding() }
     }
 
@@ -88,9 +99,10 @@ final class Webcam: NSObject {
         camera.onFrame = { frame in feeder.push(frame.image) }
         camera.onEnded = { [weak self] in
             Task { @MainActor in
-                // The phone went (or its camera couldn't open): try again on the next check.
+                // The phone went (or its camera couldn't open): try again in a few seconds.
                 guard let self, self.session === camera else { return }
                 self.stopFeeding()
+                self.retryAfter = Date().addingTimeInterval(5)
             }
         }
         session = camera

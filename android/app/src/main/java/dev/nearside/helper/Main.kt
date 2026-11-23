@@ -121,7 +121,7 @@ object Main {
         dev.nearside.helper.display.CameraStream.onChanged = { sendInUse() }
         AppLink.stopApps = { // the phone's Stop: everything the Mac uses on it
             displays.closeAll()
-            dev.nearside.helper.display.CameraStream.stopAll()
+            dev.nearside.helper.display.CameraStream.stoppedOnPhone()
             CallAudio.stop()
         }
         AppLink.onUnlinked = {
@@ -313,6 +313,7 @@ object Main {
     }
 
     /** The phone's "in use on your Mac" notification: apps open in windows, and the camera. */
+    @Synchronized // read and delivered together, so the last one sent is the latest state
     private fun sendInUse() {
         AppLink.deliver(JSONObject().put("t", "display-state").put("open", displays.openCount)
             .put("camera", dev.nearside.helper.display.CameraStream.isOn))

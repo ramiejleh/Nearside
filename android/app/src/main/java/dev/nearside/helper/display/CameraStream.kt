@@ -37,8 +37,12 @@ object CameraStream {
     val isOn get() = synchronized(open) { open.isNotEmpty() }
 
     /** [canStart]: the phone can show that the camera is in use (the app is linked). */
+    /** After the phone's Stop, no camera for a while, whatever a Mac asks (uptime ms). */
+    @Volatile private var refusedUntil = 0L
+
     fun attach(conn: DisplayWire.Conn, canStart: Boolean) {
         if (!canStart) { Log.d("camera: refused, the phone app isn't running to show it"); return conn.close() }
+        if (android.os.SystemClock.uptimeMillis() < refusedUntil) { Log.d("camera: refused, stopped on the phone"); return conn.close() }
         // Registered before anything runs, so a stopAll() racing this still closes it.
         val first = synchronized(open) { open.add(conn); open.size == 1 }
         if (first) onChanged(true)
@@ -50,8 +54,14 @@ object CameraStream {
         }, "camera").start()
     }
 
-    /** The Mac that opened it went, another took the phone, or the phone's Stop: the camera turns off. */
+    /** The Mac that opened it went, or another took the phone: the camera turns off. */
     fun stopAll() = synchronized(open) { open.toList() }.forEach { it.close() }
+
+    /** The phone's Stop: off, and refused for 30 s (the Mac waits for the app to start it anew). */
+    fun stoppedOnPhone() {
+        refusedUntil = android.os.SystemClock.uptimeMillis() + 30_000
+        stopAll()
+    }
 
     private val manager: CameraManager by lazy {
         CameraManager::class.java.getDeclaredConstructor(Context::class.java).apply { isAccessible = true }
