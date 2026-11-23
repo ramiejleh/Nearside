@@ -17,6 +17,7 @@ struct SettingsView: View {
     @AppStorage(PhoneQuality.key) private var phoneQuality = PhoneQuality.auto.rawValue
     @AppStorage(PhoneSound.key) private var phoneSound = "mac"
     @AppStorage(PhoneSound.microphoneKey) private var phoneMicrophone = true
+    @AppStorage(Webcam.frontKey) private var webcamFront = false
     @AppStorage(AppWindowController.keyboardLayoutKey) private var keyboardLayout = ""
     @AppStorage(AppWindowController.returnAfterKey) private var returnAfter = 0
     @State private var phoneLayouts: [String] = []
@@ -159,6 +160,25 @@ struct SettingsView: View {
                     Text("Permissions")
                 } footer: {
                     Text("What macOS lets Nearside do. If something stops working, check here first.")
+                }
+
+                if let webcam = Webcam.shared {
+                    Section("Phone camera") {
+                        Toggle(isOn: Binding(get: { webcam.enabled }, set: { webcam.enabled = $0 })) {
+                            Text("Use your phone as a webcam")
+                            Text(webcam.status.isEmpty
+                                 ? "“Nearside Camera” in FaceTime, Zoom and browsers. The phone's camera is on only while an app uses it."
+                                 : webcam.status)
+                        }
+                        Picker(selection: $webcamFront) {
+                            Text("Back").tag(false)
+                            Text("Front").tag(true)
+                        } label: {
+                            Text("Camera")
+                            Text("The back camera is the better one. Takes effect the next time an app starts it.")
+                        }
+                        .disabled(!webcam.enabled)
+                    }
                 }
 
                 Section("Photos") {

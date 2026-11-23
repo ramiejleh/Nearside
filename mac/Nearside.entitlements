@@ -5,5 +5,7 @@
   <!-- The hardened runtime blocks the microphone without this: apps in Mac windows (calls,
        voice notes) hear this Mac's microphone. -->
   <key>com.apple.security.device.audio-input</key><true/>
+  <!-- Writing the phone's picture into the Nearside Camera extension is camera use. -->
+  <key>com.apple.security.device.camera</key><true/>
 </dict>
 </plist>

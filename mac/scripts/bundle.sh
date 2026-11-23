@@ -81,6 +81,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <!-- Wireless debugging: find the phone over Bonjour and connect to it on this network. -->
   <!-- "Mac screenshots go to the phone": screenshots are saved on the Desktop by default. -->
   <key>NSDesktopFolderUsageDescription</key><string>Nearside sends your new screenshots to your phone, if you turn that on in Settings.</string>
+  <key>NSCameraUsageDescription</key><string>Nearside sends your phone's camera to the Nearside Camera webcam, while an app uses it.</string>
   <key>NSMicrophoneUsageDescription</key><string>Phone apps in Mac windows (calls, voice messages) hear this Mac's microphone while they record.</string>
   <key>NSLocalNetworkUsageDescription</key><string>Nearside connects to your Android phone over this Wi-Fi network (Wireless debugging).</string>
   <key>NSBonjourServices</key>
@@ -91,6 +92,41 @@ cat > "$APP/Contents/Info.plist" <<PLIST
 </dict>
 </plist>
 PLIST
+
+# The camera extension ("Nearside Camera"), only when its Developer ID provisioning profiles are
+# here to sign it with (sign-app.sh): macOS won't load it otherwise, so plain builds leave it out.
+PROFILES="${NEARSIDE_PROFILES:-$HOME/nearside-profiles}"
+TEAM_ID="X97D6QH7RS"
+if [[ -f "$PROFILES/app.provisionprofile" && -f "$PROFILES/camera.provisionprofile" ]]; then
+  swift build -c release --product NearsideCamera
+  EXT="$APP/Contents/Library/SystemExtensions/dev.nearside.mac.camera.systemextension"
+  mkdir -p "$EXT/Contents/MacOS"
+  cp "$BIN_DIR/NearsideCamera" "$EXT/Contents/MacOS/dev.nearside.mac.camera"
+  cat > "$EXT/Contents/Info.plist" <<EXTPLIST
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>CFBundleName</key><string>Nearside Camera</string>
+  <key>CFBundleDisplayName</key><string>Nearside Camera</string>
+  <key>CFBundleIdentifier</key><string>dev.nearside.mac.camera</string>
+  <key>CFBundleExecutable</key><string>dev.nearside.mac.camera</string>
+  <key>CFBundlePackageType</key><string>SYSX</string>
+  <key>CFBundleShortVersionString</key><string>$VERSION</string>
+  <key>CFBundleVersion</key><string>$BUILD</string>
+  <key>LSMinimumSystemVersion</key><string>14.0</string>
+  <key>NSSystemExtensionUsageDescription</key><string>Your phone's camera as a webcam: "Nearside Camera" in FaceTime, Zoom and browsers.</string>
+  <key>CMIOExtension</key>
+  <dict>
+    <key>CMIOExtensionMachServiceName</key><string>$TEAM_ID.dev.nearside.mac.camera</string>
+  </dict>
+</dict>
+</plist>
+EXTPLIST
+  codesign --force --sign - "$EXT"
+else
+  echo "note: no provisioning profiles in $PROFILES: building without the camera extension"
+fi
 
 # Ad-hoc signature so macOS will run it locally. Release builds need a Developer ID + notarization.
 codesign --force --sign - --entitlements "$MAC_DIR/Nearside.entitlements" "$APP"

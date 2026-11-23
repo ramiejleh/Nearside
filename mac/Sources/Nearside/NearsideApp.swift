@@ -365,6 +365,7 @@ final class StatusItemController: NSObject {
             self?.phoneApps.openNotification(key: key, package: pkg, label: app)
         }
         callPanel = CallPanelController(engine: engine, anchor: { [weak button] in button?.window?.frame })
+        if Webcam.available { Webcam.start(engine: engine) }
         _ = phoneApps // its hot key (⌥⌘P) works from launch
 
         // First run (or re-pairing needed): open the setup wizard straight away.

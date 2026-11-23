@@ -96,15 +96,7 @@ BUILD="$(plutil -extract CFBundleVersion raw "$APP/Contents/Info.plist")"
 
 echo "==> Signing with $SIGN_ID"
 # Inside out, never --deep: Sparkle's helpers, then the framework, then the app.
-sign() { codesign --force --options runtime --timestamp --sign "$SIGN_ID" "$@"; }
-SPARKLE="$APP/Contents/Frameworks/Sparkle.framework/Versions/B"
-sign "$SPARKLE/XPCServices/Installer.xpc"
-sign --preserve-metadata=entitlements "$SPARKLE/XPCServices/Downloader.xpc"
-sign "$SPARKLE/Autoupdate"
-sign "$SPARKLE/Updater.app"
-sign "$APP/Contents/Frameworks/Sparkle.framework"
-sign --entitlements "$MAC_DIR/Nearside.entitlements" "$APP"
-codesign --verify --strict --verbose=2 "$APP"
+"$MAC_DIR/scripts/sign-app.sh" "$APP" "$SIGN_ID" --timestamp
 
 mkdir -p "$OUT"
 rm -f "$ZIP" "$ZIP.sha256"

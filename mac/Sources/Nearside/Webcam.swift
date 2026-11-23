@@ -12,6 +12,14 @@ import VideoToolbox
 @MainActor @Observable
 final class Webcam: NSObject {
     static let extensionID = "dev.nearside.mac.camera"
+    /// Made at launch (StatusItemController); Settings shows it.
+    private(set) static var shared: Webcam?
+    /// This build has the camera extension (signed builds with the provisioning profiles).
+    static var available: Bool {
+        FileManager.default.fileExists(atPath: Bundle.main.bundlePath + "/Contents/Library/SystemExtensions/\(extensionID).systemextension")
+    }
+
+    static func start(engine: SyncEngine) { if shared == nil { shared = Webcam(engine: engine) } }
     /// Must match the extension's device id (Sources/NearsideCamera/main.swift).
     private static let deviceUID = "6E2A2B0C-4C1D-4B8E-9D55-6E6561727369"
     static let enabledKey = "Webcam.enabled"
@@ -35,7 +43,7 @@ final class Webcam: NSObject {
     }
 
     var enabled: Bool {
-        get { UserDefaults.standard.bool(forKey: Self.enabledKey) }
+        get { access(keyPath: \.status); return UserDefaults.standard.bool(forKey: Self.enabledKey) }
         set {
             UserDefaults.standard.set(newValue, forKey: Self.enabledKey)
             let request = newValue
