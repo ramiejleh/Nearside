@@ -6,6 +6,7 @@
 
 import CoreMediaIO
 import Foundation
+import Security
 import os
 
 let log = Logger(subsystem: "dev.nearside.mac.camera", category: "camera")
@@ -212,7 +213,7 @@ final class SinkSource: NSObject, CMIOExtensionStreamSource, @unchecked Sendable
     /// Only Nearside itself (by its code signature), and one writer at a time: nothing else on the
     /// Mac may put pictures in front of apps as "your phone's camera".
     func authorizedToStartStream(for client: CMIOExtensionClient) -> Bool {
-        guard client.signingID == "dev.nearside.mac" else {
+        guard client.signingID == "dev.nearside.mac", Self.isNearside(pid: client.pid) else {
             log.error("refused a sink writer that isn't Nearside (\(client.signingID ?? "unsigned", privacy: .public))")
             return false
         }
@@ -229,6 +230,18 @@ final class SinkSource: NSObject, CMIOExtensionStreamSource, @unchecked Sendable
     func stopStream() throws {
         running = false
         client = nil
+    }
+
+    /// The signing ID is only a name a program claims: also require Nearside's real signature,
+    /// Developer ID from its team. Any error refuses.
+    private static func isNearside(pid: pid_t) -> Bool {
+        var code: SecCode?
+        guard SecCodeCopyGuestWithAttributes(nil, [kSecGuestAttributePid: pid] as CFDictionary, [], &code) == errSecSuccess,
+              let code else { return false }
+        var requirement: SecRequirement?
+        let text = "anchor apple generic and identifier \"dev.nearside.mac\" and certificate leaf[subject.OU] = \"X97D6QH7RS\""
+        guard SecRequirementCreateWithString(text as CFString, [], &requirement) == errSecSuccess, let requirement else { return false }
+        return SecCodeCheckValidity(code, [], requirement) == errSecSuccess
     }
 
     private func take() {
