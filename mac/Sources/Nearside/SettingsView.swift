@@ -16,6 +16,7 @@ struct SettingsView: View {
     @AppStorage("PhoneApps.notificationClick") private var notificationClick = "phone"
     @AppStorage(PhoneQuality.key) private var phoneQuality = PhoneQuality.auto.rawValue
     @AppStorage(PhoneSound.key) private var phoneSound = "mac"
+    @AppStorage(PhoneSound.microphoneKey) private var phoneMicrophone = true
     @AppStorage(AppWindowController.keyboardLayoutKey) private var keyboardLayout = ""
     @AppStorage(AppWindowController.returnAfterKey) private var returnAfter = 0
     @State private var phoneLayouts: [String] = []
@@ -113,8 +114,13 @@ struct SettingsView: View {
                         Text("On your phone").tag("phone")
                     } label: {
                         Text("Play sound")
-                        Text("For windows opened from now on. Calls always stay on the phone.")
+                        Text("For windows opened from now on.")
                     }
+                    Toggle(isOn: $phoneMicrophone) {
+                        Text("Use this Mac's microphone")
+                        Text("While an app in a window records, for a call or a voice message. Off: it records from your phone.")
+                    }
+                    .disabled(phoneSound == "phone")
                     Picker(selection: $keyboardLayout) {
                         Text("Same as this Mac").tag("")
                         ForEach(phoneLayouts, id: \.self) { Text($0).tag($0) }

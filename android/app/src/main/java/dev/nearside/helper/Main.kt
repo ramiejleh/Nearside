@@ -138,6 +138,7 @@ object Main {
         AppLink.toMac = { msg -> client != null && send(msg) }
         AppLink.macConnected = { client != null }
         Calls.toMac = { msg -> client != null && send(msg) }
+        Calls.macConnected = { client != null }
         AppLink.start()
 
         Thread({ acceptLoop(server, token, clipboard, main) }, "accept").start()

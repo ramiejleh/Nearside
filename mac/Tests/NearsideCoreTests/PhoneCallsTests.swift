@@ -6,7 +6,6 @@ import Testing
     @Test func phoneNumbers() {
         #expect(PhoneCalls.dialable("+45 12 34 56 78") == "+4512345678")
         #expect(PhoneCalls.dialable("(555) 123-4567") == "5551234567")
-        #expect(PhoneCalls.dialable("*21#") == "*21#")
     }
 
     @Test func notPhoneNumbers() {
@@ -15,6 +14,8 @@ import Testing
         #expect(PhoneCalls.dialable("1+2345") == nil) // + only first
         #expect(PhoneCalls.dialable("tel:12345") == nil)
         #expect(PhoneCalls.dialable("***") == nil)
+        #expect(PhoneCalls.dialable("*21*5551234#") == nil) // call forwarding: never from the Mac
+        #expect(PhoneCalls.dialable("*#06#") == nil)
         #expect(PhoneCalls.dialable(String(repeating: "1", count: 21)) == nil)
         #expect(PhoneCalls.dialable("12345;67") == nil)
     }

@@ -198,6 +198,9 @@ public enum PhoneQuality: String, CaseIterable, Sendable {
 public enum PhoneSound {
     public static let key = "PhoneApps.sound"
     public static var onMac: Bool { UserDefaults.standard.string(forKey: key) != "phone" }
+    /// Apps in windows (calls, voice notes) may record from this Mac's microphone, while they record.
+    public static let microphoneKey = "PhoneApps.microphone"
+    public static var microphone: Bool { UserDefaults.standard.object(forKey: microphoneKey) as? Bool ?? true }
 }
 
 /// The phone display for a Mac window.

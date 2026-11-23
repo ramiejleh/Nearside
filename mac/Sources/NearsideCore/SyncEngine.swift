@@ -465,7 +465,7 @@ public final class SyncEngine {
             if appLinked { photos.linked() } else { phoneStatus = nil; photos.connectionLost(); calls.connectionLost() }
         case "photos", "photo-thumb":
             if recentPhotos || screenshotsToMac { photos.handle(message) }
-        case "call", "call-ended", "call-number":
+        case "call", "call-ended", "call-number", "call-muted":
             if showCalls, mirrorNotifications { calls.handle(message) }
         case "phone-status":
             guard let status = PhoneStatus(message: message) else { return }

@@ -339,7 +339,7 @@ public final class PhoneAppSession: @unchecked Sendable {
                     mic.want(on)
                     if on {
                         Task.detached {
-                            if await MicCapture.allowed(), mic.start() { return }
+                            if PhoneSound.microphone, await MicCapture.allowed(), mic.start() { return }
                             NSLog("Nearside: no microphone on this Mac; the phone's is used")
                             sending.async { try? stream.write(DisplayWire.micUnavailablePacket(), timeout: 1) }
                         }

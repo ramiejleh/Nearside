@@ -75,6 +75,9 @@ public final class PhoneCalls {
             guard let key = message["key"] as? String else { return }
             calls.removeAll { $0.key == key }
             if ongoing == nil, muted { setMuted(false) } // never leave the phone muted
+        case "call-muted":
+            // The phone kept a mute through the link dropping: show it (without sending it back).
+            muted = message["on"] as? Bool ?? false
         case "call-number":
             if let number = message["number"] as? String, let dialable = Self.dialable(number) {
                 ringingNumber = (dialable, message["dialer"] as? String ?? "")
@@ -117,18 +120,21 @@ public final class PhoneCalls {
     /// The link went: the phone sends its calls again when it's back.
     public func connectionLost() {
         calls = []
-        muted = false // the phone unmutes itself when the Mac goes
+        // The phone keeps its microphone muted until the call ends, and says so when it's back;
+        // this Mac's microphone only goes to windows, which close with the link.
+        muted = false
         ringingNumber = nil
     }
 
-    /// Digits (and a leading +, * and #) as a dialer takes them, spaces and dashes dropped; nil
-    /// for anything else. The phone checks the same.
+    /// A phone number: digits with an optional leading +, spaces and dashes dropped; nil for
+    /// anything else. The phone checks the same.
     public nonisolated static func dialable(_ text: String) -> String? {
         let kept = text.trimmingCharacters(in: .whitespacesAndNewlines)
             .filter { !" -().\u{a0}".contains($0) }
         guard (3...20).contains(kept.count) else { return nil }
+        // Never * or #: those make service codes (call forwarding, …) that change the phone's settings.
         for (i, c) in kept.enumerated() {
-            guard ("0"..."9").contains(c) || c == "*" || c == "#" || (c == "+" && i == 0) else { return nil }
+            guard ("0"..."9").contains(c) || (c == "+" && i == 0) else { return nil }
         }
         guard kept.contains(where: { ("0"..."9").contains($0) }) else { return nil }
         return kept
