@@ -31,14 +31,26 @@ import java.util.concurrent.TimeUnit
 object CameraStream {
     private const val KBPS = 8_000
 
-    private val open = java.util.Collections.synchronizedSet(HashSet<DisplayWire.Conn>())
+    private val open = HashSet<DisplayWire.Conn>() // under its own lock
+    /** The camera turned on (true) or off: the phone's in-use notification says so. Set by Main. */
+    var onChanged: (Boolean) -> Unit = {}
+    val isOn get() = synchronized(open) { open.isNotEmpty() }
 
-    fun attach(conn: DisplayWire.Conn) = Thread({
-        open += conn
-        try { run(conn) } catch (e: Exception) { Log.d("camera: failed: $e"); conn.close() } finally { open -= conn }
-    }, "camera").start()
+    /** [canStart]: the phone can show that the camera is in use (the app is linked). */
+    fun attach(conn: DisplayWire.Conn, canStart: Boolean) {
+        if (!canStart) { Log.d("camera: refused, the phone app isn't running to show it"); return conn.close() }
+        // Registered before anything runs, so a stopAll() racing this still closes it.
+        val first = synchronized(open) { open.add(conn); open.size == 1 }
+        if (first) onChanged(true)
+        Thread({
+            try { run(conn) } catch (e: Exception) { Log.d("camera: failed: $e"); conn.close() } finally {
+                val last = synchronized(open) { open.remove(conn); open.isEmpty() }
+                if (last) onChanged(false)
+            }
+        }, "camera").start()
+    }
 
-    /** The Mac that opened it went (or another took the phone): the camera turns off. */
+    /** The Mac that opened it went, another took the phone, or the phone's Stop: the camera turns off. */
     fun stopAll() = synchronized(open) { open.toList() }.forEach { it.close() }
 
     private val manager: CameraManager by lazy {
@@ -90,7 +102,9 @@ object CameraStream {
             session = capture(device, surface, range, handler) ?: return Log.d("camera: $id session failed")
             conn.send(DisplayWire.CAMERA_INFO, ByteBuffer.allocate(3).putShort(rotation.toShort()).put(if (front) 1 else 0).array())
             Log.d("camera: $id (${if (front) "front" else "back"}) ${size.width}x${size.height} @ $range fps, rotation $rotation")
-            // Mac messages: only closing matters; the stream ending stops the camera.
+            // The Mac pings every 5 s: 15 s of silence means it vanished (asleep, off the network),
+            // and the camera turns off rather than waiting for the link to notice.
+            conn.setTimeout(15_000)
             Thread({ while (!conn.isClosed && conn.read(1024) != null) {}; conn.close() }, "camera-reader").start()
             encode(conn, codec, size)
         } finally {

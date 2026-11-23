@@ -42,7 +42,7 @@ object Main {
     private val io = Executors.newSingleThreadExecutor()
     @Volatile private var client: Writer? = null
     /** The Mac using the phone now (see [serve]): its id, name and socket. */
-    private class Owner(val id: String, val name: String, val socket: LocalSocket, val writer: Writer)
+    private class Owner(val id: String, val name: String, val token: String, val socket: LocalSocket, val writer: Writer)
     @Volatile private var owner: Owner? = null
     /** The Mac's last clip and when it was set here: its echo (Android fires twice) isn't sent back. */
     @Volatile private var lastSetByMac: String? = null
@@ -116,24 +116,27 @@ object Main {
 
         // Phone apps can be used from the Mac while the phone is locked, so the phone must always
         // show that: no app link (no notification) means no new sessions, and a relink re-posts it.
-        displays = DisplayServer(canNotify = { AppLink.isLinked }) { open ->
-            AppLink.deliver(JSONObject().put("t", "display-state").put("open", open))
-        }.also { it.start() } // the app list and the system-bars host start when first needed
-        AppLink.stopApps = { displays.closeAll() }
+        displays = DisplayServer(canNotify = { AppLink.isLinked }) { _ -> sendInUse() }
+            .also { it.start() } // the app list and the system-bars host start when first needed
+        dev.nearside.helper.display.CameraStream.onChanged = { sendInUse() }
+        AppLink.stopApps = { // the phone's Stop: everything the Mac uses on it
+            displays.closeAll()
+            dev.nearside.helper.display.CameraStream.stopAll()
+            CallAudio.stop()
+        }
         AppLink.onUnlinked = {
             // Without the app, the phone shows nothing about apps open on the Mac: if it doesn't
             // come back soon (e.g. force-stopped), end the sessions.
             Thread {
                 Thread.sleep(10_000)
-                if (!AppLink.isLinked && displays.openCount > 0) {
-                    Log.d("app still unlinked; closing phone-app sessions")
+                if (!AppLink.isLinked && (displays.openCount > 0 || dev.nearside.helper.display.CameraStream.isOn)) {
+                    Log.d("app still unlinked; closing phone-app sessions and the camera")
                     displays.closeAll()
+                    dev.nearside.helper.display.CameraStream.stopAll()
                 }
             }.start()
         }
-        AppLink.onLinked = {
-            AppLink.deliver(JSONObject().put("t", "display-state").put("open", displays.openCount))
-        }
+        AppLink.onLinked = { sendInUse() }
 
         AppLink.toMac = { msg -> client != null && send(msg) }
         AppLink.macConnected = { client != null }
@@ -220,6 +223,7 @@ object Main {
                     runCatching { current.socket.close() }
                 }
                 displays.closeAll() // its windows' apps go back to the phone
+                displays.dropTickets(current.token)
                 dev.nearside.helper.CallAudio.stop()
                 dev.nearside.helper.display.CameraStream.stopAll()
             }
@@ -230,7 +234,7 @@ object Main {
         }
 
         val writer = socket.outputStream.bufferedWriter()
-        owner = Owner(macId, macName, socket, writer)
+        owner = Owner(macId, macName, token, socket, writer)
         client = writer // one Mac at a time; the newest wins
         Log.d("Mac connected (\"$macName\")")
         send(JSONObject().put("t", "hello").put("sdk", android.os.Build.VERSION.SDK_INT))
@@ -260,11 +264,15 @@ object Main {
             }
         } catch (_: IOException) {
         } finally {
-            if (client === writer) {
-                client = null
-                // The call's sound and the camera are that Mac's: they don't outlive its link.
+            // The call's sound and the camera are this Mac's: they don't outlive its link, however
+            // it ended (a failed write may already have cleared `client`).
+            if (owner?.writer === writer || client === writer) {
                 CallAudio.stop()
                 dev.nearside.helper.display.CameraStream.stopAll()
+                displays.dropTickets(token)
+            }
+            if (client === writer) {
+                client = null
                 AppLink.macConnectionChanged(false)
                 Calls.macConnectionChanged(false)
             }
@@ -302,6 +310,12 @@ object Main {
             }.start()
             "display-stop-all" -> displays.closeAll()
         }
+    }
+
+    /** The phone's "in use on your Mac" notification: apps open in windows, and the camera. */
+    private fun sendInUse() {
+        AppLink.deliver(JSONObject().put("t", "display-state").put("open", displays.openCount)
+            .put("camera", dev.nearside.helper.display.CameraStream.isOn))
     }
 
     private fun send(msg: JSONObject): Boolean {

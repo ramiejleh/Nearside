@@ -261,6 +261,9 @@ class DisplayServer(
         return ticket
     }
 
+    /** A Mac lost the phone (taken over, gone): its tickets not yet used can't open anything. */
+    fun dropTickets(token: String) { tickets.entries.removeIf { it.value.token == token } }
+
     /** HELLO: "ATD1", u16 version, u8 role, 16-byte session id, 32-byte ticket, 32-byte HMAC. */
     private fun handshake(socket: LocalSocket) {
         val conn = DisplayWire.Conn(socket)
@@ -287,7 +290,7 @@ class DisplayServer(
             when (role) {
                 DisplayWire.ROLE_CONTROL -> control(conn, sid)
                 DisplayWire.ROLE_CALL -> { conn.setTimeout(0); dev.nearside.helper.CallAudio.attach(conn) }
-                DisplayWire.ROLE_CAMERA -> CameraStream.attach(conn)
+                DisplayWire.ROLE_CAMERA -> CameraStream.attach(conn, canStart = canNotify())
                 DisplayWire.ROLE_VIDEO, DisplayWire.ROLE_AUDIO -> {
                     // The control stream's OPEN may still be starting the session.
                     var session = sessions[sid]

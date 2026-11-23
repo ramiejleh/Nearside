@@ -22,6 +22,8 @@ let package = Package(
             // bundle.sh puts Sparkle.framework in Contents/Frameworks.
             linkerSettings: [.unsafeFlags(["-Xlinker", "-rpath", "-Xlinker", "@executable_path/../Frameworks"])]
         ),
+        // The camera extension ("Nearside Camera"); bundle.sh makes it a .systemextension.
+        .executableTarget(name: "NearsideCamera"),
         .testTarget(name: "NearsideCoreTests", dependencies: ["NearsideCore", "NativeAdb"]),
     ]
 )

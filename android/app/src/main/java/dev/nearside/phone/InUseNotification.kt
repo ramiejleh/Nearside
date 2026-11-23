@@ -11,16 +11,17 @@ import dev.nearside.link.HelperConnection
 import org.json.JSONObject
 
 /**
- * "Apps open on your Mac" while any phone app is shown in a Mac window, with a Stop button. Phone
- * apps can be used from the Mac even while the phone is locked, so this must always be visible.
+ * "Apps open on your Mac" while any phone app is shown in a Mac window, and "Camera in use by your
+ * Mac" while it's a webcam, with a Stop button. Both work while the phone is locked, so this must
+ * always be visible.
  */
 object InUseNotification {
     private const val CHANNEL = "apps-on-mac"
     private const val ID = 0x41505053 // "APPS"
 
-    fun update(context: Context, open: Int) {
+    fun update(context: Context, open: Int, camera: Boolean = false) {
         val manager = context.getSystemService(NotificationManager::class.java)
-        if (open <= 0) return manager.cancel(ID)
+        if (open <= 0 && !camera) return manager.cancel(ID)
         manager.createNotificationChannel(
             NotificationChannel(CHANNEL, "Apps open on your Mac", NotificationManager.IMPORTANCE_LOW).apply {
                 description = "Shown while phone apps are open in windows on your Mac"
@@ -31,8 +32,13 @@ object InUseNotification {
         )
         val notification = Notification.Builder(context, CHANNEL)
             .setSmallIcon(dev.nearside.R.drawable.ic_notification)
-            .setContentTitle(if (open == 1) "An app is open on your Mac" else "$open apps are open on your Mac")
-            .setContentText("They can be used from your Mac while this phone is locked.")
+            .setContentTitle(when {
+                open <= 0 -> "Camera in use by your Mac"
+                open == 1 -> "An app is open on your Mac" + if (camera) ", and the camera" else ""
+                else -> "$open apps are open on your Mac" + if (camera) ", and the camera" else ""
+            })
+            .setContentText(if (open <= 0) "Your Mac uses this phone's camera as its webcam."
+                else "They can be used from your Mac while this phone is locked.")
             .setOngoing(true)
             .setVisibility(Notification.VISIBILITY_PUBLIC)
             .addAction(Notification.Action.Builder(null, "Stop", stop).build())
@@ -40,7 +46,7 @@ object InUseNotification {
         manager.notify(ID, notification)
     }
 
-    /** "Stop": every app window closes and its app comes back to the phone. */
+    /** "Stop": every app window closes and its app comes back to the phone; the camera turns off. */
     class StopReceiver : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
             HelperConnection.send(JSONObject().put("t", "apps-stop"))

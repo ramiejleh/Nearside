@@ -85,7 +85,7 @@ object HelperConnection {
             }
             "photos-watch", "photos-thumbs" -> context?.let { PhotoFeed.handle(it, msg) }
             "call-action" -> NotificationMirror.instance?.callAction(msg.optString("key"), msg.optString("do"))
-            "display-state" -> context?.let { InUseNotification.update(it, msg.optInt("open")) }
+            "display-state" -> context?.let { InUseNotification.update(it, msg.optInt("open"), msg.optBoolean("camera")) }
             "notif-action" -> NotificationMirror.instance?.runAction(
                 msg.optString("key"),
                 msg.optInt("i", -1),
