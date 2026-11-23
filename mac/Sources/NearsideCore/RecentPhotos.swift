@@ -19,11 +19,16 @@ public struct PhonePhoto: Identifiable, Equatable, Sendable {
         self.isScreenshot = isScreenshot; self.width = width; self.height = height; self.size = size
     }
 
+    /// Pictures only: anything else listed as a photo is ignored, so a click never opens a
+    /// document or program from the phone.
+    static let imageExtensions: Set<String> = ["jpg", "jpeg", "png", "heic", "heif", "webp", "gif", "dng", "avif", "bmp", "tif", "tiff"]
+
     /// nil for anything that isn't a plain file in the phone's shared storage: the path comes
     /// from the phone, and the Mac reads it with the shell's rights.
     public init?(json: [String: Any]) {
         guard let id = (json["id"] as? NSNumber)?.int64Value,
               let name = json["name"] as? String, !name.isEmpty, !name.contains("/"),
+              Self.imageExtensions.contains((name as NSString).pathExtension.lowercased()),
               let path = json["path"] as? String, path.hasPrefix("/sdcard/"), path.hasSuffix("/" + name),
               !path.split(separator: "/").contains(where: { $0 == ".." || $0 == "." }),
               let millis = (json["date"] as? NSNumber)?.doubleValue else { return nil }

@@ -35,7 +35,11 @@ struct PhotoStrip: View {
         guard opening == nil else { return }
         opening = photo.id
         Task {
-            if let url = await engine.fetchPhoto(photo) { NSWorkspace.shared.open(url) }
+            if let url = await engine.fetchPhoto(photo) {
+                // Always in Preview, never whatever app claims the file type.
+                let preview = URL(fileURLWithPath: "/System/Applications/Preview.app")
+                _ = try? await NSWorkspace.shared.open([url], withApplicationAt: preview, configuration: NSWorkspace.OpenConfiguration())
+            }
             opening = nil
         }
     }

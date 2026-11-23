@@ -93,6 +93,7 @@ public final class SyncEngine {
         didSet {
             defaults.set(screenshotsToMac, forKey: "screenshotsToMac")
             photos.setWatching("screenshots", screenshotsToMac)
+            applyPhotoAccess()
         }
     }
 
@@ -419,6 +420,8 @@ public final class SyncEngine {
         case "hello":
             state = .connected
             inUseOn = nil // the phone is ours again
+            // On every connection, so a setting changed while the phone was away reaches it.
+            applyPhotoAccess()
             guard !grantsApplied else {
                 // Texts may have changed while the phone was away (its observer only reports to a Mac).
                 if textMessages, messages.isOpen { messages.refresh() }
@@ -433,7 +436,6 @@ public final class SyncEngine {
                 }
             }
             applySmsAccess()
-            applyPhotoAccess()
         case "sms-threads", "sms-thread", "sms-sent", "sms-read", "sms-changed", "sms-error":
             messages.handle(message)
         case "file-ready":
@@ -642,15 +644,35 @@ public final class SyncEngine {
     /// user's own photos, so they're kept out of Downloads until the user drops one somewhere.
     public func fetchPhoto(_ photo: PhonePhoto) async -> URL? {
         guard state == .connected, let serial = adbSerial else { return nil }
+        if let running = photoFetches[photo.id] { return await running.value } // a drag and a click at once
         let folder = Self.photoCache.appendingPathComponent(String(photo.id), isDirectory: true)
         let local = folder.appendingPathComponent(FileNames.safe(photo.name))
         if FileManager.default.fileExists(atPath: local.path) { return local }
-        try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         let remote = photo.path
-        guard await Task.detached(operation: { Adb.pull(serial, remote: remote, to: local) }).value else { return nil }
-        Self.quarantine(local)
-        return local
+        let fetch = Task<URL?, Never> {
+            // Pulled under a temporary name and quarantined before it gets its real one, so
+            // nothing can open it unmarked.
+            let partial = folder.appendingPathComponent(".partial-\(UUID().uuidString)")
+            try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            guard await Task.detached(operation: { Adb.pull(serial, remote: remote, to: partial) }).value else {
+                try? FileManager.default.removeItem(at: partial)
+                return nil
+            }
+            Self.quarantine(partial)
+            do {
+                try FileManager.default.moveItem(at: partial, to: local)
+            } catch {
+                try? FileManager.default.removeItem(at: partial)
+                return FileManager.default.fileExists(atPath: local.path) ? local : nil
+            }
+            return local
+        }
+        photoFetches[photo.id] = fetch
+        defer { photoFetches[photo.id] = nil }
+        return await fetch.value
     }
+
+    @ObservationIgnored private var photoFetches: [Int64: Task<URL?, Never>] = [:]
 
     /// Emptied at launch: only what the user drags out of it is kept (in their own folders).
     nonisolated static let photoCache = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]

@@ -46,3 +46,13 @@ import Testing
         #expect(photos.thumbnails[5] == Data([1, 2, 3]) && photos.thumbnails[9] == nil)
     }
 }
+
+@Suite struct PhonePhotoTypeTests {
+    @Test func onlyPictures() {
+        func photo(_ name: String) -> PhonePhoto? {
+            PhonePhoto(json: ["id": 1, "name": name, "path": "/sdcard/DCIM/\(name)", "date": 0.0])
+        }
+        #expect(photo("IMG_1.JPG") != nil && photo("a.heic") != nil)
+        #expect(photo("evil.app") == nil && photo("run.command") == nil && photo("doc.pdf") == nil && photo("noext") == nil)
+    }
+}
