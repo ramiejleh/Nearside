@@ -1,5 +1,7 @@
 import AppKit
+import AVFoundation
 import CoreMediaIO
+import os
 import NearsideCore
 import SystemExtensions
 import VideoToolbox
@@ -9,6 +11,8 @@ import VideoToolbox
 /// - While an app (FaceTime, Zoom, a browser) uses Nearside Camera, the extension says so; we
 ///   then open the phone's camera and feed its picture into the extension's sink stream. When the
 ///   last app stops, the phone's camera turns off.
+private let log = Logger(subsystem: "dev.nearside.mac", category: "webcam")
+
 @MainActor @Observable
 final class Webcam: NSObject {
     static let extensionID = "dev.nearside.mac.camera"
@@ -49,7 +53,7 @@ final class Webcam: NSObject {
     init(engine: SyncEngine) {
         self.engine = engine
         super.init()
-        if UserDefaults.standard.bool(forKey: Self.enabledKey) { watch(true) }
+        if UserDefaults.standard.bool(forKey: Self.enabledKey) { askForCamera(); watch(true) }
     }
 
     var enabled: Bool {
@@ -62,7 +66,23 @@ final class Webcam: NSObject {
             request.delegate = self
             OSSystemExtensionManager.shared.submitRequest(request)
             status = newValue ? "Turning on…" : "Turning off…"
+            if newValue { askForCamera() }
             watch(newValue)
+        }
+    }
+
+    /// macOS hides every camera, Nearside Camera too, from an app without camera access: without
+    /// it we can't find the camera to feed. (We never read the Mac's own camera.)
+    private func askForCamera() {
+        switch AVCaptureDevice.authorizationStatus(for: .video) {
+        case .notDetermined:
+            AVCaptureDevice.requestAccess(for: .video) { granted in
+                log.info("camera access \(granted ? "granted" : "denied", privacy: .public)")
+            }
+        case .denied, .restricted:
+            status = "Allow Nearside in System Settings › Privacy & Security › Camera (it only uses it to find Nearside Camera)."
+        default:
+            break
         }
     }
 
@@ -78,10 +98,16 @@ final class Webcam: NSObject {
     }
 
     private func check() {
-        if device == 0 { device = Self.findDevice() }
+        if device == 0 {
+            device = Self.findDevice()
+            if device != 0 { log.info("found Nearside Camera") }
+        }
         guard device != 0 else { return }
         let used = Self.readInUse(device)
-        if used != inUse { inUse = used }
+        if used != inUse {
+            inUse = used
+            log.info("Nearside Camera \(used ? "in use" : "not in use", privacy: .public)")
+        }
         if !used { stoppedOnPhone = false } // the app let go: the next start is a new one
         if used, session == nil, !stoppedOnPhone, Date() >= retryAfter, engine.state == .connected { startFeeding() }
         if !used, session != nil { stopFeeding() }
@@ -90,6 +116,7 @@ final class Webcam: NSObject {
     private func startFeeding() {
         guard let (stream, queue) = Self.openSink(device) else {
             status = "Couldn't reach Nearside Camera."
+            log.error("couldn't open the camera's input stream")
             return
         }
         sink = stream
@@ -107,7 +134,7 @@ final class Webcam: NSObject {
         }
         session = camera
         camera.start()
-        NSLog("Nearside: webcam: an app is using Nearside Camera; phone camera on")
+        log.info("an app is using Nearside Camera; phone camera on")
     }
 
     private func stopFeeding() {
@@ -118,7 +145,7 @@ final class Webcam: NSObject {
         if sink != 0 { CMIODeviceStopStream(device, sink) }
         sink = 0
         feeder = nil
-        NSLog("Nearside: webcam: phone camera off")
+        log.info("phone camera off")
     }
 
     // MARK: Core Media I/O
@@ -159,14 +186,11 @@ final class Webcam: NSObject {
 
     private static func fourCC(_ s: String) -> UInt32 { s.utf8.reduce(0) { $0 << 8 | UInt32($1) } }
 
-    /// The sink stream (the one that takes input), started, with its queue.
+    /// The sink stream (the one that takes our frames), started, with its queue.
     private static func openSink(_ device: CMIOObjectID) -> (CMIOStreamID, CMSimpleQueue)? {
         for stream in ids(device, kCMIODevicePropertyStreams) {
-            var address = address(kCMIOStreamPropertyDirection)
-            var direction: UInt32 = 0
-            var used: UInt32 = 0
-            guard CMIOObjectGetPropertyData(stream, &address, 0, nil, UInt32(MemoryLayout<UInt32>.size), &used, &direction) == 0,
-                  direction == 1 else { continue }
+            // By name (the extension's SinkSource): which "direction" a sink reports is murky.
+            guard string(stream, kCMIOObjectPropertyName) == "Nearside Camera Input" else { continue }
             var queue: Unmanaged<CMSimpleQueue>?
             guard CMIOStreamCopyBufferQueue(stream, { _, _, _ in }, nil, &queue) == 0, let queue else { continue }
             guard CMIODeviceStartStream(device, stream) == 0 else { continue }

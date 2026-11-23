@@ -213,8 +213,10 @@ final class SinkSource: NSObject, CMIOExtensionStreamSource, @unchecked Sendable
     /// Only Nearside itself (by its code signature), and one writer at a time: nothing else on the
     /// Mac may put pictures in front of apps as "your phone's camera".
     func authorizedToStartStream(for client: CMIOExtensionClient) -> Bool {
-        guard client.signingID == "dev.nearside.mac", Self.isNearside(pid: client.pid) else {
-            log.error("refused a sink writer that isn't Nearside (\(client.signingID ?? "unsigned", privacy: .public))")
+        // The extension isn't told the client's signing ID (it reads "unknown" here): check its
+        // actual code signature instead.
+        guard Self.isNearside(pid: client.pid) else {
+            log.error("refused a sink writer that isn't Nearside (pid \(client.pid, privacy: .public))")
             return false
         }
         if running, let current = self.client, current.clientID != client.clientID { return false }
@@ -241,15 +243,20 @@ final class SinkSource: NSObject, CMIOExtensionStreamSource, @unchecked Sendable
     /// Developer ID from its team. Any error refuses.
     private static func isNearside(pid: pid_t) -> Bool {
         var code: SecCode?
-        guard SecCodeCopyGuestWithAttributes(nil, [kSecGuestAttributePid: pid] as CFDictionary, [], &code) == errSecSuccess,
-              let code else { return false }
+        let found = SecCodeCopyGuestWithAttributes(nil, [kSecGuestAttributePid: pid] as CFDictionary, [], &code)
+        guard found == errSecSuccess, let code else {
+            log.error("can't look up pid \(pid, privacy: .public)'s code: \(found, privacy: .public)")
+            return false
+        }
         var requirement: SecRequirement?
         // Developer ID specifically (its intermediate and leaf certificate fields), from this team.
         let text = "anchor apple generic and certificate 1[field.1.2.840.113635.100.6.2.6] exists"
             + " and certificate leaf[field.1.2.840.113635.100.6.1.13] exists"
             + " and identifier \"dev.nearside.mac\" and certificate leaf[subject.OU] = \"X97D6QH7RS\""
         guard SecRequirementCreateWithString(text as CFString, [], &requirement) == errSecSuccess, let requirement else { return false }
-        return SecCodeCheckValidity(code, [], requirement) == errSecSuccess
+        let valid = SecCodeCheckValidity(code, [], requirement)
+        if valid != errSecSuccess { log.error("pid \(pid, privacy: .public) isn't signed as Nearside: \(valid, privacy: .public)") }
+        return valid == errSecSuccess
     }
 
     private func take() {
