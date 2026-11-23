@@ -56,3 +56,14 @@ import Testing
         #expect(photo("evil.app") == nil && photo("run.command") == nil && photo("doc.pdf") == nil && photo("noext") == nil)
     }
 }
+
+@Suite struct LongFileNameTests {
+    @Test func shorteningKeepsTheExtension() {
+        let long = String(repeating: "a", count: 192) + ".command.jpg"
+        let safe = FileNames.safe(long)
+        #expect(safe.count <= 200)
+        #expect(safe.hasSuffix(".jpg"))
+        #expect(PhonePhoto(json: ["id": 1, "name": long, "path": "/sdcard/DCIM/\(long)", "date": 0.0])
+            .map { (FileNames.safe($0.name) as NSString).pathExtension } == "jpg")
+    }
+}

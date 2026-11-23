@@ -28,7 +28,9 @@ public struct PhonePhoto: Identifiable, Equatable, Sendable {
     public init?(json: [String: Any]) {
         guard let id = (json["id"] as? NSNumber)?.int64Value,
               let name = json["name"] as? String, !name.isEmpty, !name.contains("/"),
+              // The name as it will be saved on the Mac, not just as sent.
               Self.imageExtensions.contains((name as NSString).pathExtension.lowercased()),
+              Self.imageExtensions.contains((FileNames.safe(name) as NSString).pathExtension.lowercased()),
               let path = json["path"] as? String, path.hasPrefix("/sdcard/"), path.hasSuffix("/" + name),
               !path.split(separator: "/").contains(where: { $0 == ".." || $0 == "." }),
               let millis = (json["date"] as? NSNumber)?.doubleValue else { return nil }

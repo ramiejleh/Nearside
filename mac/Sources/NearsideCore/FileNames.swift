@@ -8,7 +8,14 @@ public enum FileNames {
             .unicodeScalars.filter { $0.value >= 0x20 && $0 != "/" && $0 != ":" }
         var cleaned = String(String.UnicodeScalarView(base)).trimmingCharacters(in: .whitespaces)
         while cleaned.hasPrefix(".") { cleaned.removeFirst() }
-        return cleaned.isEmpty ? "file" : String(cleaned.prefix(200))
+        guard !cleaned.isEmpty else { return "file" }
+        guard cleaned.count > 200 else { return cleaned }
+        // Too long: shorten the stem, never the extension (cutting "x.command.jpg" in the
+        // middle could leave a different, runnable type).
+        let ext = (cleaned as NSString).pathExtension
+        guard !ext.isEmpty, ext.count <= 16 else { return String(cleaned.prefix(200)) }
+        let stem = (cleaned as NSString).deletingPathExtension
+        return String(stem.prefix(200 - ext.count - 1)) + "." + ext
     }
 
     /// "photo.jpg", 2 → "photo (2).jpg"
