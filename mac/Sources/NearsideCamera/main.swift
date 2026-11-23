@@ -209,8 +209,14 @@ final class SinkSource: NSObject, CMIOExtensionStreamSource, @unchecked Sendable
 
     func setStreamProperties(_ streamProperties: CMIOExtensionStreamProperties) throws {}
 
-    /// Only one writer at a time.
+    /// Only Nearside itself (by its code signature), and one writer at a time: nothing else on the
+    /// Mac may put pictures in front of apps as "your phone's camera".
     func authorizedToStartStream(for client: CMIOExtensionClient) -> Bool {
+        guard client.signingID == "dev.nearside.mac" else {
+            log.error("refused a sink writer that isn't Nearside (\(client.signingID ?? "unsigned", privacy: .public))")
+            return false
+        }
+        if running, let current = self.client, current.clientID != client.clientID { return false }
         self.client = client
         return true
     }
@@ -220,7 +226,10 @@ final class SinkSource: NSObject, CMIOExtensionStreamSource, @unchecked Sendable
         take()
     }
 
-    func stopStream() throws { running = false }
+    func stopStream() throws {
+        running = false
+        client = nil
+    }
 
     private func take() {
         guard running, let client else { return }
