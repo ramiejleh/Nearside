@@ -50,7 +50,16 @@ public enum DisplayWire {
     static let mic: UInt8 = 0x34, micAudio: UInt8 = 0x35, micUnavailable: UInt8 = 0x36
     public static let micSampleRate = 48_000
 
-    public enum Role: UInt8, Sendable { case control = 1, video = 2, audio = 3, call = 4 }
+    public enum Role: UInt8, Sendable { case control = 1, video = 2, audio = 3, call = 4, camera = 5 }
+    /// The camera stream: CAMERA_OPEN (Mac → phone) u8 facing (0 back, 1 front), u16 w, u16 h,
+    /// u8 fps; CAMERA_INFO (phone → Mac) u16 rotation, u8 facing; then CONFIG / FRAME.
+    static let cameraOpen: UInt8 = 0x50, cameraInfo: UInt8 = 0x51
+
+    static func cameraOpen(front: Bool, width: Int, height: Int, fps: Int) -> Data {
+        var body = Data([front ? 1 : 0])
+        body.appendBE(UInt16(width)); body.appendBE(UInt16(height)); body.append(UInt8(clamping: fps))
+        return packet(cameraOpen, body)
+    }
     static let version: UInt16 = 1
     /// A 4K keyframe is far below this.
     public static let maxPacket = 16 * 1024 * 1024
@@ -86,6 +95,8 @@ public enum DisplayWire {
         case audio(ptsMicros: Int64, data: Data)
         /// An app in the window started (or stopped) recording: send this Mac's microphone.
         case mic(Bool)
+        /// The camera's picture needs turning this far clockwise (degrees) to be upright.
+        case cameraInfo(rotation: Int, front: Bool)
     }
 
     // MARK: Encoding
@@ -267,6 +278,8 @@ public enum DisplayWire {
             let rate = Int(p.readBE(UInt32.self, at: s)), channels = Int(p[s + 4])
             guard (8000...96000).contains(rate), (1...2).contains(channels) else { return nil }
             return .audioConfig(sampleRate: rate, channels: channels)
+        case cameraInfo where p.count >= 3:
+            return .cameraInfo(rotation: Int(p.readBE(UInt16.self, at: s)) % 360, front: p[s + 2] != 0)
         case mic where p.count >= 1:
             return .mic(p[s] != 0)
         case audio where p.count >= 8:

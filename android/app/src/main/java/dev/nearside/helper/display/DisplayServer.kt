@@ -47,6 +47,9 @@ object DisplayWire {
     const val ROLE_CONTROL = 1; const val ROLE_VIDEO = 2; const val ROLE_AUDIO = 3
     /** A phone call's sound, both ways (no window; see CallAudio). */
     const val ROLE_CALL = 4
+    /** The phone's camera, as a webcam (see CameraStream). */
+    const val ROLE_CAMERA = 5
+    const val CAMERA_OPEN = 0x50; const val CAMERA_INFO = 0x51
     const val NAV_BACK = 1; const val NAV_HOME = 2
     /** OPEN target for the phone window: our home screen, with apps opened from it on top. */
     const val HOME_TARGET = "home"
@@ -284,6 +287,7 @@ class DisplayServer(
             when (role) {
                 DisplayWire.ROLE_CONTROL -> control(conn, sid)
                 DisplayWire.ROLE_CALL -> { conn.setTimeout(0); dev.nearside.helper.CallAudio.attach(conn) }
+                DisplayWire.ROLE_CAMERA -> CameraStream.attach(conn)
                 DisplayWire.ROLE_VIDEO, DisplayWire.ROLE_AUDIO -> {
                     // The control stream's OPEN may still be starting the session.
                     var session = sessions[sid]

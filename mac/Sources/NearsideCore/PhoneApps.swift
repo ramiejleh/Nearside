@@ -139,6 +139,13 @@ extension SyncEngine {
         }
     }
 
+    /// The phone's camera (start it to turn it on).
+    public func makeCameraSession(front: Bool, width: Int = 1920, height: Int = 1080, fps: Int = 30) -> CameraSession {
+        CameraSession(front: front, width: width, height: height, fps: fps, token: Token.value) { [weak self] in
+            await self?.displayTicket()
+        }
+    }
+
     /// The phone window's session: our home screen on a display of `width`×`height` pixels.
     public func makePhoneWindowSession(width: Int, height: Int, dpi: Int) -> PhoneAppSession {
         let quality = PhoneQuality.current

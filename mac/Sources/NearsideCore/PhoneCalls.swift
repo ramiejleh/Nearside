@@ -61,15 +61,19 @@ public final class PhoneCalls {
         didSet {
             // The Phone app opened here during a phone call: talk here (closing it keeps it here;
             // "Open on Phone" moves it back).
-            if let call = ongoing, windowPackages.contains(call.package), !oldValue.contains(call.package) { wantOnMac = true }
+            if let call = ongoing, windowPackages.contains(call.package), !oldValue.contains(call.package) { wantOnMac.insert(call.key) }
             routeAudio()
         }
     }
 
     /// The phone call's sound and microphone are on this Mac (else on the phone).
     public private(set) var audioOnMac = false
-    /// Answered or placed from this Mac: its sound comes here once it connects.
-    private var wantOnMac = false
+    /// Calls (by key) answered or moved here: their sound comes here once they connect.
+    private var wantOnMac: Set<String> = []
+    /// A call placed from here, until then: the next outgoing call talks here.
+    private var placedUntil = Date.distantPast
+    /// Calls seen ringing in: never taken as the one placed from here.
+    private var seenIncoming: Set<String> = []
     /// Calls moved to the phone from here: they stay there even with the Phone app open here.
     private var movedToPhone: Set<String> = []
     /// The phone's dialer (from the helper), to tell phone calls from app calls.
@@ -84,20 +88,23 @@ public final class PhoneCalls {
 
     /// The card's button: the call's sound to this Mac, or back to the phone.
     public func moveAudio(toMac: Bool) {
-        wantOnMac = toMac
-        if let key = ongoing?.key { if toMac { movedToPhone.remove(key) } else { movedToPhone.insert(key) } }
+        if let key = ongoing?.key {
+            if toMac { wantOnMac.insert(key); movedToPhone.remove(key) } else { wantOnMac.remove(key); movedToPhone.insert(key) }
+        }
         if !toMac { setAudio(false) } else { routeAudio() }
     }
 
     /// The call stream ended on its own (the call ended, or the Mac couldn't take it).
     public func audioEnded() {
         audioOnMac = false
-        wantOnMac = false
+        if let key = ongoing?.key { wantOnMac.remove(key) }
     }
 
     private func routeAudio() {
         guard let call = ongoing, isPhoneCall(call), !audioOnMac else { return }
-        if wantOnMac || windowPackages.contains(call.package) && !movedToPhone.contains(call.key) { setAudio(true) }
+        let placedHere = !seenIncoming.contains(call.key) && Date() < placedUntil
+        if placedHere { placedUntil = .distantPast; wantOnMac.insert(call.key) }
+        if wantOnMac.contains(call.key) || windowPackages.contains(call.package) && !movedToPhone.contains(call.key) { setAudio(true) }
     }
 
     private func setAudio(_ on: Bool) {
@@ -119,14 +126,15 @@ public final class PhoneCalls {
             if call.photo == nil { call.photo = old?.photo }
             calls.removeAll { $0.key == call.key }
             calls.append(call)
+            if call.state != .ongoing { seenIncoming.insert(call.key) }
             routeAudio()
         case "call-ended":
             guard let key = message["key"] as? String else { return }
             calls.removeAll { $0.key == key }
+            wantOnMac.remove(key); movedToPhone.remove(key); seenIncoming.remove(key)
             if ongoing == nil {
                 if muted { setMuted(false) } // never leave the phone muted
                 setAudio(false)
-                wantOnMac = false
             }
         case "call-muted":
             // The phone kept a mute through the link dropping: show it (without sending it back).
@@ -154,7 +162,7 @@ public final class PhoneCalls {
 
     public func act(_ action: PhoneCall.Action, on call: PhoneCall) {
         guard call.can.contains(action) else { return }
-        if action == .answer, isPhoneCall(call) { wantOnMac = true }
+        if action == .answer, isPhoneCall(call) { wantOnMac.insert(call.key) }
         send(["t": "call-action", "key": call.key, "do": action.rawValue])
     }
 
@@ -168,7 +176,7 @@ public final class PhoneCalls {
     @discardableResult
     public func place(_ number: String) -> Bool {
         guard let dialable = Self.dialable(number) else { return false }
-        wantOnMac = true // placed here: talk here
+        placedUntil = Date().addingTimeInterval(60) // the call it starts talks here
         send(["t": "call-place", "number": dialable])
         return true
     }
@@ -182,7 +190,7 @@ public final class PhoneCalls {
     public func connectionLost() {
         calls = []
         setAudio(false) // the call stream goes with the link
-        wantOnMac = false
+        wantOnMac = []; movedToPhone = []; seenIncoming = []; placedUntil = .distantPast
         // The mute stays (fail closed): phone-app windows can outlive a brief drop, and the phone
         // says whether it's still muted when it's back ("call-muted").
         ringingNumber = nil

@@ -61,7 +61,7 @@ object Calls {
             telephony?.listen(listener, if (connected) PhoneStateListener.LISTEN_CALL_STATE else PhoneStateListener.LISTEN_NONE)
             if (!connected) ringing = null
             if (connected) toMac(JSONObject().put("t", "call-muted")
-                .put("on", runCatching { audio!!.isMicrophoneMute }.getOrDefault(mutedByMac)))
+                .put("on", if (CallAudio.active) mutedByMac else runCatching { audio!!.isMicrophoneMute }.getOrDefault(mutedByMac)))
             if (!connected && mutedByMac) unmuteWhenIdle()
         }.onFailure { Log.d("call state unavailable: ${it.cause ?: it}") }
     }
@@ -89,6 +89,11 @@ object Calls {
 
     /** Set by Main. */
     lateinit var macConnected: () -> Boolean
+
+    /** Tells the Mac whether the call is muted (what you chose, not our call-on-the-Mac mute). */
+    fun reportMute() {
+        toMac(JSONObject().put("t", "call-muted").put("on", mutedByMac))
+    }
 
     private fun mute(on: Boolean) {
         // While the call's sound is on the Mac the phone's microphone stays off whatever this says.

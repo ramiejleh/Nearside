@@ -52,7 +52,7 @@ public final class CallAudioSession: @unchecked Sendable {
             return self.stream
         }
         stream?.close()
-        mic.stop()
+        mic.want(false) // and a start still waiting on the permission prompt won't happen
         player.stop()
     }
 
@@ -68,7 +68,7 @@ public final class CallAudioSession: @unchecked Sendable {
             }
         }
         defer {
-            mic.stop()
+            mic.want(false)
             player.stop()
             stream.close()
             ended()
@@ -94,6 +94,7 @@ public final class CallAudioSession: @unchecked Sendable {
                 case let .audio(pts, data):
                     if data.isEmpty { player.silence() } else { player.play(data, ptsMicros: pts, receivedMicros: monotonicMicros()) }
                 case let .mic(on):
+                    if lock.withLock({ closed }) { break }
                     mic.want(on)
                     guard on else { break }
                     Task.detached { [mic, sending] in

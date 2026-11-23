@@ -220,6 +220,8 @@ object Main {
                     runCatching { current.socket.close() }
                 }
                 displays.closeAll() // its windows' apps go back to the phone
+                dev.nearside.helper.CallAudio.stop()
+                dev.nearside.helper.display.CameraStream.stopAll()
             }
         } catch (e: Exception) {
             Log.d("Mac hello refused: ${e.message}")
@@ -260,6 +262,9 @@ object Main {
         } finally {
             if (client === writer) {
                 client = null
+                // The call's sound and the camera are that Mac's: they don't outlive its link.
+                CallAudio.stop()
+                dev.nearside.helper.display.CameraStream.stopAll()
                 AppLink.macConnectionChanged(false)
                 Calls.macConnectionChanged(false)
             }

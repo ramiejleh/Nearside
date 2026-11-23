@@ -33,14 +33,20 @@ object CallAudio {
         private set
     @Volatile private var conn: DisplayWire.Conn? = null
 
+    /** One at a time: a new stream starts after the previous one has fully put things back. */
+    private val runner = java.util.concurrent.Executors.newSingleThreadExecutor { Thread(it, "call-audio") }
+
     /** The Mac's call stream: takes over from any earlier one. */
     fun attach(c: DisplayWire.Conn) {
         synchronized(this) {
             conn?.close()
             conn = c
         }
-        Thread({ run(c) }, "call-audio").start()
+        runner.execute { run(c) }
     }
+
+    /** The Mac that opened it went (or another took the phone): the call goes back to the phone. */
+    fun stop() = synchronized(this) { conn?.close() }
 
     private fun inCall(): Boolean =
         @Suppress("DEPRECATION") runCatching { Calls.telephony!!.callState == TelephonyManager.CALL_STATE_OFFHOOK }.getOrDefault(false)
@@ -112,6 +118,8 @@ object CallAudio {
             active = false
             runCatching { audio.isMicrophoneMute = Calls.mutedByMac }
             volume?.let { v -> runCatching { audio.setStreamVolume(AudioManager.STREAM_VOICE_CALL, v, 0) } }
+            Calls.reportMute() // the card shows what the phone's microphone is now
+            synchronized(this) { if (conn === c) conn = null }
             Log.d("call audio: back on the phone")
         }
     }

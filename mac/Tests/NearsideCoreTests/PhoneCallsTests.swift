@@ -180,6 +180,16 @@ import Testing
         #expect(calls.audioOnMac) // opening the Phone app here again is a new choice: here
     }
 
+    @Test func aPlacedCallDoesntCarryOverToAnIncomingOne() {
+        let calls = PhoneCalls()
+        var routes: [Bool] = []
+        calls.onAudioRoute = { routes.append($0) }
+        calls.place("5551234") // and it never connects
+        calls.handle(call("incoming")) // someone calls in; answered on the phone
+        calls.handle(call("ongoing"))
+        #expect(routes.isEmpty)
+    }
+
     @Test func appCallsUseTheirWindowNotTheCallStream() {
         let calls = PhoneCalls()
         var routes: [Bool] = []

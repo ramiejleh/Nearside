@@ -225,6 +225,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 NSLog("Nearside: test layouts: \(await engine.phoneKeyboardLayouts() ?? [])")
             }
         }
+        // NEARSIDE_TEST_CAMERA=back|front: the phone's camera for 4 s; logs frames, size and rotation only.
+        if let facing = ProcessInfo.processInfo.environment["NEARSIDE_TEST_CAMERA"] {
+            Task { @MainActor in
+                while engine.state != .connected { try? await Task.sleep(for: .milliseconds(300)) }
+                try? await Task.sleep(for: .seconds(1))
+                let camera = engine.makeCameraSession(front: facing == "front")
+                let count = LockedCounter()
+                let started = Date()
+                camera.onRotation = { NSLog("Nearside: test camera: rotation \($0)") }
+                camera.onFrame = { frame in
+                    if count.increment() == 1 {
+                        NSLog("Nearside: test camera: first frame after \(Int(Date().timeIntervalSince(started) * 1000)) ms, \(CVPixelBufferGetWidth(frame.image))x\(CVPixelBufferGetHeight(frame.image))")
+                    }
+                }
+                camera.start()
+                try? await Task.sleep(for: .seconds(4))
+                camera.stop()
+                NSLog("Nearside: test camera: \(count.value) frames in 4 s")
+            }
+        }
         // NEARSIDE_TEST_CALL=incoming: a ringing demo call and an ongoing one in the call panel (nothing reaches the phone).
         if let state = ProcessInfo.processInfo.environment["NEARSIDE_TEST_CALL"] {
             engine.calls.send = { _ in }
@@ -404,4 +424,12 @@ extension StatusItemController: NSPopoverDelegate {
     func popoverDidClose(_ notification: Notification) {
         engine.photos.panelClosed()
     }
+}
+
+/// A counter for test hooks, safe from any thread.
+private final class LockedCounter: @unchecked Sendable {
+    private let lock = NSLock()
+    private var n = 0
+    var value: Int { lock.withLock { n } }
+    func increment() -> Int { lock.withLock { n += 1; return n } }
 }
