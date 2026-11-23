@@ -42,9 +42,10 @@ object CameraStream {
 
     fun attach(conn: DisplayWire.Conn, canStart: Boolean) {
         if (!canStart) { Log.d("camera: refused, the phone app isn't running to show it"); return conn.close() }
-        if (android.os.SystemClock.uptimeMillis() < refusedUntil) { Log.d("camera: refused, stopped on the phone"); return conn.close() }
-        // Registered before anything runs, so a stopAll() racing this still closes it.
-        val first = synchronized(open) { open.add(conn); open.size == 1 }
+        // Checked and registered together (Stop takes the same lock), so a Stop racing this still wins.
+        val first = synchronized(open) {
+            if (android.os.SystemClock.uptimeMillis() < refusedUntil) null else { open.add(conn); open.size == 1 }
+        } ?: run { Log.d("camera: refused, stopped on the phone"); return conn.close() }
         if (first) onChanged(true)
         Thread({
             try { run(conn) } catch (e: Exception) { Log.d("camera: failed: $e"); conn.close() } finally {
@@ -58,10 +59,10 @@ object CameraStream {
     fun stopAll() = synchronized(open) { open.toList() }.forEach { it.close() }
 
     /** The phone's Stop: off, and refused for 30 s (the Mac waits for the app to start it anew). */
-    fun stoppedOnPhone() {
+    fun stoppedOnPhone() = synchronized(open) {
         refusedUntil = android.os.SystemClock.uptimeMillis() + 30_000
-        stopAll()
-    }
+        open.toList()
+    }.forEach { it.close() }
 
     private val manager: CameraManager by lazy {
         CameraManager::class.java.getDeclaredConstructor(Context::class.java).apply { isAccessible = true }
