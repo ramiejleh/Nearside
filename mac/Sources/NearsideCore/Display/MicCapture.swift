@@ -4,8 +4,8 @@ import Foundation
 /// This Mac's microphone for an app in a phone window (a call, a voice note): on only while the
 /// app records, as 20 ms chunks of 48 kHz mono 16-bit PCM.
 public final class MicCapture: @unchecked Sendable {
-    /// 20 ms of samples, on the audio thread.
-    private let onChunk: (Data) -> Void
+    /// 20 ms of samples, on the audio thread. Set before start().
+    public var onChunk: (Data) -> Void
     private let engine = AVAudioEngine()
     private let lock = NSLock()
     private var running = false
@@ -24,7 +24,7 @@ public final class MicCapture: @unchecked Sendable {
     private static let mutedLock = NSLock()
     nonisolated(unsafe) private static var _muted = false
 
-    public init(onChunk: @escaping (Data) -> Void) {
+    public init(onChunk: @escaping (Data) -> Void = { _ in }) {
         self.onChunk = onChunk
     }
 

@@ -60,7 +60,8 @@ object Calls {
             @Suppress("DEPRECATION")
             telephony?.listen(listener, if (connected) PhoneStateListener.LISTEN_CALL_STATE else PhoneStateListener.LISTEN_NONE)
             if (!connected) ringing = null
-            if (connected) toMac(JSONObject().put("t", "call-muted").put("on", mutedByMac))
+            if (connected) toMac(JSONObject().put("t", "call-muted")
+                .put("on", runCatching { audio!!.isMicrophoneMute }.getOrDefault(mutedByMac)))
             if (!connected && mutedByMac) unmuteWhenIdle()
         }.onFailure { Log.d("call state unavailable: ${it.cause ?: it}") }
     }
@@ -72,12 +73,16 @@ object Calls {
     private fun unmuteWhenIdle() {
         val main = Handler(Looper.getMainLooper())
         main.postDelayed(object : Runnable {
+            var idleChecks = 0
             override fun run() {
                 if (!mutedByMac || macConnected()) return // undone, or a Mac is back to decide
+                // Fail closed: a check that can't be made counts as "still in a call".
                 @Suppress("DEPRECATION")
-                val idle = runCatching { telephony?.callState == TelephonyManager.CALL_STATE_IDLE }.getOrDefault(true) &&
-                    runCatching { audio?.mode == android.media.AudioManager.MODE_NORMAL }.getOrDefault(true)
-                if (idle) mute(false) else main.postDelayed(this, 2000)
+                val idle = runCatching { telephony!!.callState == TelephonyManager.CALL_STATE_IDLE }.getOrDefault(false) &&
+                    runCatching { audio!!.mode == android.media.AudioManager.MODE_NORMAL }.getOrDefault(false) &&
+                    runCatching { audio!!.activeRecordingConfigurations.isEmpty() }.getOrDefault(false)
+                idleChecks = if (idle) idleChecks + 1 else 0
+                if (idleChecks >= 3) mute(false) else main.postDelayed(this, 2000)
             }
         }, 2000)
     }

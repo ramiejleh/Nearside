@@ -113,7 +113,7 @@ public final class SyncEngine {
     public var showCalls: Bool {
         didSet {
             defaults.set(showCalls, forKey: "showCalls")
-            if !showCalls { calls.connectionLost() }
+            if !showCalls { if calls.muted { calls.setMuted(false) }; calls.connectionLost() }
         }
     }
 
@@ -137,7 +137,11 @@ public final class SyncEngine {
     public var mirrorNotifications: Bool {
         didSet {
             defaults.set(mirrorNotifications, forKey: "mirrorNotifications")
-            if !mirrorNotifications { notifications.removeAll(); phoneNotifications = []; calls.connectionLost() }
+            if !mirrorNotifications {
+                notifications.removeAll(); phoneNotifications = []
+                if calls.muted { calls.setMuted(false) }
+                calls.connectionLost()
+            }
             applyNotificationAccess()
         }
     }
@@ -462,7 +466,8 @@ public final class SyncEngine {
             receiveFile(message)
         case "app":
             appLinked = message["linked"] as? Bool ?? false
-            if appLinked { photos.linked() } else { phoneStatus = nil; photos.connectionLost(); calls.connectionLost() }
+            // Calls are kept while the app relinks: its catch-up ("notif-active") prunes ended ones.
+            if appLinked { photos.linked() } else { phoneStatus = nil; photos.connectionLost() }
         case "photos", "photo-thumb":
             if recentPhotos || screenshotsToMac { photos.handle(message) }
         case "call", "call-ended", "call-number", "call-muted":
@@ -518,6 +523,7 @@ public final class SyncEngine {
         case "notif-active":
             if mirrorNotifications, !demoNotifications, let keys = message["keys"] as? [String] {
                 notifications.keepOnly(Set(keys))
+                calls.keepOnly(Set(keys))
                 phoneNotifications.removeAll { !keys.contains($0.key) }
             }
         case "notif-removed":

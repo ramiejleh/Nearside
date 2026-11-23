@@ -117,12 +117,16 @@ public final class PhoneCalls {
         return true
     }
 
+    /// The phone's call notifications still showing (after a catch-up): any other call has ended.
+    public func keepOnly(_ keys: Set<String>) {
+        for call in calls where !keys.contains(call.key) { handle(["t": "call-ended", "key": call.key]) }
+    }
+
     /// The link went: the phone sends its calls again when it's back.
     public func connectionLost() {
         calls = []
-        // The phone keeps its microphone muted until the call ends, and says so when it's back;
-        // this Mac's microphone only goes to windows, which close with the link.
-        muted = false
+        // The mute stays (fail closed): phone-app windows can outlive a brief drop, and the phone
+        // says whether it's still muted when it's back ("call-muted").
         ringingNumber = nil
     }
 
