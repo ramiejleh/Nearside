@@ -223,6 +223,11 @@ final class SinkSource: NSObject, CMIOExtensionStreamSource, @unchecked Sendable
     }
 
     func startStream() throws {
+        // Again now, not only at authorization: the process behind that pid could have changed.
+        guard let client, Self.isNearside(pid: client.pid) else {
+            self.client = nil
+            throw NSError(domain: "dev.nearside.mac.camera", code: 1, userInfo: [NSLocalizedDescriptionKey: "not Nearside"])
+        }
         running = true
         take()
     }
@@ -239,7 +244,10 @@ final class SinkSource: NSObject, CMIOExtensionStreamSource, @unchecked Sendable
         guard SecCodeCopyGuestWithAttributes(nil, [kSecGuestAttributePid: pid] as CFDictionary, [], &code) == errSecSuccess,
               let code else { return false }
         var requirement: SecRequirement?
-        let text = "anchor apple generic and identifier \"dev.nearside.mac\" and certificate leaf[subject.OU] = \"X97D6QH7RS\""
+        // Developer ID specifically (its intermediate and leaf certificate fields), from this team.
+        let text = "anchor apple generic and certificate 1[field.1.2.840.113635.100.6.2.6] exists"
+            + " and certificate leaf[field.1.2.840.113635.100.6.1.13] exists"
+            + " and identifier \"dev.nearside.mac\" and certificate leaf[subject.OU] = \"X97D6QH7RS\""
         guard SecRequirementCreateWithString(text as CFString, [], &requirement) == errSecSuccess, let requirement else { return false }
         return SecCodeCheckValidity(code, [], requirement) == errSecSuccess
     }
