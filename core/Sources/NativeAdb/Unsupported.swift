@@ -1,8 +1,9 @@
-// Placeholders where this system's sockets, mDNS and USB aren't written yet (Windows: Winsock,
-// DnsServiceBrowse, WinUSB). Same API as the Mac's; everything fails or finds nothing.
+// Placeholders where this system's sockets, mDNS and USB aren't written yet (Windows still needs
+// DnsServiceBrowse and WinUSB; its sockets are in TCPSocket+Windows.swift). Same API as the Mac's; everything fails or finds nothing.
 #if !canImport(Darwin)
 import Foundation
 
+#if !os(Windows) // Windows: TCPSocket+Windows.swift
 final class TCPSocket: Channel, @unchecked Sendable {
     init(host: String, port: UInt16, timeout: TimeInterval) throws {
         throw AdbError.connect("not on this system yet")
@@ -15,6 +16,7 @@ final class TCPSocket: Channel, @unchecked Sendable {
     func write(_ data: Data) throws { throw AdbError.closed }
     func close() {}
 }
+#endif
 
 public enum Discovery {
     public struct Service: Sendable, Equatable {
