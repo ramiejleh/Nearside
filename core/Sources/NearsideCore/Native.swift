@@ -64,7 +64,7 @@ enum Native {
 
     static var pinnedKey: Data? {
         get { UserDefaults.standard.string(forKey: pinKey).flatMap { Data(hexString: $0) } }
-        set { UserDefaults.standard.set(newValue?.hexString, forKey: pinKey) }
+        set { UserDefaults.standard.set(newValue?.hexString, forKey: pinKey); saveSettingsNow() }
     }
 
     /// Our adb identity: stock adb's key if this Mac has one (phones paired with it accept us),

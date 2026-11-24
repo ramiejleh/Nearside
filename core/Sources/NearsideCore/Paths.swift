@@ -32,6 +32,14 @@ enum Token {
     }()
 }
 
+/// Writes settings to disk now. The Mac's settings store does so by itself; Foundation's on
+/// Windows only when asked (or at a clean exit), so the pairing is saved the moment it changes.
+public func saveSettingsNow() {
+    #if !canImport(Darwin)
+    UserDefaults.standard.synchronize()
+    #endif
+}
+
 /// From the system's secure random source on every platform (arc4random_buf, BCryptGenRandom).
 func secureRandomBytes(_ count: Int) -> Data {
     var random = SystemRandomNumberGenerator()

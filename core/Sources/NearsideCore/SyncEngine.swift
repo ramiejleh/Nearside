@@ -303,7 +303,7 @@ public final class SyncEngine {
     /// Hardware serial of the one phone we work with; nothing else is ever connected to.
     private var pinnedSerial: String? {
         get { defaults.string(forKey: "phoneSerial") }
-        set { defaults.set(newValue, forKey: "phoneSerial") }
+        set { defaults.set(newValue, forKey: "phoneSerial"); saveSettingsNow() }
     }
 
     private func tick() {
@@ -846,6 +846,7 @@ public final class SyncEngine {
     /// Forget the phone and show the setup flow again.
     public func resetSetup() {
         defaults.set(false, forKey: "setupComplete")
+        saveSettingsNow()
         pinnedSerial = nil
         Native.pinnedKey = nil
         link.disconnect()
@@ -856,6 +857,7 @@ public final class SyncEngine {
 
     private func persist() {
         defaults.set(history.limit, forKey: "historyLimit")
+        saveSettingsNow()
         try? history.save(to: Paths.history)
     }
 
@@ -967,6 +969,7 @@ public final class SyncEngine {
             }
             setupSteps[4].status = .done
             defaults.set(true, forKey: "setupComplete")
+            saveSettingsNow()
             state = .searching
             adopt(phone)
             link.connect()
