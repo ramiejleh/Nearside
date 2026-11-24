@@ -62,6 +62,13 @@ public func nearside_start(_ apkPath: UnsafePointer<CChar>?, _ callback: Nearsid
             Bridge.notifications = notifications
             return notifications
         }
+        platform.videoDecoder = { codec in
+            Media.lock.withLock {
+                let decoder = BridgeDecoder(session: Media.opening, codec: codec)
+                Media.decoders[Media.opening] = decoder
+                return decoder
+            }
+        }
         Platforms.current = platform
         let engine = SyncEngine(apkURL: apk)
         engine.onArrival = { item in Bridge.emit("clip", ["id": item.id.uuidString]) }
@@ -130,7 +137,7 @@ public func nearside_command(_ json: UnsafePointer<CChar>) {
     MainActor.assumeIsolated { Commands.run(name, object) }
 }
 
-private func duplicate(_ text: String) -> UnsafeMutablePointer<CChar>? {
+func duplicate(_ text: String) -> UnsafeMutablePointer<CChar>? {
     text.withCString { source in
         let length = strlen(source) + 1
         let copy = malloc(length)?.assumingMemoryBound(to: CChar.self)

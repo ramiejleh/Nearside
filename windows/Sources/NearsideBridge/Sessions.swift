@@ -1,0 +1,185 @@
+import Foundation
+import NearsideCore
+
+// Phone windows: the phone's home screen, or one app, streamed into a window of the app. The
+// session (core's PhoneAppSession) does the protocol; the app decodes and draws the video
+// (FFmpeg and Direct3D, in C#), so packets go to it as they arrive and it reports each frame it
+// decoded back (nearside_session_frame), which drives the session's "showing" state and its
+// black-screen check.
+
+/// Video for the app, on the session's reading thread: (session, kind, codec, data, length, gen,
+/// pts µs, received µs). Kind 0: parameter sets (returns 1 if usable); 1: a frame; 2: stop.
+public typealias NearsideVideoCallback = @convention(c) (Int64, Int32, Int32, UnsafePointer<UInt8>?, Int32, UInt32, Int64, Int64) -> Int32
+
+/// The decoders, by session; shared with the reading and decoding threads.
+enum Media {
+    static let lock = NSLock()
+    nonisolated(unsafe) static var video: NearsideVideoCallback?
+    nonisolated(unsafe) static var decoders: [Int64: BridgeDecoder] = [:]
+    /// The session being made (its decoder is created with it, on the main thread).
+    nonisolated(unsafe) static var opening: Int64 = 0
+
+    static func decoder(_ session: Int64) -> BridgeDecoder? { lock.withLock { decoders[session] } }
+}
+
+/// Hands the session's video to the app.
+final class BridgeDecoder: VideoDecoding, @unchecked Sendable {
+    let session: Int64
+    let codec: DisplayWire.Codec
+    private(set) var gen: UInt32 = 0
+    var onFrame: (@Sendable (any VideoFrame) -> Void)?
+
+    init(session: Int64, codec: DisplayWire.Codec) {
+        self.session = session
+        self.codec = codec
+    }
+
+    @discardableResult func configure(parameterSets annexB: Data, gen: UInt32) -> Bool {
+        self.gen = gen
+        return send(0, annexB, gen: gen, pts: 0, received: 0) == 1
+    }
+
+    func decode(annexB: Data, gen: UInt32, ptsMicros: Int64, receivedMicros: Int64) {
+        guard gen == self.gen else { return } // from before a restart: the app's decoder has moved on
+        send(1, annexB, gen: gen, pts: ptsMicros, received: receivedMicros)
+    }
+
+    func invalidate() { send(2, Data(), gen: gen, pts: 0, received: 0) }
+
+    @discardableResult private func send(_ kind: Int32, _ data: Data, gen: UInt32, pts: Int64, received: Int64) -> Int32 {
+        guard let video = Media.lock.withLock({ Media.video }) else { return 0 }
+        return data.withUnsafeBytes { raw in
+            video(session, kind, Int32(codec.rawValue), raw.bindMemory(to: UInt8.self).baseAddress, Int32(raw.count), gen, pts, received)
+        }
+    }
+}
+
+/// A frame the app decoded (the picture stays in the app).
+struct BridgeFrame: VideoFrame {
+    let gen: UInt32
+    let ptsMicros: Int64
+    let receivedMicros: Int64
+    let black: Bool
+    func isBlack() -> Bool { black }
+}
+
+@MainActor
+enum Sessions {
+    static var all: [Int64: PhoneAppSession] = [:]
+
+    /// {"id", "size": "phone"|"foldable"|"tablet", "package"?, "activity"?, "label"?, "notification"?}
+    /// → {"width", "height", "dpi", "shownWidthDp", "shownHeightDp"}, or nil if it can't open.
+    /// The app picks the id, so it's ready for the session's video before any arrives.
+    static func open(_ c: [String: Any]) -> [String: Any]? {
+        guard let engine = Bridge.engine, engine.state == .connected,
+              let id = (c["id"] as? NSNumber)?.int64Value, id > 0, all[id] == nil else { return nil }
+        let preset = PhoneSize(rawValue: c["size"] as? String ?? "") ?? .phone
+        let dp = preset.dp(phone: PhoneInfo.screenDp)
+        let display = PhoneDisplaySize.forPreset(dp, density: PhoneInfo.densityDpi)
+        Media.lock.withLock { Media.opening = id }
+        defer { Media.lock.withLock { Media.opening = 0 } }
+        let session: PhoneAppSession
+        if let package = c["package"] as? String, let activity = c["activity"] as? String {
+            let app = PhoneApp(package: package, activity: activity, label: c["label"] as? String ?? package)
+            session = engine.makePhoneAppSession(app, width: display.width, height: display.height, dpi: display.dpi,
+                                                 notification: c["notification"] as? String)
+        } else {
+            session = engine.makePhoneWindowSession(width: display.width, height: display.height, dpi: display.dpi)
+        }
+        observe(session, id)
+        all[id] = session
+        session.start()
+        let shown = PhoneDisplaySize.shownDp(dp, statusBarDp: PhoneInfo.statusBarDp)
+        return ["width": display.width, "height": display.height, "dpi": display.dpi,
+                "shownWidthDp": Double(shown.width), "shownHeightDp": Double(shown.height)]
+    }
+
+    private static func observe(_ session: PhoneAppSession, _ id: Int64) {
+        func emit(_ kind: String, _ fields: [String: Any] = [:]) {
+            var o = fields
+            o["id"] = id
+            o["kind"] = kind
+            Bridge.emit("session", o)
+        }
+        session.onState = { state in
+            switch state {
+            case .opening: emit("state", ["state": "opening"])
+            case .showing: emit("state", ["state": "showing"])
+            case .reconnecting: emit("state", ["state": "reconnecting"])
+            case .gone(let reason): emit("state", ["state": reason == .movedToPhone ? "movedToPhone" : "exited"])
+            case .failed(let message): emit("state", ["state": "failed", "message": message])
+            case .busy: emit("state", ["state": "busy"])
+            case .closed:
+                emit("state", ["state": "closed"])
+                all[id] = nil
+                Media.lock.withLock { Media.decoders[id] = nil }
+            }
+        }
+        session.onVideoSize = { size in emit("videoSize", ["width": Int(size.width), "height": Int(size.height)]) }
+        session.onCrop = { rows in emit("crop", ["rows": rows]) }
+        session.onSecure = { on in emit("secure", ["on": on]) }
+        session.onThermal = { on in emit("thermal", ["on": on]) }
+        session.onTasks = { tasks in emit("tasks", ["tasks": tasks.map { ["id": $0.id, "package": $0.package] }]) }
+        session.onSnapshot = { task, png in emit("snapshot", ["task": task, "png": png.base64EncodedString()]) }
+    }
+
+    /// {"c": name, ...}: input and window changes. Touch and pointer positions are 0…1 within the
+    /// picture shown.
+    static func run(_ id: Int64, _ c: [String: Any]) {
+        guard let session = all[id], let name = c["c"] as? String else { return }
+        func float(_ key: String) -> Float { Float(c[key] as? Double ?? Double(c[key] as? Int ?? 0)) }
+        switch name {
+        case "touch":
+            if let action = DisplayWire.TouchAction(rawValue: UInt8(c["a"] as? Int ?? 0)) {
+                session.touch(action, pointer: UInt8(c["p"] as? Int ?? 0), x: float("x"), y: float("y"))
+            }
+        case "scroll": session.scroll(x: float("x"), y: float("y"), h: float("h"), v: float("v"))
+        case "mouse":
+            if let action = DisplayWire.MouseAction(rawValue: UInt8(c["a"] as? Int ?? 0)) {
+                session.mouse(action, x: float("x"), y: float("y"))
+            }
+        case "back": session.back()
+        case "home": session.home()
+        case "recents": session.requestRecents()
+        case "front": session.bringToFront(task: Int32(c["task"] as? Int ?? 0))
+        case "removeTask": session.remove(task: Int32(c["task"] as? Int ?? 0))
+        case "text": if let text = c["text"] as? String { session.text(text) }
+        case "paste": session.paste(c["text"] as? String)
+        case "visibility":
+            if let v = PhoneAppSession.Visibility(rawValue: UInt8(c["v"] as? Int ?? 0)) { session.setVisibility(v) }
+        case "openOnPhone": session.openOnPhone()
+        case "close": session.close()
+        default: break
+        }
+    }
+}
+
+@_cdecl("nearside_set_video")
+public func nearside_set_video(_ callback: NearsideVideoCallback) {
+    Media.lock.withLock { Media.video = callback }
+}
+
+/// Opens a phone window (see Sessions.open); returns JSON to free with nearside_free, or null.
+@_cdecl("nearside_session_open")
+public func nearside_session_open(_ json: UnsafePointer<CChar>) -> UnsafeMutablePointer<CChar>? {
+    let data = Data(String(cString: json).utf8)
+    let object = (try? JSONSerialization.jsonObject(with: data) as? [String: Any]) ?? [:]
+    nonisolated(unsafe) let request = object
+    let reply = MainActor.assumeIsolated { Sessions.open(request).map(Bridge.json) }
+    return reply.flatMap(duplicate)
+}
+
+@_cdecl("nearside_session_command")
+public func nearside_session_command(_ id: Int64, _ json: UnsafePointer<CChar>) {
+    let data = Data(String(cString: json).utf8)
+    guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return }
+    nonisolated(unsafe) let command = object
+    MainActor.assumeIsolated { Sessions.run(id, command) }
+}
+
+/// The app decoded a frame (any thread).
+@_cdecl("nearside_session_frame")
+public func nearside_session_frame(_ id: Int64, _ gen: UInt32, _ pts: Int64, _ received: Int64, _ black: Int32) {
+    guard let decoder = Media.decoder(id) else { return }
+    decoder.onFrame?(BridgeFrame(gen: gen, ptsMicros: pts, receivedMicros: received, black: black != 0))
+}

@@ -28,6 +28,7 @@ public partial class App : Application
         panel = new PanelWindow();
         panel.SetupRequested += OpenSetup;
         panel.SettingsRequested += OpenSettings;
+        panel.PhoneRequested += () => PhoneWindow.Show();
         tray = new TrayIcon(onSelect: TogglePanel, onSettings: OpenSettings, onQuit: Quit);
         EngineHost.Changed += snapshot => tray.Update(snapshot);
         SingleInstance.OnShowRequested(() => queue.TryEnqueue(() => panel.ShowNearTray(tray)));
@@ -42,7 +43,23 @@ public partial class App : Application
         notifications = new Notifications(queue);
         var apk = Path.Combine(AppContext.BaseDirectory, "phone-app.apk");
         EngineHost.Start(queue, File.Exists(apk) ? apk : null);
+        Video.VideoRouter.Install();
+        EngineHost.Event += (name, e) =>
+        {
+            if (name == "session") PhoneWindow.Route(e);
+        };
         if (EngineHost.Current.NeedsSetup) OpenSetup();
+        // --open-phone: the phone window opens once connected (for testing).
+        if (line.Contains("--open-phone"))
+        {
+            void OpenOnce(Snapshot s)
+            {
+                if (!s.Connected || !s.AppLinked) return;
+                EngineHost.Changed -= OpenOnce;
+                PhoneWindow.Show();
+            }
+            EngineHost.Changed += OpenOnce;
+        }
     }
 
     /// --demo [--setup <page> | --settings] [--shot <file.png>]: made-up content in the panel (or a

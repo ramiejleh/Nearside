@@ -23,6 +23,19 @@ internal static unsafe partial class Native
     [LibraryImport(Dll, EntryPoint = "nearside_snapshot")]
     public static partial byte* SnapshotJson();
 
+    /// Phone windows' video: (session, kind, codec, data, length, gen, pts, received) → 1 if usable.
+    [LibraryImport(Dll, EntryPoint = "nearside_set_video")]
+    public static partial void SetVideo(delegate* unmanaged<long, int, int, byte*, int, uint, long, long, int> video);
+
+    [LibraryImport(Dll, EntryPoint = "nearside_session_open", StringMarshalling = StringMarshalling.Utf8)]
+    public static partial byte* SessionOpen(string json);
+
+    [LibraryImport(Dll, EntryPoint = "nearside_session_command", StringMarshalling = StringMarshalling.Utf8)]
+    public static partial void SessionCommand(long id, string json);
+
+    [LibraryImport(Dll, EntryPoint = "nearside_session_frame")]
+    public static partial void SessionFrame(long id, uint gen, long pts, long received, int black);
+
     [LibraryImport(Dll, EntryPoint = "nearside_debug")]
     public static partial byte* Debug();
 

@@ -20,17 +20,23 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <!-- The Swift build that has the bridge: debug unless set. -->
     <SwiftConfiguration Condition="'$(SwiftConfiguration)' == ''">debug</SwiftConfiguration>
+    <!-- FFmpeg's shared build (LGPL) for this architecture: its bin folder's DLLs go next to the app. -->
+    <FFmpegDir Condition="'$(FFmpegDir)' == ''">$(USERPROFILE)\deps\ffmpeg-n8.1-latest-winarm64-lgpl-shared-8.1</FFmpegDir>
   </PropertyGroup>
 
   <ItemGroup>
     <PackageReference Include="Microsoft.WindowsAppSDK" Version="2.6.5" />
     <PackageReference Include="Microsoft.Windows.SDK.BuildTools" Version="10.0.28000.2705" />
     <PackageReference Include="QRCoder" Version="1.8.1" />
+    <PackageReference Include="FFmpeg.AutoGen" Version="8.1.0" />
+    <PackageReference Include="Vortice.Direct3D11" Version="3.8.3" />
+    <PackageReference Include="Vortice.DXGI" Version="3.8.3" />
   </ItemGroup>
 
   <ItemGroup>
     <Content Include="Assets\*.ico;Assets\*.png" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="..\.build\$(SwiftConfiguration)\NearsideBridge.dll" Link="NearsideBridge.dll"
              CopyToOutputDirectory="PreserveNewest" Condition="Exists('..\.build\$(SwiftConfiguration)\NearsideBridge.dll')" />
+    <Content Include="$(FFmpegDir)\bin\*.dll" CopyToOutputDirectory="PreserveNewest" Visible="false" />
   </ItemGroup>
 </Project>
