@@ -2,8 +2,9 @@
 // same single-use tickets and proofs as a window's streams. The camera is open exactly as long as
 // the stream is; Android shows its camera-in-use indicator meanwhile.
 //   Mac → CAMERA_OPEN: u8 facing (0 back, 1 front), u16 width, u16 height, u8 fps
-//   us  → CAMERA_INFO: u16 rotation (degrees clockwise to show it upright with the phone
-//         landscape), u8 facing; then CONFIG / FRAME as a window's video (HEVC)
+//   us  → CAMERA_INFO: u16 rotation (degrees clockwise to turn the picture upright, for how the
+//         phone is held now: sent again when that changes), u8 facing; then CONFIG / FRAME as a
+//         window's video (HEVC)
 package dev.nearside.helper.display
 
 import android.annotation.SuppressLint
@@ -88,7 +89,7 @@ object CameraStream {
         val size = pickSize(map.getOutputSizes(MediaCodec::class.java)?.toList().orEmpty(), wantW, wantH)
         val range = chars.get(CameraCharacteristics.CONTROL_AE_AVAILABLE_TARGET_FPS_RANGES).orEmpty()
             .filter { it.upper == fps }.minByOrNull { it.lower } ?: Range(fps, fps)
-        val rotation = chars.get(CameraCharacteristics.SENSOR_ORIENTATION) ?: 0
+        val sensor = chars.get(CameraCharacteristics.SENSOR_ORIENTATION) ?: 0
 
         val codec = MediaCodec.createEncoderByType(MediaFormat.MIMETYPE_VIDEO_HEVC)
         codec.configure(MediaFormat.createVideoFormat(MediaFormat.MIMETYPE_VIDEO_HEVC, size.width, size.height).apply {
@@ -108,17 +109,25 @@ object CameraStream {
         val handler = Handler(thread.looper)
         var device: CameraDevice? = null
         var session: CameraCaptureSession? = null
+        var tilt: Tilt? = null
         try {
             device = open(id, handler) ?: return Log.d("camera: $id didn't open")
             session = capture(device, surface, range, handler) ?: return Log.d("camera: $id session failed")
-            conn.send(DisplayWire.CAMERA_INFO, ByteBuffer.allocate(3).putShort(rotation.toShort()).put(if (front) 1 else 0).array())
-            Log.d("camera: $id (${if (front) "front" else "back"}) ${size.width}x${size.height} @ $range fps, rotation $rotation")
+            tilt = Tilt(handler) { held ->
+                // Android's rule for turning a camera picture upright (as for a photo's EXIF).
+                val rotation = if (front) (sensor - held + 360) % 360 else (sensor + held) % 360
+                conn.send(DisplayWire.CAMERA_INFO, ByteBuffer.allocate(3).putShort(rotation.toShort()).put(if (front) 1 else 0).array())
+                Log.d("camera: held at $held°, picture turned $rotation°")
+            }
+            tilt?.start()
+            Log.d("camera: $id (${if (front) "front" else "back"}) ${size.width}x${size.height} @ $range fps, sensor at $sensor°")
             // The Mac pings every 5 s: 15 s of silence means it vanished (asleep, off the network),
             // and the camera turns off rather than waiting for the link to notice.
             conn.setTimeout(15_000)
             Thread({ while (!conn.isClosed && conn.read(1024) != null) {}; conn.close() }, "camera-reader").start()
             encode(conn, codec, size)
         } finally {
+            tilt?.stop()
             runCatching { session?.close() }
             runCatching { device?.close() }
             runCatching { codec.stop() }; codec.release()
@@ -129,10 +138,10 @@ object CameraStream {
         }
     }
 
-    /** The largest size the encoder takes that fits in the request, 16:9 first. */
+    /** The largest size the encoder takes that fits in the request, in its shape first. */
     private fun pickSize(sizes: List<Size>, w: Int, h: Int): Size {
         val fits = sizes.filter { it.width <= w && it.height <= h }
-        return fits.filter { it.width * 9 == it.height * 16 }.maxByOrNull { it.width * it.height }
+        return fits.filter { it.width.toLong() * h == it.height.toLong() * w }.maxByOrNull { it.width * it.height }
             ?: fits.maxByOrNull { it.width * it.height } ?: sizes.minByOrNull { it.width * it.height }!!
     }
 
@@ -193,4 +202,45 @@ object CameraStream {
             conn.sendFrame(DisplayWire.FRAME, header.array(), data, n)
         }
     }
+}
+
+/**
+ * How the phone is held, from its accelerometer, in OrientationEventListener's degrees (0 upright,
+ * 90 turned clockwise, …), snapped to quarters with some leeway so it doesn't flicker between
+ * them. Only while the camera is on.
+ */
+private class Tilt(private val handler: android.os.Handler, private val onChange: (Int) -> Unit) :
+    android.hardware.SensorEventListener {
+    private val sensors = FakeContext.instance.getSystemService(android.hardware.SensorManager::class.java)
+    private var held = -1
+
+    fun start() {
+        val accelerometer = sensors?.getDefaultSensor(android.hardware.Sensor.TYPE_ACCELEROMETER)
+        if (accelerometer == null) { Log.d("camera: no accelerometer; assuming landscape"); onChange(270); return }
+        onChange(0) // until the first reading
+        held = 0
+        sensors.registerListener(this, accelerometer, android.hardware.SensorManager.SENSOR_DELAY_UI, handler)
+    }
+
+    fun stop() {
+        runCatching { sensors?.unregisterListener(this) }
+    }
+
+    override fun onSensorChanged(event: android.hardware.SensorEvent) {
+        val x = -event.values[0]
+        val y = -event.values[1]
+        val z = event.values[2]
+        if (x * x + y * y < z * z / 3) return // lying flat: keep what we had
+        val angle = Math.toDegrees(kotlin.math.atan2(-y.toDouble(), x.toDouble()))
+        val degrees = ((90 - Math.round(angle).toInt()) % 360 + 360) % 360
+        val quarter = ((degrees + 45) / 90 % 4) * 90
+        // Leeway: only once clearly there (within 30° of it), so it doesn't flicker in between.
+        val apart = kotlin.math.abs(degrees - quarter).let { minOf(it, 360 - it) }
+        if (quarter != held && apart <= 30) {
+            held = quarter
+            onChange(quarter)
+        }
+    }
+
+    override fun onAccuracyChanged(sensor: android.hardware.Sensor?, accuracy: Int) {}
 }

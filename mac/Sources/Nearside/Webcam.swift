@@ -1,10 +1,10 @@
 import AppKit
 import AVFoundation
+import CoreImage
 import CoreMediaIO
 import os
 import NearsideCore
 import SystemExtensions
-import VideoToolbox
 
 /// The phone's camera as a Mac webcam: "Nearside Camera", a camera extension inside the app.
 /// - Turning it on in Settings activates the extension (macOS asks you to allow it once).
@@ -156,7 +156,12 @@ final class Webcam: NSObject {
         sink = stream
         let feeder = SinkFeeder(queue: queue)
         self.feeder = feeder
-        let camera = engine.makeCameraSession(front: UserDefaults.standard.bool(forKey: Self.frontKey))
+        // The whole 4:3 sensor: held either way, an upright 16:9 picture can be cut from it.
+        let camera = engine.makeCameraSession(front: UserDefaults.standard.bool(forKey: Self.frontKey), width: 1920, height: 1440)
+        camera.onRotation = { degrees in
+            feeder.rotation = degrees
+            log.notice("picture turned \(degrees, privacy: .public)°")
+        }
         let frames = frames
         frames.reset()
         startedAt = Date()
@@ -281,20 +286,27 @@ extension Webcam: OSSystemExtensionRequestDelegate {
     }
 }
 
-/// Phone frames, scaled to the camera's format, into the extension's sink queue (any thread).
+/// Phone frames, turned upright and cut to the camera's 16:9 (the middle of the picture when the
+/// phone is held upright, as Continuity Camera does), into the extension's sink queue (any thread).
 private final class SinkFeeder: @unchecked Sendable {
     private let queue: CMSimpleQueue
     private let lock = NSLock()
-    private var transfer: VTPixelTransferSession?
+    private let context = CIContext(options: [.cacheIntermediates: false])
     private var pool: CVPixelBufferPool?
     private var format: CMFormatDescription?
+    private var _rotation = 0
+    /// Degrees clockwise to turn the phone's picture upright (from the phone, as it's held).
+    var rotation: Int {
+        get { lock.withLock { _rotation } }
+        set { lock.withLock { _rotation = newValue } }
+    }
+    private static let size = CGSize(width: 1920, height: 1080)
 
     init(queue: CMSimpleQueue) {
         self.queue = queue
-        VTPixelTransferSessionCreate(allocator: kCFAllocatorDefault, pixelTransferSessionOut: &transfer)
         let attributes: [CFString: Any] = [
             kCVPixelBufferPixelFormatTypeKey: kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange,
-            kCVPixelBufferWidthKey: 1920, kCVPixelBufferHeightKey: 1080,
+            kCVPixelBufferWidthKey: Int(Self.size.width), kCVPixelBufferHeightKey: Int(Self.size.height),
             kCVPixelBufferIOSurfacePropertiesKey: [:] as CFDictionary,
         ]
         CVPixelBufferPoolCreate(kCFAllocatorDefault, nil, attributes as CFDictionary, &pool)
@@ -304,11 +316,11 @@ private final class SinkFeeder: @unchecked Sendable {
         lock.lock()
         defer { lock.unlock() }
         // The extension holds one frame: a full queue means it hasn't taken the last yet; skip.
-        guard CMSimpleQueueGetCount(queue) < CMSimpleQueueGetCapacity(queue),
-              let transfer, let pool else { return }
+        guard CMSimpleQueueGetCount(queue) < CMSimpleQueueGetCapacity(queue), let pool else { return }
         var out: CVPixelBuffer?
         CVPixelBufferPoolCreatePixelBuffer(kCFAllocatorDefault, pool, &out)
-        guard let out, VTPixelTransferSessionTransferImage(transfer, from: image, to: out) == noErr else { return }
+        guard let out else { return }
+        context.render(Self.upright(image, rotation: _rotation), to: out)
         if format == nil { CMVideoFormatDescriptionCreateForImageBuffer(allocator: kCFAllocatorDefault, imageBuffer: out, formatDescriptionOut: &format) }
         guard let format else { return }
         var timing = CMSampleTimingInfo(duration: CMTime(value: 1, timescale: 30),
@@ -319,6 +331,26 @@ private final class SinkFeeder: @unchecked Sendable {
                                            sampleTiming: &timing, sampleBufferOut: &sample)
         guard let sample else { return }
         CMSimpleQueueEnqueue(queue, element: Unmanaged.passRetained(sample).toOpaque())
+    }
+
+    /// Turned upright, the middle 16:9 of it, scaled to the camera's size, at the origin.
+    static func upright(_ buffer: CVPixelBuffer, rotation: Int) -> CIImage {
+        let orientation: CGImagePropertyOrientation = switch rotation {
+        case 90: .right
+        case 180: .down
+        case 270: .left
+        default: .up
+        }
+        var image = CIImage(cvPixelBuffer: buffer).oriented(orientation)
+        image = image.transformed(by: CGAffineTransform(translationX: -image.extent.minX, y: -image.extent.minY))
+        let extent = image.extent
+        let aspect = size.width / size.height
+        let crop = extent.width / extent.height > aspect
+            ? CGRect(x: (extent.width - extent.height * aspect) / 2, y: 0, width: extent.height * aspect, height: extent.height)
+            : CGRect(x: 0, y: (extent.height - extent.width / aspect) / 2, width: extent.width, height: extent.width / aspect)
+        return image.cropped(to: crop)
+            .transformed(by: CGAffineTransform(translationX: -crop.minX, y: -crop.minY))
+            .transformed(by: CGAffineTransform(scaleX: size.width / crop.width, y: size.height / crop.height))
     }
 }
 
