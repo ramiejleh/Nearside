@@ -6,7 +6,6 @@
 
 import CoreMediaIO
 import Foundation
-import Security
 import os
 
 let log = Logger(subsystem: "dev.nearside.mac.camera", category: "camera")
@@ -22,6 +21,9 @@ enum Camera {
     static let sinkID = UUID(uuidString: "6E2A2B0C-4C1D-4B8E-9D55-73696E6B0000")!
     /// "An app is using the camera": "1" or "0" (read by Nearside).
     static let inUse = CMIOExtensionProperty(rawValue: "4cc_nuse_glob_0000")
+    /// The sink's key, presented by its writer (see SinkSource).
+    static let sinkKey = CMIOExtensionProperty(rawValue: "4cc_skey_glob_0000")
+    static let group = "X97D6QH7RS.dev.nearside.mac"
 }
 
 final class DeviceSource: NSObject, CMIOExtensionDeviceSource, @unchecked Sendable {
@@ -196,8 +198,11 @@ final class SinkSource: NSObject, CMIOExtensionStreamSource, @unchecked Sendable
     var formats: [CMIOExtensionStreamFormat] { [format] }
     var availableProperties: Set<CMIOExtensionProperty> {
         [.streamActiveFormatIndex, .streamFrameDuration, .streamSinkBufferQueueSize, .streamSinkBuffersRequiredForStartup,
-         .streamSinkBufferUnderrunCount, .streamSinkEndOfData]
+         .streamSinkBufferUnderrunCount, .streamSinkEndOfData, Camera.sinkKey]
     }
+
+    /// The key last presented (once: it's cleared when a writer is authorized or refused).
+    private var presented: String?
 
     func streamProperties(forProperties properties: Set<CMIOExtensionProperty>) throws -> CMIOExtensionStreamProperties {
         let p = CMIOExtensionStreamProperties(dictionary: [:])
@@ -208,20 +213,19 @@ final class SinkSource: NSObject, CMIOExtensionStreamSource, @unchecked Sendable
         return p
     }
 
-    func setStreamProperties(_ streamProperties: CMIOExtensionStreamProperties) throws {}
+    func setStreamProperties(_ streamProperties: CMIOExtensionStreamProperties) throws {
+        if let key = streamProperties.propertiesDictionary[Camera.sinkKey]?.value as? String { presented = key }
+    }
 
-    /// Only Nearside itself (by its code signature), and one writer at a time: nothing else on the
-    /// Mac may put pictures in front of apps as "your phone's camera".
+    /// Only Nearside: it writes a fresh random key into the app group's container (which only it
+    /// and this extension can open; a sandboxed extension can't check other processes' code
+    /// signatures, so this is the proof), presents the same key as a property, then starts. Each
+    /// key works once. One writer at a time.
     func authorizedToStartStream(for client: CMIOExtensionClient) -> Bool {
-        // The extension isn't told the client's signing ID (it reads "unknown" here): check its
-        // actual code signature instead.
-        // When it is given, though, any other name is refused outright.
-        if let id = client.signingID, id != "unknown", id != "dev.nearside.mac" {
-            log.error("refused a sink writer signed as \(id, privacy: .public)")
-            return false
-        }
-        guard Self.isNearside(pid: client.pid) else {
-            log.error("refused a sink writer that isn't Nearside (pid \(client.pid, privacy: .public))")
+        let offered = presented
+        presented = nil
+        guard let offered, !offered.isEmpty, offered == Self.storedKey() else {
+            log.error("refused a sink writer without Nearside's key (pid \(client.pid, privacy: .public))")
             return false
         }
         if running, let current = self.client, current.clientID != client.clientID { return false }
@@ -229,12 +233,16 @@ final class SinkSource: NSObject, CMIOExtensionStreamSource, @unchecked Sendable
         return true
     }
 
-    func startStream() throws {
-        // Again now, not only at authorization: the process behind that pid could have changed.
-        guard let client, Self.isNearside(pid: client.pid) else {
-            self.client = nil
-            throw NSError(domain: "dev.nearside.mac.camera", code: 1, userInfo: [NSLocalizedDescriptionKey: "not Nearside"])
+    private static func storedKey() -> String? {
+        guard let dir = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: Camera.group) else {
+            log.error("no app group container")
+            return nil
         }
+        return (try? String(contentsOf: dir.appendingPathComponent("sink-key"), encoding: .utf8))?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    func startStream() throws {
         running = true
         take()
     }
@@ -242,26 +250,6 @@ final class SinkSource: NSObject, CMIOExtensionStreamSource, @unchecked Sendable
     func stopStream() throws {
         running = false
         client = nil
-    }
-
-    /// Nearside's real signature: Developer ID, from its team, identifier dev.nearside.mac. Any
-    /// error refuses. (By process id: CMIO gives extensions no audit token; see docs/security.md.)
-    private static func isNearside(pid: pid_t) -> Bool {
-        var code: SecCode?
-        let found = SecCodeCopyGuestWithAttributes(nil, [kSecGuestAttributePid: pid] as CFDictionary, [], &code)
-        guard found == errSecSuccess, let code else {
-            log.error("can't look up pid \(pid, privacy: .public)'s code: \(found, privacy: .public)")
-            return false
-        }
-        var requirement: SecRequirement?
-        // Developer ID specifically (its intermediate and leaf certificate fields), from this team.
-        let text = "anchor apple generic and certificate 1[field.1.2.840.113635.100.6.2.6] exists"
-            + " and certificate leaf[field.1.2.840.113635.100.6.1.13] exists"
-            + " and identifier \"dev.nearside.mac\" and certificate leaf[subject.OU] = \"X97D6QH7RS\""
-        guard SecRequirementCreateWithString(text as CFString, [], &requirement) == errSecSuccess, let requirement else { return false }
-        let valid = SecCodeCheckValidity(code, [], requirement)
-        if valid != errSecSuccess { log.error("pid \(pid, privacy: .public) isn't signed as Nearside: \(valid, privacy: .public)") }
-        return valid == errSecSuccess
     }
 
     private func take() {

@@ -142,10 +142,11 @@ what a window shows to a file of the caller's choosing.
 
 ## Known limitations
 
-- Nearside Camera accepts pictures only from Nearside signed with the maintainer's Developer ID,
-  checked by process id when it connects and again when it starts. Core Media I/O gives camera
-  extensions no audit token, so a process id reused at exactly the wrong moment isn't ruled out;
-  it would take a program already running as you.
+- Nearside Camera accepts pictures only from a writer that presents the key Nearside just wrote
+  into their shared app group container (a fresh random key each time, usable once). A sandboxed
+  camera extension can't check other processes' code signatures, so this is the proof: other
+  sandboxed apps can't open that container, but a program already running unsandboxed as you
+  could read the key.
 
 - Any foreground phone app can invoke "Send to Mac" with a file of its choosing (Android's share
   sheet doesn't tell the target who started it). The notification and quarantine contain this.
