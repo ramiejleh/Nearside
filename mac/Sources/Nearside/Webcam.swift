@@ -252,7 +252,8 @@ final class Webcam: NSObject {
         guard SecRandomCopyBytes(kSecRandomDefault, bytes.count, &bytes) == errSecSuccess else { return false }
         let key = bytes.map { String(format: "%02x", $0) }.joined()
         let file = dir.appendingPathComponent("sink-key")
-        guard FileManager.default.createFile(atPath: file.path, contents: Data(key.utf8), attributes: [.posixPermissions: 0o600]) else {
+        let stored = "\(ProcessInfo.processInfo.processIdentifier):\(key)"
+        guard FileManager.default.createFile(atPath: file.path, contents: Data(stored.utf8), attributes: [.posixPermissions: 0o600]) else {
             log.error("couldn't write the camera key")
             return false
         }
@@ -263,12 +264,18 @@ final class Webcam: NSObject {
         return status == 0
     }
 
+    private static func wipeKey() {
+        guard let dir = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: "X97D6QH7RS.dev.nearside.mac") else { return }
+        try? FileManager.default.removeItem(at: dir.appendingPathComponent("sink-key"))
+    }
+
     /// The sink stream (the one that takes our frames), started, with its queue.
     private static func openSink(_ device: CMIOObjectID) -> (CMIOStreamID, CMSimpleQueue)? {
         for stream in ids(device, kCMIODevicePropertyStreams) {
             // By name (the extension's SinkSource): which "direction" a sink reports is murky.
             guard string(stream, kCMIOObjectPropertyName) == "Nearside Camera Input" else { continue }
             guard presentKey(on: stream) else { continue }
+            defer { wipeKey() } // used (or not): never left lying there
             var queue: Unmanaged<CMSimpleQueue>?
             guard CMIOStreamCopyBufferQueue(stream, { _, _, _ in }, nil, &queue) == 0, let queue else { continue }
             guard CMIODeviceStartStream(device, stream) == 0 else { continue }

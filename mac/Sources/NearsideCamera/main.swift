@@ -201,8 +201,11 @@ final class SinkSource: NSObject, CMIOExtensionStreamSource, @unchecked Sendable
          .streamSinkBufferUnderrunCount, .streamSinkEndOfData, Camera.sinkKey]
     }
 
-    /// The key last presented (once: it's cleared when a writer is authorized or refused).
+    /// The key last presented (once: it's cleared when a writer is authorized or refused), keys
+    /// already used, and the lock for them and `client`.
     private var presented: String?
+    private var usedKeys: Set<String> = []
+    private let lock = NSLock()
 
     func streamProperties(forProperties properties: Set<CMIOExtensionProperty>) throws -> CMIOExtensionStreamProperties {
         let p = CMIOExtensionStreamProperties(dictionary: [:])
@@ -221,32 +224,56 @@ final class SinkSource: NSObject, CMIOExtensionStreamSource, @unchecked Sendable
     }
 
     func setStreamProperties(_ streamProperties: CMIOExtensionStreamProperties) throws {
-        if let key = streamProperties.propertiesDictionary[Camera.sinkKey]?.value as? String { presented = key }
+        guard let state = streamProperties.propertiesDictionary[Camera.sinkKey] else { return }
+        let key = state.value as? String
+        log.notice("a writer presented a key (\(key == nil ? "unreadable" : "\(key!.count) chars", privacy: .public))")
+        lock.withLock { presented = key }
     }
 
-    /// Only Nearside: it writes a fresh random key into the app group's container (which only it
-    /// and this extension can open; a sandboxed extension can't check other processes' code
-    /// signatures, so this is the proof), presents the same key as a property, then starts. Each
-    /// key works once. One writer at a time.
+    /// Only Nearside: it writes "<its pid>:<a fresh random key>" into the app group's container
+    /// (which other sandboxed apps can't open; a sandboxed extension can't check other processes'
+    /// code signatures, so this is the proof), presents the key as a property, then starts. The
+    /// writer's pid must match, each key works once, and a known signing ID must be Nearside's.
+    /// One writer at a time.
     func authorizedToStartStream(for client: CMIOExtensionClient) -> Bool {
-        let offered = presented
-        presented = nil
-        guard let offered, !offered.isEmpty, offered == Self.storedKey() else {
-            log.error("refused a sink writer without Nearside's key (pid \(client.pid, privacy: .public))")
+        if let id = client.signingID, id != "unknown", id != "dev.nearside.mac" {
+            log.error("refused a sink writer signed as \(id, privacy: .public)")
             return false
         }
-        if running, let current = self.client, current.clientID != client.clientID { return false }
-        self.client = client
-        return true
+        return lock.withLock {
+            let offered = presented
+            presented = nil
+            guard let offered, offered.count == 64, offered.allSatisfy(\.isHexDigit), !usedKeys.contains(offered) else {
+                log.error("refused a sink writer: \(offered == nil ? "no" : "a bad or used", privacy: .public) key")
+                return false
+            }
+            guard let stored = Self.stored(), stored.key == offered, stored.pid == client.pid else {
+                log.error("refused a sink writer: its key or pid doesn't match Nearside's")
+                return false
+            }
+            usedKeys.insert(offered)
+            if running, let current = self.client, current.clientID != client.clientID { return false }
+            self.client = client
+            return true
+        }
     }
 
-    private static func storedKey() -> String? {
+    /// What Nearside wrote: its pid and the key, if the file is fresh (under a minute old).
+    private static func stored() -> (pid: pid_t, key: String)? {
         guard let dir = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: Camera.group) else {
             log.error("no app group container")
             return nil
         }
-        return (try? String(contentsOf: dir.appendingPathComponent("sink-key"), encoding: .utf8))?
-            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let file = dir.appendingPathComponent("sink-key")
+        guard let modified = (try? FileManager.default.attributesOfItem(atPath: file.path))?[.modificationDate] as? Date,
+              Date().timeIntervalSince(modified) < 60,
+              let text = try? String(contentsOf: file, encoding: .utf8) else {
+            log.error("no fresh key from Nearside")
+            return nil
+        }
+        let parts = text.trimmingCharacters(in: .whitespacesAndNewlines).split(separator: ":")
+        guard parts.count == 2, let pid = pid_t(parts[0]) else { return nil }
+        return (pid, String(parts[1]))
     }
 
     func startStream() throws {
