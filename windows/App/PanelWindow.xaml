@@ -33,12 +33,25 @@
                     </StackPanel>
                 </Border>
             </Grid>
-            <Button x:Name="SendFilesButton" HorizontalAlignment="Stretch" Click="OnSendFiles">
-                <StackPanel Orientation="Horizontal" Spacing="6">
-                    <FontIcon Glyph="&#xE724;" FontSize="13" />
-                    <TextBlock Text="Send files" FontSize="12.5" />
-                </StackPanel>
-            </Button>
+            <Grid ColumnSpacing="6">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+                <Button x:Name="SendFilesButton" HorizontalAlignment="Stretch" Click="OnSendFiles"
+                        ToolTipService.ToolTip="Send files to your phone (or drop them here)">
+                    <StackPanel Orientation="Horizontal" Spacing="6">
+                        <FontIcon Glyph="&#xE724;" FontSize="13" />
+                        <TextBlock Text="Send files" FontSize="12.5" />
+                    </StackPanel>
+                </Button>
+                <Button Grid.Column="1" HorizontalAlignment="Stretch" Click="OnSettings">
+                    <StackPanel Orientation="Horizontal" Spacing="6">
+                        <FontIcon Glyph="&#xE713;" FontSize="13" />
+                        <TextBlock Text="Settings" FontSize="12.5" />
+                    </StackPanel>
+                </Button>
+            </Grid>
         </StackPanel>
 
         <!-- Not set up yet. -->

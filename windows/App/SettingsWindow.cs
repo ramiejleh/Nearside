@@ -1,0 +1,160 @@
+using Microsoft.UI.Text;
+using Microsoft.UI.Windowing;
+using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Media;
+using Nearside.Engine;
+
+namespace Nearside;
+
+/// Nearside's settings, in sections. Only what works on Windows so far is here: settings for calls,
+/// text messages, photos and phone apps arrive with those features.
+public sealed class SettingsWindow : Window
+{
+    private readonly Choice mirror = new()
+    {
+        Title = "Mirror phone notifications",
+        Text = "Your phone's notifications appear on this PC. Clearing one here dismisses it on the phone.",
+    };
+    private readonly Choice screenshots = new()
+    {
+        Title = "New phone screenshots go to this PC",
+        Text = "Each one lands in Downloads.",
+    };
+    private readonly ComboBox historyLimit = new() { MinWidth = 130 };
+    private readonly Choice startup = new()
+    {
+        Title = "Start at sign-in",
+        Text = "Start Nearside when you sign in to Windows, so syncing is always on.",
+    };
+    private readonly Choice toast = new()
+    {
+        Title = "Hide “pasted from your clipboard” on the phone",
+        Text = "Android's own phone-wide switch: with it off, you also won't see when other apps read your clipboard.",
+    };
+    private readonly Choice battery = new()
+    {
+        Title = "Notify when the battery is low",
+        Text = "Once, at 20%, unless it's charging.",
+    };
+    private readonly TextBlock pairedWith = new() { FontSize = 13 };
+    private readonly TextBlock appLinked = new() { FontSize = 13 };
+    private readonly Button forget = new() { Content = "Set up a phone again…" };
+    private static readonly int[] Limits = [50, 200, 500];
+
+    /// The user asked to set up a phone again (after forgetting this one).
+    public event Action? SetupRequested;
+
+    public SettingsWindow()
+    {
+        Title = "Nearside settings";
+        AppWindow.SetIcon(Path.Combine(AppContext.BaseDirectory, "Assets", "Nearside.ico"));
+        SystemBackdrop = new MicaBackdrop();
+        if (AppWindow.Presenter is OverlappedPresenter presenter) presenter.IsMaximizable = false;
+
+        mirror.Toggled += on => EngineHost.Command("set", new { key = "mirrorNotifications", value = on });
+        screenshots.Toggled += on => EngineHost.Command("set", new { key = "screenshotsToPC", value = on });
+        startup.Toggled += on => Startup.IsOn = on;
+        toast.Toggled += on => EngineHost.Command("setClipboardToastHidden", new { hidden = on });
+        battery.Toggled += on => EngineHost.Command("set", new { key = "lowBatteryAlert", value = on });
+        foreach (var limit in Limits) historyLimit.Items.Add($"{limit} items");
+        historyLimit.SelectionChanged += (_, _) =>
+        {
+            var limit = Limits[Math.Max(0, historyLimit.SelectedIndex)];
+            if (limit != EngineHost.Current.Settings.HistoryLimit) EngineHost.Command("set", new { key = "historyLimit", value = limit });
+        };
+        forget.Click += async (_, _) =>
+        {
+            var dialog = new ContentDialog
+            {
+                XamlRoot = Content.XamlRoot,
+                Title = $"Forget {EngineHost.Current.PhoneName}?",
+                Content = "This PC stops syncing with it until you set it up again.",
+                PrimaryButtonText = "Forget",
+                CloseButtonText = "Cancel",
+            };
+            if (await dialog.ShowAsync() != ContentDialogResult.Primary) return;
+            EngineHost.Command("resetSetup");
+            Close();
+            SetupRequested?.Invoke();
+        };
+
+        var page = new StackPanel { Spacing = 8, Padding = new Thickness(28, 20, 28, 28), MaxWidth = 720 };
+        page.Children.Add(new TextBlock { Text = "Settings", FontSize = 28, FontWeight = FontWeights.SemiBold, Margin = new Thickness(0, 0, 0, 8) });
+        page.Children.Add(Header("Notifications"));
+        page.Children.Add(mirror);
+        page.Children.Add(Header("Photos"));
+        page.Children.Add(screenshots);
+        page.Children.Add(Header("Clipboard"));
+        page.Children.Add(Row("Keep in history", "Older items are removed as new ones arrive.", historyLimit));
+        page.Children.Add(toast);
+        page.Children.Add(Header("Phone"));
+        page.Children.Add(Row("Paired with", null, pairedWith));
+        page.Children.Add(Row("Phone app", null, appLinked));
+        page.Children.Add(battery);
+        page.Children.Add(Row("Use another phone, or pair again", null, forget));
+        page.Children.Add(Header("General"));
+        page.Children.Add(startup);
+        var version = typeof(SettingsWindow).Assembly.GetName().Version;
+        page.Children.Add(new TextBlock { Text = $"Nearside {version?.ToString(3) ?? "dev"}", FontSize = 12, Foreground = Blocks.Secondary, Margin = new Thickness(0, 12, 0, 0) });
+        Content = new ScrollViewer { Content = page };
+
+        EngineHost.Changed += Render;
+        Closed += (_, _) => EngineHost.Changed -= Render;
+        Render(EngineHost.Current);
+    }
+
+    public void ShowCentered()
+    {
+        var hwnd = Microsoft.UI.Win32Interop.GetWindowFromWindowId(AppWindow.Id);
+        var scale = Win32.GetDpiForWindow(hwnd) / 96.0;
+        AppWindow.Resize(new Windows.Graphics.SizeInt32((int)(640 * scale), (int)(720 * scale)));
+        var area = DisplayArea.GetFromWindowId(AppWindow.Id, DisplayAreaFallback.Primary).WorkArea;
+        AppWindow.Move(new Windows.Graphics.PointInt32(area.X + (area.Width - AppWindow.Size.Width) / 2,
+                                                         area.Y + (area.Height - AppWindow.Size.Height) / 2));
+        Activate();
+    }
+
+    private void Render(Snapshot s)
+    {
+        mirror.IsOn = s.Settings.MirrorNotifications;
+        screenshots.IsOn = s.Settings.ScreenshotsToPC;
+        battery.IsOn = s.Settings.LowBatteryAlert;
+        startup.IsOn = Startup.IsOn;
+        var limit = Array.IndexOf(Limits, s.Settings.HistoryLimit);
+        if (limit >= 0 && historyLimit.SelectedIndex != limit) historyLimit.SelectedIndex = limit;
+        // The phone's own switch: shown once the connected phone has said how it's set.
+        toast.Visibility = s.Connected && s.ClipboardToastHidden != null ? Visibility.Visible : Visibility.Collapsed;
+        toast.IsOn = s.ClipboardToastHidden ?? false;
+        pairedWith.Text = s.NeedsSetup ? "Nothing yet" : s.PhoneName;
+        appLinked.Text = !s.Connected ? "Not connected" : s.AppLinked ? "Linked" : "Not linked";
+        forget.IsEnabled = !s.NeedsSetup;
+    }
+
+    private static TextBlock Header(string text) => new()
+    {
+        Text = text, FontSize = 14, FontWeight = FontWeights.SemiBold, Margin = new Thickness(2, 14, 0, 2),
+    };
+
+    /// A card with a label (and a line of explanation) and a control on the right.
+    private static Border Row(string title, string? text, FrameworkElement control)
+    {
+        var words = new StackPanel { Spacing = 3, VerticalAlignment = VerticalAlignment.Center };
+        words.Children.Add(new TextBlock { Text = title, FontSize = 14, TextWrapping = TextWrapping.Wrap });
+        if (text != null) words.Children.Add(new TextBlock { Text = text, FontSize = 12.5, Foreground = Blocks.Secondary, TextWrapping = TextWrapping.Wrap });
+        var grid = new Grid { ColumnSpacing = 14 };
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        grid.Children.Add(words);
+        control.VerticalAlignment = VerticalAlignment.Center;
+        Grid.SetColumn(control, 1);
+        grid.Children.Add(control);
+        return new Border
+        {
+            Padding = new Thickness(14),
+            CornerRadius = new CornerRadius(10),
+            Background = (Brush)Application.Current.Resources["SubtleFillColorSecondaryBrush"],
+            Child = grid,
+        };
+    }
+}

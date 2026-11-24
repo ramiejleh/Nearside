@@ -14,6 +14,7 @@ namespace Nearside;
 internal sealed class Notifications
 {
     private const string PhoneGroup = "phone", LocalGroup = "local";
+    private const int MaxTracked = 20;
 
     /// Tag (Windows allows 64 characters) to the engine's key, for what's on screen.
     private readonly Dictionary<string, (string Key, DateTime Shown)> shown = [];
@@ -61,52 +62,87 @@ internal sealed class Notifications
     private void Show(JsonElement e)
     {
         var key = e.GetProperty("key").GetString()!;
-        var app = e.GetProperty("app").GetString() ?? "";
-        var title = e.GetProperty("title").GetString() ?? "";
-        var text = e.GetProperty("text").GetString() ?? "";
-        var builder = new AppNotificationBuilder()
-            .AddArgument("key", key)
-            .SetAttributionText(app)
-            .AddText(title.Length > 0 ? title : app)
-            .AddText(text);
-        if (e.TryGetProperty("icon", out var icon) && SaveIcon(e.GetProperty("package").GetString() ?? app, icon.GetString()) is { } file)
+        var app = Clean(e.GetProperty("app").GetString(), 100);
+        var title = Clean(e.GetProperty("title").GetString(), 200);
+        var text = Clean(e.GetProperty("text").GetString(), 1000);
+        var quiet = e.GetProperty("quiet").GetBoolean();
+        try
         {
-            builder.SetAppLogoOverride(new Uri(file), AppNotificationImageCrop.Default);
-        }
-        var index = 0;
-        foreach (var action in e.GetProperty("actions").EnumerateArray())
-        {
-            var label = action.GetProperty("title").GetString() ?? "";
-            var button = new AppNotificationButton(label).AddArgument("key", key).AddArgument("action", index.ToString());
-            if (action.GetProperty("reply").GetBoolean())
+            var builder = new AppNotificationBuilder()
+                .AddArgument("key", key)
+                .SetAttributionText(app)
+                .AddText(title.Length > 0 ? title : app)
+                .AddText(text);
+            if (e.TryGetProperty("icon", out var icon) && SaveIcon(e.GetProperty("package").GetString() ?? app, icon.GetString()) is { } file)
             {
-                builder.AddTextBox("reply", label, "");
-                button.SetInputId("reply");
+                builder.SetAppLogoOverride(new Uri(file), AppNotificationImageCrop.Default);
             }
-            builder.AddButton(button);
-            index++;
+            var index = 0;
+            foreach (var action in e.GetProperty("actions").EnumerateArray().Take(5)) // Windows shows up to 5 buttons
+            {
+                var label = Clean(action.GetProperty("title").GetString(), 40);
+                var button = new AppNotificationButton(label).AddArgument("key", key).AddArgument("action", index.ToString());
+                if (action.GetProperty("reply").GetBoolean())
+                {
+                    builder.AddTextBox("reply", label, "");
+                    button.SetInputId("reply");
+                }
+                builder.AddButton(button);
+                index++;
+            }
+            if (quiet) builder.MuteAudio();
+            var notification = builder.BuildNotification();
+            notification.Tag = Tag(key);
+            notification.Group = PhoneGroup;
+            notification.SuppressDisplay = quiet; // in the notification center only, no pop-up
+            AppNotificationManager.Default.Show(notification);
+            if (notification.Id == 0) return; // not shown (notifications off for Nearside)
+            shown[notification.Tag] = (key, DateTime.UtcNow);
+            // Windows keeps 20 per app and drops the oldest: those aren't cleared by the user, so
+            // they're no longer tracked (never dismissed on the phone for it).
+            foreach (var old in shown.OrderByDescending(p => p.Value.Shown).Skip(MaxTracked).Select(p => p.Key).ToList()) shown.Remove(old);
+            Log.Info($"notification shown{(quiet ? " (quiet)" : "")}, {shown.Count} on screen");
         }
-        if (e.GetProperty("quiet").GetBoolean()) builder.MuteAudio();
-        var notification = builder.BuildNotification();
-        notification.Tag = Tag(key);
-        notification.Group = PhoneGroup;
-        notification.SuppressDisplay = e.GetProperty("quiet").GetBoolean(); // quiet: in the center only, no pop-up
-        shown[notification.Tag] = (key, DateTime.UtcNow);
-        AppNotificationManager.Default.Show(notification);
-        Log.Info($"notification shown{(notification.SuppressDisplay ? " (quiet)" : "")}, {shown.Count} on screen");
+        catch (Exception error)
+        {
+            Log.Error($"a notification couldn't be shown: {error.GetType().Name}"); // no content in the log
+        }
     }
 
     private static void ShowLocal(JsonElement e)
     {
         var id = e.GetProperty("id").GetString()!;
-        var notification = new AppNotificationBuilder()
-            .AddArgument("key", id)
-            .AddText(e.GetProperty("title").GetString() ?? "")
-            .AddText(e.GetProperty("body").GetString() ?? "")
-            .BuildNotification();
-        notification.Tag = Tag(id);
-        notification.Group = LocalGroup;
-        AppNotificationManager.Default.Show(notification);
+        try
+        {
+            var notification = new AppNotificationBuilder()
+                .AddArgument("key", id)
+                .AddArgument("local", "1")
+                .AddText(Clean(e.GetProperty("title").GetString(), 200))
+                .AddText(Clean(e.GetProperty("body").GetString(), 1000))
+                .BuildNotification();
+            notification.Tag = Tag(id);
+            notification.Group = LocalGroup;
+            AppNotificationManager.Default.Show(notification);
+        }
+        catch (Exception error)
+        {
+            Log.Error($"a notification couldn't be shown: {error.GetType().Name}");
+        }
+    }
+
+    /// Text for a notification: bounded, without characters XML can't carry.
+    private static string Clean(string? text, int limit)
+    {
+        if (string.IsNullOrEmpty(text)) return "";
+        var kept = new StringBuilder(Math.Min(text.Length, limit));
+        foreach (var c in text)
+        {
+            if (kept.Length == limit) break;
+            if (c is '\t' or '\n' or '\r' || (c >= 0x20 && c != 0xFFFE && c != 0xFFFF)) kept.Append(c);
+        }
+        // Don't end on half a surrogate pair.
+        if (kept.Length > 0 && char.IsHighSurrogate(kept[^1])) kept.Length--;
+        return kept.ToString();
     }
 
     private void Remove(string key)
@@ -117,10 +153,13 @@ internal sealed class Notifications
     }
 
     /// The ones no longer in the notification center were cleared on this PC: dismiss them on the phone.
+    /// Fails closed: nothing is dismissed unless notifications are on and the center's list looks whole.
     private async Task ReconcileAsync()
     {
-        if (shown.Count == 0) return;
-        var present = (await AppNotificationManager.Default.GetAllAsync()).Select(n => n.Tag).ToHashSet();
+        if (shown.Count == 0 || !Enabled) return;
+        var all = await AppNotificationManager.Default.GetAllAsync();
+        if (!Enabled || all.Count == 0) return; // turned off meanwhile, or an empty answer: no conclusions
+        var present = all.Select(n => n.Tag).ToHashSet();
         var settled = DateTime.UtcNow.AddSeconds(-3); // just-shown ones may not be listed yet
         foreach (var (tag, entry) in shown.ToList())
         {
@@ -131,9 +170,14 @@ internal sealed class Notifications
         }
     }
 
+    private static bool Enabled => AppNotificationManager.Default.Setting == AppNotificationSetting.Enabled;
+
     private void Invoked(Dictionary<string, string> args, Dictionary<string, string> input)
     {
         if (!args.TryGetValue("key", out var key)) return;
+        // The engine treats "file:" keys as files it saved (a click reveals them): only our own
+        // notifications may carry one.
+        if (key.StartsWith("file:", StringComparison.Ordinal) && !args.ContainsKey("local")) return;
         if (args.TryGetValue("action", out var action) && int.TryParse(action, out var index))
         {
             input.TryGetValue("reply", out var text);

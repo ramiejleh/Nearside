@@ -33,6 +33,8 @@ internal static class Demo
             ],
             Unseen = ["1"],
             Transfers = [new("t1", "holiday-photos.zip", true, "inProgress", null, null)],
+            ClipboardToastHidden = false,
+            Settings = new Settings { MirrorNotifications = true, HistoryLimit = 200, LowBatteryAlert = true },
         };
     }
 }

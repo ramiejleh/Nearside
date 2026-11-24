@@ -4,25 +4,27 @@ using Nearside.Engine;
 
 namespace Nearside;
 
-/// Nearside's icon in the notification area: a click opens the panel, a right-click offers Quit.
+/// Nearside's icon in the notification area: a click opens the panel, a right-click offers
+/// Settings and Quit.
 /// It follows the taskbar's theme (white mark on a dark taskbar, black on a light one) and is
 /// outlined while the phone isn't connected, as on the Mac's menu bar.
 internal sealed unsafe class TrayIcon : IDisposable
 {
     private const uint CallbackMessage = Win32.WM_APP + 1;
     private const uint IconId = 1;
-    private const int MenuOpen = 1, MenuQuit = 2;
+    private const int MenuOpen = 1, MenuQuit = 2, MenuSettings = 3;
 
     private static TrayIcon? instance; // the window procedure's way back here (there's one icon)
-    private readonly Action onSelect, onQuit;
+    private readonly Action onSelect, onSettings, onQuit;
     private readonly uint taskbarCreated;
     private nint window, icon;
     private bool connected, added;
     private string tip = "Nearside";
 
-    public TrayIcon(Action onSelect, Action onQuit)
+    public TrayIcon(Action onSelect, Action onSettings, Action onQuit)
     {
         this.onSelect = onSelect;
+        this.onSettings = onSettings;
         this.onQuit = onQuit;
         instance = this;
         taskbarCreated = Win32.RegisterWindowMessageW("TaskbarCreated");
@@ -99,12 +101,14 @@ internal sealed unsafe class TrayIcon : IDisposable
     {
         var menu = Win32.CreatePopupMenu();
         Win32.AppendMenuW(menu, Win32.MF_STRING, MenuOpen, "Open Nearside");
+        Win32.AppendMenuW(menu, Win32.MF_STRING, MenuSettings, "Settings");
         Win32.AppendMenuW(menu, Win32.MF_SEPARATOR, 0, null);
         Win32.AppendMenuW(menu, Win32.MF_STRING, MenuQuit, "Quit Nearside");
         Win32.SetForegroundWindow(window); // or the menu won't close when clicking elsewhere
         var chosen = Win32.TrackPopupMenu(menu, Win32.TPM_RETURNCMD | Win32.TPM_RIGHTBUTTON | Win32.TPM_BOTTOMALIGN, x, y, 0, window, 0);
         Win32.DestroyMenu(menu);
         if (chosen == MenuOpen) onSelect();
+        else if (chosen == MenuSettings) onSettings();
         else if (chosen == MenuQuit) onQuit();
     }
 

@@ -53,6 +53,7 @@ enum Commands {
             case "screenshotsToPhone": engine.screenshotsToPhone = on
             case "showCalls": engine.showCalls = on
             case "ringHere": engine.ringOnMac = on
+            case "lowBatteryAlert": engine.lowBatteryAlert = on
             default: break
             }
         } else if key == "historyLimit", let limit = value as? Int, limit > 0 {

@@ -50,6 +50,7 @@ public sealed record Settings
     public bool ShowCalls { get; init; }
     public bool RingHere { get; init; }
     public int HistoryLimit { get; init; }
+    public bool LowBatteryAlert { get; init; }
 }
 
 public sealed record PhoneAppProblem(string Kind, string? Message);

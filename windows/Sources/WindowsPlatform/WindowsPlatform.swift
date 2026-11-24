@@ -21,10 +21,18 @@ public final class WindowsPlatform: Platform, @unchecked Sendable {
     @MainActor public func makeNotifications() -> any SystemNotifications { notifications?() ?? PrintedNotifications() }
     @MainActor public func makeScreenshotWatcher() -> any ScreenshotWatcher { NoScreenshots() }
     @MainActor public func watchReachability(_ changed: @escaping @MainActor () -> Void) {}
-    /// Opens the folder in Explorer with the file selected.
+    /// Opens the folder in Explorer with the file selected: only an existing file on a local drive
+    /// ("C:\..."), never a network, device or shell path.
     @MainActor public func reveal(_ url: URL) {
         #if os(Windows)
-        url.path.replacingOccurrences(of: "/", with: "\\").withCString(encodedAs: UTF16.self) { path in
+        guard url.isFileURL, FileManager.default.fileExists(atPath: url.path) else { return }
+        var path = url.path.replacingOccurrences(of: "/", with: "\\")
+        if path.hasPrefix("\\"), path.dropFirst().first?.isLetter == true, path.dropFirst(2).first == ":" {
+            path.removeFirst() // Foundation's "/C:/..." form
+        }
+        let chars = Array(path)
+        guard chars.count > 3, chars[0].isASCII, chars[0].isLetter, chars[1] == ":", chars[2] == "\\" else { return }
+        path.withCString(encodedAs: UTF16.self) { path in
             guard let item = ILCreateFromPathW(path) else { return }
             defer { ILFree(item) }
             _ = SHOpenFolderAndSelectItems(item, 0, nil, 0)

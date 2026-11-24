@@ -11,6 +11,7 @@ public partial class App : Application
     private TrayIcon? tray;
     private PanelWindow? panel;
     private SetupWindow? setup;
+    private SettingsWindow? settings;
     private Notifications? notifications;
     private DispatcherQueue? queue;
 
@@ -26,7 +27,8 @@ public partial class App : Application
         queue = DispatcherQueue.GetForCurrentThread();
         panel = new PanelWindow();
         panel.SetupRequested += OpenSetup;
-        tray = new TrayIcon(onSelect: TogglePanel, onQuit: Quit);
+        panel.SettingsRequested += OpenSettings;
+        tray = new TrayIcon(onSelect: TogglePanel, onSettings: OpenSettings, onQuit: Quit);
         EngineHost.Changed += snapshot => tray.Update(snapshot);
         SingleInstance.OnShowRequested(() => queue.TryEnqueue(() => panel.ShowNearTray(tray)));
         Log.Info("started");
@@ -43,7 +45,8 @@ public partial class App : Application
         if (EngineHost.Current.NeedsSetup) OpenSetup();
     }
 
-    /// --demo [--setup <page>] [--shot <file.png>]: made-up content in the panel (or a setup page);
+    /// --demo [--setup <page> | --settings] [--shot <file.png>]: made-up content in the panel (or a
+    /// setup page, or settings);
     /// --shot saves the window as drawn, then quits. For screenshots: nothing personal shows.
     private void RunDemo(string[] line)
     {
@@ -52,7 +55,12 @@ public partial class App : Application
         EngineHost.StartDemo(setup: page != null);
         Task saved = Task.CompletedTask;
         var shot = Value("--shot");
-        if (page != null)
+        if (line.Contains("--settings"))
+        {
+            OpenSettings();
+            if (shot != null) saved = Shots.SaveAsync(settings!, settings!.Content, shot);
+        }
+        else if (page != null)
         {
             OpenSetup();
             setup!.ShowPage(page);
@@ -75,6 +83,18 @@ public partial class App : Application
             setup.Closed += (_, _) => setup = null;
         }
         setup.ShowCentered();
+    }
+
+    private void OpenSettings()
+    {
+        panel?.HidePanel();
+        if (settings == null)
+        {
+            settings = new SettingsWindow();
+            settings.SetupRequested += OpenSetup;
+            settings.Closed += (_, _) => settings = null;
+        }
+        settings.ShowCentered();
     }
 
     private void TogglePanel()

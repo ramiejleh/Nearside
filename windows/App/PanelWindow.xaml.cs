@@ -20,6 +20,7 @@ public sealed partial class PanelWindow : Window
     private const int WidthDips = 380, HeightDips = 540;
 
     public event Action? SetupRequested;
+    public event Action? SettingsRequested;
     public bool IsShown { get; private set; }
 
     private readonly ObservableCollection<ClipRow> clips = [];
@@ -185,6 +186,7 @@ public sealed partial class PanelWindow : Window
 
     private void OnUseHere(object sender, RoutedEventArgs e) => EngineHost.Command("useHere");
     private void OnSetUp(object sender, RoutedEventArgs e) => SetupRequested?.Invoke();
+    private void OnSettings(object sender, RoutedEventArgs e) => SettingsRequested?.Invoke();
 
     private async void OnReinstall(object sender, RoutedEventArgs e)
     {
