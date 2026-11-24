@@ -91,13 +91,17 @@ extension WindowsClipboard {
     /// The formats apps add to keep a copy out of clipboard monitors, history and the cloud.
     /// Call with the clipboard open.
     static func isPrivate() -> Bool {
+        // Fails closed: anything that can't be checked counts as private.
         func format(_ name: String) -> UINT { name.withCString(encodedAs: UTF16.self) { RegisterClipboardFormatW($0) } }
-        if IsClipboardFormatAvailable(format("ExcludeClipboardContentFromMonitorProcessing")) ||
-            IsClipboardFormatAvailable(format("Clipboard Viewer Ignore")) { return true }
+        let exclude = format("ExcludeClipboardContentFromMonitorProcessing"), ignore = format("Clipboard Viewer Ignore")
+        guard exclude != 0, ignore != 0 else { return true }
+        if IsClipboardFormatAvailable(exclude) || IsClipboardFormatAvailable(ignore) { return true }
         // These two carry a DWORD: 0 means "not in history" / "not to the cloud".
         for name in ["CanIncludeInClipboardHistory", "CanUploadToCloudClipboard"] {
             let f = format(name)
-            guard IsClipboardFormatAvailable(f), let handle = GetClipboardData(f), let p = GlobalLock(handle) else { continue }
+            guard f != 0 else { return true }
+            guard IsClipboardFormatAvailable(f) else { continue }
+            guard let handle = GetClipboardData(f), GlobalSize(handle) >= 4, let p = GlobalLock(handle) else { return true }
             let allowed = p.load(as: DWORD.self)
             GlobalUnlock(handle)
             if allowed == 0 { return true }

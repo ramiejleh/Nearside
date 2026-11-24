@@ -638,16 +638,9 @@ public final class SyncEngine {
         let destination = FileNames.unique(name, in: downloads)
         let phone = phoneName
         Task {
-            let ok = await Task.detached { Adb.pull(serial, remote: remote, to: destination) }.value
+            let outcome = await Self.pullMarked(serial, remote: remote, to: destination)
             link.send(["t": "file-pulled", "id": id]) // the phone can delete its staged copy
-            guard ok else {
-                setStatus(transfer.id, .failed("Couldn't copy it from the phone."))
-                return
-            }
-            guard Self.quarantine(destination) else {
-                setStatus(transfer.id, .failed("Couldn't mark it as downloaded, so it wasn't kept."))
-                return
-            }
+            if let failure = outcome { setStatus(transfer.id, .failed(failure)); return }
             setStatus(transfer.id, .done(destination))
             notifications.showLocal(id: Self.fileNotificationPrefix + destination.path,
                                     title: "Received \(destination.lastPathComponent)",
@@ -656,11 +649,31 @@ public final class SyncEngine {
     }
 
     /// Marks a received file as downloaded, so the system checks it before anything in it can run
-    /// (any app on the phone could have sent it). If that fails the file is deleted: never kept unmarked.
+    /// (any app on the phone could have sent it). Only ever called on a file under a temporary,
+    /// non-runnable name, which is deleted if marking fails.
     nonisolated static func quarantine(_ url: URL) -> Bool {
         if Platforms.current.markDownloaded(url) { return true }
         try? FileManager.default.removeItem(at: url)
         return false
+    }
+
+    /// Pulls a phone file to `destination`: under a temporary name first, marked as downloaded,
+    /// and only then given its real name, so the real name never exists unmarked. nil when it
+    /// worked, else why not.
+    nonisolated static func pullMarked(_ serial: String, remote: String, to destination: URL) async -> String? {
+        let partial = destination.deletingLastPathComponent().appendingPathComponent(".partial-\(UUID().uuidString)")
+        guard await Task.detached(operation: { Adb.pull(serial, remote: remote, to: partial) }).value else {
+            try? FileManager.default.removeItem(at: partial)
+            return "Couldn't copy it from the phone."
+        }
+        guard quarantine(partial) else { return "Couldn't mark it as downloaded, so it wasn't kept." }
+        do {
+            try FileManager.default.moveItem(at: partial, to: destination)
+            return nil
+        } catch {
+            try? FileManager.default.removeItem(at: partial)
+            return "Couldn't save it in Downloads."
+        }
     }
 
     public func dismissTransfer(_ id: UUID) {
@@ -732,12 +745,8 @@ public final class SyncEngine {
         let destination = FileNames.unique(FileNames.safe(photo.name), in: downloads)
         let remote = photo.path, phone = phoneName
         Task {
-            guard await Task.detached(operation: { Adb.pull(serial, remote: remote, to: destination) }).value else {
-                setStatus(transfer.id, .failed("Couldn't copy it from the phone."))
-                return
-            }
-            guard Self.quarantine(destination) else {
-                setStatus(transfer.id, .failed("Couldn't mark it as downloaded, so it wasn't kept."))
+            if let failure = await Self.pullMarked(serial, remote: remote, to: destination) {
+                setStatus(transfer.id, .failed(failure))
                 return
             }
             setStatus(transfer.id, .done(destination))

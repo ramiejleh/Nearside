@@ -11,6 +11,8 @@ import Testing
 
     @Test func noTrailingDotsOrSpaces() {
         #expect(FileNames.safe("invoice.pdf.exe. . ") == "invoice.pdf.exe")
+        // Shortening a long name can't bring a trailing dot back.
+        #expect(!FileNames.safe(String(repeating: "a", count: 198) + ". .b" + String(repeating: "c", count: 20)).hasSuffix("."))
     }
 
     @Test func noDeviceNames() {
@@ -18,6 +20,8 @@ import Testing
         #expect(FileNames.safe("nul.txt") == "_nul.txt")
         #expect(FileNames.safe("COM3.log") == "_COM3.log")
         #expect(FileNames.safe("COMPUTER.txt") == "COMPUTER.txt")
+        #expect(FileNames.safe("CON .txt") == "_CON .txt")
+        #expect(FileNames.safe("conout$") == "_conout$")
     }
 }
 #endif
