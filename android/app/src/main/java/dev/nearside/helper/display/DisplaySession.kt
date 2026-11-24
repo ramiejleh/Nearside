@@ -1,4 +1,4 @@
-// One phone app shown in one Mac window: its own virtual display, a hardware HEVC encoder fed by
+// One phone app shown in one Mac window: its own virtual display, a hardware HEVC (or H.264) encoder fed by
 // that display, input injected into it, and the app's task tracked so the Mac knows when it ends.
 // Encoder setup and input injection adapted from scrcpy (Apache-2.0,
 // Copyright (C) 2018 Genymobile, Copyright (C) 2018-2026 Romain Vimont).
@@ -58,6 +58,7 @@ class DisplaySession(
     private var dpi = open.dpi
     private val fps = open.fps
     private val kbps = open.kbps
+    private val mime = DisplayWire.mime(open.codec)
     private val target = open.target
     /** The phone window: our home screen, and whatever is opened from it, on one display. */
     val isHome = target == DisplayWire.HOME_TARGET
@@ -596,7 +597,7 @@ class DisplaySession(
     // MARK: - Video
 
     private fun newEncoder(): Surface {
-        val format = MediaFormat.createVideoFormat(MediaFormat.MIMETYPE_VIDEO_HEVC, w, h).apply {
+        val format = MediaFormat.createVideoFormat(mime, w, h).apply {
             setInteger(MediaFormat.KEY_COLOR_FORMAT, MediaCodecInfo.CodecCapabilities.COLOR_FormatSurface)
             setInteger(MediaFormat.KEY_BIT_RATE, budgetKbps() * 1000)
             setInteger(MediaFormat.KEY_BITRATE_MODE, MediaCodecInfo.EncoderCapabilities.BITRATE_MODE_CBR)
@@ -617,7 +618,7 @@ class DisplaySession(
             setInteger(MediaFormat.KEY_COLOR_RANGE, MediaFormat.COLOR_RANGE_LIMITED)
             setFloat("max-fps-to-encoder", budgetFps().toFloat().also { encoderFps = it.toInt() })
         }
-        val c = MediaCodec.createEncoderByType(MediaFormat.MIMETYPE_VIDEO_HEVC)
+        val c = MediaCodec.createEncoderByType(mime)
         c.configure(format, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
         val surface = c.createInputSurface()
         c.start()

@@ -126,7 +126,7 @@ public final class PhoneAppSession: @unchecked Sendable {
                 try ctl.write(DisplayWire.packet(DisplayWire.resume))
             } else {
                 let s = lock.withLock { size }
-                try ctl.write(DisplayWire.open(width: s.width, height: s.height, dpi: s.dpi, fps: fps, kbps: kbps, target: target))
+                try ctl.write(DisplayWire.open(width: s.width, height: s.height, dpi: s.dpi, fps: fps, kbps: kbps, codec: decoder.codec, target: target))
             }
             if !soundOnMac { try ctl.write(DisplayWire.packet(DisplayWire.sound, Data([0]))) }
             let vid = try adb.open(Self.socket, window: 2 * 1024 * 1024)

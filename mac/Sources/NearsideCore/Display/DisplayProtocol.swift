@@ -52,15 +52,20 @@ public enum DisplayWire {
 
     public enum Role: UInt8, Sendable { case control = 1, video = 2, audio = 3, call = 4, camera = 5 }
     /// The camera stream: CAMERA_OPEN (Mac → phone) u8 facing (0 back, 1 front), u16 w, u16 h,
-    /// u8 fps; CAMERA_INFO (phone → Mac) u16 rotation, u8 facing; then CONFIG / FRAME.
+    /// u8 fps, u8 codec; CAMERA_INFO (phone → Mac) u16 rotation, u8 facing; then CONFIG / FRAME.
     static let cameraOpen: UInt8 = 0x50, cameraInfo: UInt8 = 0x51
 
-    static func cameraOpen(front: Bool, width: Int, height: Int, fps: Int) -> Data {
+    /// The video codec asked for in OPEN and CAMERA_OPEN. The Mac decodes HEVC; H.264 is for
+    /// computers without a hardware HEVC decoder. CONFIG then carries that codec's parameter sets.
+    public enum Codec: UInt8, Sendable { case hevc = 0, h264 = 1 }
+
+    static func cameraOpen(front: Bool, width: Int, height: Int, fps: Int, codec: Codec = .hevc) -> Data {
         var body = Data([front ? 1 : 0])
         body.appendBE(UInt16(width)); body.appendBE(UInt16(height)); body.append(UInt8(clamping: fps))
+        body.append(codec.rawValue)
         return packet(cameraOpen, body)
     }
-    static let version: UInt16 = 1
+    static let version: UInt16 = 2
     /// A 4K keyframe is far below this.
     public static let maxPacket = 16 * 1024 * 1024
 
@@ -133,10 +138,10 @@ public enum DisplayWire {
         return Data(HMAC<SHA256>.authenticationCode(for: Data(message.utf8), using: SymmetricKey(data: Data(token.utf8))))
     }
 
-    static func open(width: Int, height: Int, dpi: Int, fps: Int, kbps: Int, target: String) -> Data {
+    static func open(width: Int, height: Int, dpi: Int, fps: Int, kbps: Int, codec: Codec = .hevc, target: String) -> Data {
         var b = Data()
         b.appendBE(UInt16(width)); b.appendBE(UInt16(height)); b.appendBE(UInt16(dpi))
-        b.append(UInt8(fps)); b.appendBE(UInt32(kbps))
+        b.append(UInt8(fps)); b.appendBE(UInt32(kbps)); b.append(codec.rawValue)
         b.append(Data(target.utf8))
         return packet(open, b)
     }

@@ -82,7 +82,7 @@ public final class CameraSession: @unchecked Sendable {
                 messages.removeFirst()
                 log.notice("camera: connected to the phone")
                 // Only now, to the proven helper: which camera.
-                guard (try? stream.write(DisplayWire.cameraOpen(front: front, width: width, height: height, fps: fps))) != nil else { return }
+                guard (try? stream.write(DisplayWire.cameraOpen(front: front, width: width, height: height, fps: fps, codec: decoder.codec))) != nil else { return }
                 // Every 5 s: the phone turns its camera off after 15 s without hearing from us.
                 Thread { [weak self] in
                     while let self, !self.lock.withLock({ self.closed }) {

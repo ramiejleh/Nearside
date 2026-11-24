@@ -1,10 +1,10 @@
 // The phone's camera for the Mac (a webcam): one "camera" stream on the display socket, with the
 // same single-use tickets and proofs as a window's streams. The camera is open exactly as long as
 // the stream is; Android shows its camera-in-use indicator meanwhile.
-//   Mac → CAMERA_OPEN: u8 facing (0 back, 1 front), u16 width, u16 height, u8 fps
+//   Mac → CAMERA_OPEN: u8 facing (0 back, 1 front), u16 width, u16 height, u8 fps, u8 codec
 //   us  → CAMERA_INFO: u16 rotation (degrees clockwise to turn the picture upright, for how the
 //         phone is held now: sent again when that changes), u8 facing; then CONFIG / FRAME as a
-//         window's video (HEVC)
+//         window's video (HEVC, or H.264 if asked)
 package dev.nearside.helper.display
 
 import android.annotation.SuppressLint
@@ -79,6 +79,9 @@ object CameraStream {
         val wantW = b.short.toInt() and 0xffff
         val wantH = b.short.toInt() and 0xffff
         val fps = (b.get().toInt() and 0xff).coerceIn(5, 60)
+        val wanted = if (body.size >= 7) b.get().toInt() and 0xff else DisplayWire.CODEC_HEVC
+        if (wanted != DisplayWire.CODEC_HEVC && wanted != DisplayWire.CODEC_H264) return conn.close()
+        val mime = DisplayWire.mime(wanted)
         conn.setTimeout(0)
 
         val facing = if (front) CameraCharacteristics.LENS_FACING_FRONT else CameraCharacteristics.LENS_FACING_BACK
@@ -91,8 +94,8 @@ object CameraStream {
             .filter { it.upper == fps }.minByOrNull { it.lower } ?: Range(fps, fps)
         val sensor = chars.get(CameraCharacteristics.SENSOR_ORIENTATION) ?: 0
 
-        val codec = MediaCodec.createEncoderByType(MediaFormat.MIMETYPE_VIDEO_HEVC)
-        codec.configure(MediaFormat.createVideoFormat(MediaFormat.MIMETYPE_VIDEO_HEVC, size.width, size.height).apply {
+        val codec = MediaCodec.createEncoderByType(mime)
+        codec.configure(MediaFormat.createVideoFormat(mime, size.width, size.height).apply {
             setInteger(MediaFormat.KEY_COLOR_FORMAT, MediaCodecInfo.CodecCapabilities.COLOR_FormatSurface)
             setInteger(MediaFormat.KEY_BIT_RATE, KBPS * 1000)
             setInteger(MediaFormat.KEY_FRAME_RATE, fps)

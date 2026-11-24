@@ -149,7 +149,7 @@ object SmsBridge {
         val parts = sms.divideMessage(text)
         if (parts.size == 1) sms.sendTextMessage(address, null, text, null, null)
         else sms.sendMultipartTextMessage(address, null, parts, null, null)
-        Status.lastEvent = "sent an SMS from the Mac"
+        Status.lastEvent = "sent an SMS from your ${Desktop.name(context)}"
         return result.put("ok", true)
     }
 

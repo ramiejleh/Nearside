@@ -24,6 +24,22 @@ struct DisplayProtocolTests {
         ])
     }
 
+    @Test func openAndCameraOpenCarryTheCodec() {
+        // OPEN: u16 w, u16 h, u16 dpi, u8 fps, u32 kbps, u8 codec, utf8 target (the phone's DisplayWire.Open).
+        let open = DisplayWire.open(width: 1080, height: 2400, dpi: 420, fps: 60, kbps: 12_000, codec: .h264, target: "home")
+        let body = Array(open.dropFirst(6))
+        #expect(open[0] == DisplayWire.open)
+        #expect(body[0..<11] == [0x04, 0x38, 0x09, 0x60, 0x01, 0xA4, 60, 0, 0, 0x2E, 0xE0])
+        #expect(body[11] == 1)
+        #expect(String(decoding: body[12...], as: UTF8.self) == "home")
+        #expect(DisplayWire.open(width: 1080, height: 2400, dpi: 420, fps: 60, kbps: 12_000, target: "home").dropFirst(6)[6 + 11] == 0)
+
+        // CAMERA_OPEN: u8 facing, u16 w, u16 h, u8 fps, u8 codec.
+        #expect(Array(DisplayWire.cameraOpen(front: true, width: 1920, height: 1440, fps: 30).dropFirst(6)) == [1, 0x07, 0x80, 0x05, 0xA0, 30, 0])
+        #expect(DisplayWire.cameraOpen(front: false, width: 1920, height: 1440, fps: 30, codec: .h264).last == 1)
+        #expect(DisplayWire.version == 2)
+    }
+
     @Test func dropsPacketsTooShortForTheirType() {
         var reader = DisplayWire.Reader()
         let short = packet(DisplayWire.frame, [0, 0, 0, 1]) + packet(DisplayWire.pong, [1, 2, 3])

@@ -1,5 +1,6 @@
 package dev.nearside.phone
 
+import dev.nearside.Desktop
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -23,8 +24,8 @@ object InUseNotification {
         val manager = context.getSystemService(NotificationManager::class.java)
         if (open <= 0 && !camera) return manager.cancel(ID)
         manager.createNotificationChannel(
-            NotificationChannel(CHANNEL, "Apps open on your Mac", NotificationManager.IMPORTANCE_LOW).apply {
-                description = "Shown while phone apps are open in windows on your Mac"
+            NotificationChannel(CHANNEL, "Apps open on your ${Desktop.name(context)}", NotificationManager.IMPORTANCE_LOW).apply {
+                description = "Shown while phone apps are open in windows on your ${Desktop.name(context)}"
             },
         )
         val stop = PendingIntent.getBroadcast(
@@ -33,12 +34,12 @@ object InUseNotification {
         val notification = Notification.Builder(context, CHANNEL)
             .setSmallIcon(dev.nearside.R.drawable.ic_notification)
             .setContentTitle(when {
-                open <= 0 -> "Camera in use by your Mac"
-                open == 1 -> "An app is open on your Mac" + if (camera) ", and the camera" else ""
-                else -> "$open apps are open on your Mac" + if (camera) ", and the camera" else ""
+                open <= 0 -> "Camera in use by your ${Desktop.name(context)}"
+                open == 1 -> "An app is open on your ${Desktop.name(context)}" + if (camera) ", and the camera" else ""
+                else -> "$open apps are open on your ${Desktop.name(context)}" + if (camera) ", and the camera" else ""
             })
-            .setContentText(if (open <= 0) "Your Mac uses this phone's camera as its webcam."
-                else "They can be used from your Mac while this phone is locked.")
+            .setContentText(if (open <= 0) "Your ${Desktop.name(context)} uses this phone's camera as its webcam."
+                else "They can be used from your ${Desktop.name(context)} while this phone is locked.")
             .setOngoing(true)
             .setVisibility(Notification.VISIBILITY_PUBLIC)
             .addAction(Notification.Action.Builder(null, "Stop", stop).build())

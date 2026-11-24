@@ -56,12 +56,12 @@
             android:resizeableActivity="true"
             android:theme="@android:style/Theme.DeviceDefault.NoActionBar" />
 
-        <!-- "Send to Mac" in the share sheet. -->
+        <!-- "Send to computer" in the share sheet. -->
         <activity
             android:name=".ShareActivity"
             android:exported="true"
             android:excludeFromRecents="true"
-            android:label="Send to Mac"
+            android:label="Send to computer"
             android:theme="@android:style/Theme.Translucent.NoTitleBar">
             <intent-filter>
                 <action android:name="android.intent.action.SEND" />

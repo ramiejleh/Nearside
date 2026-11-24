@@ -164,7 +164,7 @@ object Main {
 
     /**
      * Mutual challenge-response; the token itself never crosses the link.
-     *   Mac → {"t":"hello-mac","nonce":Nm,"id","name","passive"}   (id: whose token, see MacTokens)
+     *   Mac → {"t":"hello-mac","nonce":Nm,"id","name","passive","os"?}  (os: "windows" from a PC)   (id: whose token, see MacTokens)
      *   us  → {"t":"challenge","proof":HMAC(token,"nearside-helper:"+Nm),"nonce":Nh}
      *   Mac → {"t":"auth","proof":HMAC(token,"nearside-mac:"+Nh)}
      * The Mac sends nothing sensitive until it has verified our proof, so an app squatting
@@ -178,6 +178,7 @@ object Main {
     private fun serve(socket: LocalSocket, starterToken: String, clipboard: ClipboardManager, main: Handler) {
         val macId: String
         val macName: String
+        val desktopKind: String
         val token: String
         try {
             socket.soTimeout = 5000
@@ -187,7 +188,9 @@ object Main {
             if (hello.optString("t") != "hello-mac" || macNonce.length != 64) throw IOException("bad hello")
             // Older Macs send no id: the starter's.
             macId = hello.optString("id").ifEmpty { MacTokens.idOf(starterToken) }
-            macName = hello.optString("name").filter { it >= ' ' }.take(64).ifEmpty { "another Mac" }
+            // "os": "windows" from a PC; a Mac sends none.
+            desktopKind = if (hello.optString("os") == "windows") "pc" else "mac"
+            macName = hello.optString("name").filter { it >= ' ' }.take(64).ifEmpty { if (desktopKind == "pc") "another PC" else "another Mac" }
             token = MacTokens.token(macId, starterToken) ?: throw IOException("unknown Mac $macId")
             val ourNonce = randomHex()
             val challenge = JSONObject().put("t", "challenge")
@@ -239,6 +242,7 @@ object Main {
         Log.d("Mac connected (\"$macName\")")
         send(JSONObject().put("t", "hello").put("sdk", android.os.Build.VERSION.SDK_INT))
         send(JSONObject().put("t", "app").put("linked", AppLink.isLinked))
+        AppLink.desktop = desktopKind
         AppLink.macConnectionChanged(true)
         Calls.macConnectionChanged(true)
         try {

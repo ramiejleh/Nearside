@@ -116,7 +116,7 @@ class MainActivity : Activity() {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(14), 0, 0, 0)
             addView(text(26f, bold = true).apply { text = "Nearside" })
-            addView(text(15f).apply { text = "Your phone, on your Mac"; setTextColor(soft) })
+            addView(text(15f).apply { text = "Your phone, on your ${Desktop.name(this@MainActivity)}"; setTextColor(soft) })
         })
     }
 
@@ -126,33 +126,33 @@ class MainActivity : Activity() {
         if (connected) {
             connection.background = GradientDrawable(GradientDrawable.Orientation.TL_BR,
                 intArrayOf(0xFF1B2A4A.toInt(), 0xFF2A1B3D.toInt(), 0xFF0B0D14.toInt())).apply { cornerRadius = dp(22).toFloat() }
-            connectionTitle.text = "Connected to your Mac"
+            connectionTitle.text = "Connected to your ${Desktop.name(this@MainActivity)}"
             connectionTitle.setTextColor(Color.WHITE)
             connectionDetail.text = "Your clipboard, notifications, messages and apps are shared with it. There's nothing to do here."
             connectionDetail.setTextColor(0xB8FFFFFF.toInt())
         } else {
             connection.background = rounded(surface, 22)
-            connectionTitle.text = "Waiting for your Mac"
+            connectionTitle.text = "Waiting for your ${Desktop.name(this@MainActivity)}"
             connectionTitle.setTextColor(ink)
-            connectionDetail.text = "Open Nearside on your Mac, with this phone on the same Wi-Fi or plugged in by USB. It connects by itself."
+            connectionDetail.text = "Open Nearside on your ${Desktop.name(this@MainActivity)}, with this phone on the same Wi-Fi or plugged in by USB. It connects by itself."
             connectionDetail.setTextColor(soft)
         }
 
         val battery = getSystemService(PowerManager::class.java).isIgnoringBatteryOptimizations(packageName)
         val wireless = AdbWifi.isEnabled()
         checklist.removeAllViews()
-        row("Set up by your Mac", AdbWifi.canWrite(this),
-            "Your Mac gave Nearside what it needs.", "Pair with Nearside on your Mac to finish setup.")
+        row("Set up by your ${Desktop.name(this@MainActivity)}", AdbWifi.canWrite(this),
+            "Your ${Desktop.name(this@MainActivity)} gave Nearside what it needs.", "Pair with Nearside on your ${Desktop.name(this@MainActivity)} to finish setup.")
         row("Wireless debugging", wireless ?: false,
-            "On, so your Mac can reach this phone over Wi-Fi.",
-            if (wireless == null) "Shown once your Mac has connected." else "Off. Your Mac reconnects over USB, or turn it on in Developer options.")
+            "On, so your ${Desktop.name(this@MainActivity)} can reach this phone over Wi-Fi.",
+            if (wireless == null) "Shown once your ${Desktop.name(this@MainActivity)} has connected." else "Off. Your ${Desktop.name(this@MainActivity)} reconnects over USB, or turn it on in Developer options.")
         row("Linked to the helper", linked,
-            "Your Mac's helper is running on this phone.", "It starts when your Mac connects.")
+            "Your ${Desktop.name(this@MainActivity)}'s helper is running on this phone.", "It starts when your ${Desktop.name(this@MainActivity)} connects.")
         row("Notifications", NotificationMirror.instance != null,
-            "Your notifications show on your Mac.", "Allow notification access so they can.",
+            "Your notifications show on your ${Desktop.name(this@MainActivity)}.", "Allow notification access so they can.",
             action = "Allow" to { startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)) })
         row("Runs in the background", battery,
-            "Android won't pause Nearside.", "Android may pause Nearside, and the Mac loses touch with it.",
+            "Android won't pause Nearside.", "Android may pause Nearside, and your ${Desktop.name(this@MainActivity)} loses touch with it.",
             action = "Allow" to {
                 startActivity(Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, Uri.parse("package:$packageName")))
             }, last = true)

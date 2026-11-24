@@ -33,17 +33,17 @@ object FileNotifications {
                 PendingIntent.FLAG_IMMUTABLE,
             )
         }
-        notifyScreenshot(context, "Screenshot from your Mac", "$name · in Pictures/Nearside", open, name)
+        notifyScreenshot(context, "Screenshot from your ${Desktop.name(context)}", "$name · in Pictures/Nearside", open, name)
     }.start()
 
     /** A phone screenshot was copied to the Mac's Downloads. */
     fun screenshotSent(context: Context, name: String) =
-        notifyScreenshot(context, "Screenshot sent to your Mac", "$name · in Downloads on your Mac", null, "sent:$name")
+        notifyScreenshot(context, "Screenshot sent to your ${Desktop.name(context)}", "$name · in Downloads on your ${Desktop.name(context)}", null, "sent:$name")
 
     private fun notifyScreenshot(context: Context, title: String, text: String, open: PendingIntent?, tag: String) {
         val manager = context.getSystemService(NotificationManager::class.java)
         manager.createNotificationChannel(
-            NotificationChannel(SCREENSHOTS, "Screenshots shared with your Mac", NotificationManager.IMPORTANCE_DEFAULT),
+            NotificationChannel(SCREENSHOTS, "Screenshots shared with your ${Desktop.name(context)}", NotificationManager.IMPORTANCE_DEFAULT),
         )
         val notification = Notification.Builder(context, SCREENSHOTS)
             .setSmallIcon(R.drawable.ic_notification)
@@ -68,7 +68,7 @@ object FileNotifications {
     fun received(context: Context, name: String) {
         val manager = context.getSystemService(NotificationManager::class.java)
         manager.createNotificationChannel(
-            NotificationChannel(CHANNEL, "Files from your Mac", NotificationManager.IMPORTANCE_DEFAULT),
+            NotificationChannel(CHANNEL, "Files from your ${Desktop.name(context)}", NotificationManager.IMPORTANCE_DEFAULT),
         )
         val open = PendingIntent.getActivity(
             context, 0,
@@ -77,7 +77,7 @@ object FileNotifications {
         )
         val notification = Notification.Builder(context, CHANNEL)
             .setSmallIcon(R.drawable.ic_notification)
-            .setContentTitle("Received from your Mac")
+            .setContentTitle("Received from your ${Desktop.name(context)}")
             .setContentText("$name · in Downloads/Nearside")
             .setContentIntent(open)
             .setAutoCancel(true)

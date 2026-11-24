@@ -3,10 +3,15 @@ import Foundation
 import QuartzCore
 import VideoToolbox
 
-/// Hardware HEVC decoding with VideoToolbox. Input is Annex-B (as the phone's encoder emits);
-/// output is NV12 video-range pixel buffers that Metal can sample. Not thread-safe: feed it from
-/// one thread (the session's video reader).
+/// Hardware HEVC (or H.264) decoding with VideoToolbox. Input is Annex-B (as the phone's encoder
+/// emits); output is NV12 video-range pixel buffers that Metal can sample. Not thread-safe: feed it
+/// from one thread (the session's video reader).
 public final class VideoDecoder: @unchecked Sendable {
+    /// The Mac asks for HEVC. Test hook: NEARSIDE_TEST_CODEC=h264 asks for H.264 instead (what a
+    /// PC without hardware HEVC asks for), to check the phone's H.264 path from here.
+    public static let preferredCodec: DisplayWire.Codec =
+        ProcessInfo.processInfo.environment["NEARSIDE_TEST_CODEC"] == "h264" ? .h264 : .hevc
+
     public struct Frame: @unchecked Sendable {
         public let image: CVPixelBuffer
         public let gen: UInt32
@@ -20,7 +25,12 @@ public final class VideoDecoder: @unchecked Sendable {
     /// Called on VideoToolbox's thread with each decoded frame.
     public var onFrame: (@Sendable (Frame) -> Void)?
 
-    public init() {}
+    let codec: DisplayWire.Codec
+
+    public init(codec: DisplayWire.Codec = VideoDecoder.preferredCodec) { self.codec = codec }
+
+    /// Parameter-set NAL types: VPS, SPS, PPS for HEVC; SPS, PPS for H.264.
+    private var parameterTypes: ClosedRange<Int> { codec == .h264 ? 7...8 : 32...34 }
 
     deinit { invalidate() }
 
@@ -35,13 +45,17 @@ public final class VideoDecoder: @unchecked Sendable {
     /// New parameter sets (first frame, or after a resize restarted the encoder). False if unusable.
     @discardableResult
     public func configure(parameterSets annexB: Data, gen: UInt32) -> Bool {
-        let sets = Self.nalUnits(annexB).filter { (32...34).contains(Self.nalType($0)) }
-        guard sets.count >= 3 else { return false }
+        let sets = Self.nalUnits(annexB).filter { parameterTypes.contains(Self.nalType($0, codec)) }
+        guard sets.count >= parameterTypes.count else { return false }
         var description: CMVideoFormatDescription?
         let status = Self.withPointers(sets) { pointers, sizes in
-            CMVideoFormatDescriptionCreateFromHEVCParameterSets(
-                allocator: nil, parameterSetCount: sets.count, parameterSetPointers: pointers,
-                parameterSetSizes: sizes, nalUnitHeaderLength: 4, extensions: nil, formatDescriptionOut: &description)
+            codec == .h264
+                ? CMVideoFormatDescriptionCreateFromH264ParameterSets(
+                    allocator: nil, parameterSetCount: sets.count, parameterSetPointers: pointers,
+                    parameterSetSizes: sizes, nalUnitHeaderLength: 4, formatDescriptionOut: &description)
+                : CMVideoFormatDescriptionCreateFromHEVCParameterSets(
+                    allocator: nil, parameterSetCount: sets.count, parameterSetPointers: pointers,
+                    parameterSetSizes: sizes, nalUnitHeaderLength: 4, extensions: nil, formatDescriptionOut: &description)
         }
         guard status == noErr, let description else { return false }
         self.gen = gen
@@ -70,9 +84,10 @@ public final class VideoDecoder: @unchecked Sendable {
         // Start codes → 4-byte lengths, written straight into the block VideoToolbox decodes from
         // (one copy); parameter sets already live in the format description.
         var block: CMBlockBuffer?
+        let codec = self.codec, parameterTypes = self.parameterTypes
         let length: Int = annexB.withUnsafeBytes { raw in
             let bytes = raw.bindMemory(to: UInt8.self)
-            let nals = Self.nalRanges(bytes).filter { !(32...34).contains(Int(bytes[$0.lowerBound] >> 1 & 0x3f)) }
+            let nals = Self.nalRanges(bytes).filter { !parameterTypes.contains(Self.nalType(bytes[$0.lowerBound], codec)) }
             let length = nals.reduce(0) { $0 + 4 + $1.count }
             guard length > 0,
                   CMBlockBufferCreateWithMemoryBlock(allocator: nil, memoryBlock: nil, blockLength: length, blockAllocator: nil,
@@ -107,7 +122,10 @@ public final class VideoDecoder: @unchecked Sendable {
         }
     }
 
-    static func nalType(_ nal: Data) -> Int { Int((nal.first ?? 0) >> 1 & 0x3f) }
+    static func nalType(_ nal: Data, _ codec: DisplayWire.Codec = .hevc) -> Int { nalType(nal.first ?? 0, codec) }
+    static func nalType(_ header: UInt8, _ codec: DisplayWire.Codec) -> Int {
+        codec == .h264 ? Int(header & 0x1f) : Int(header >> 1 & 0x3f)
+    }
 
     /// Where each NAL unit of an Annex-B byte stream is (start codes left out), without copying.
     static func nalRanges(_ bytes: UnsafeBufferPointer<UInt8>) -> [Range<Int>] {

@@ -10,7 +10,7 @@ helper side: `android/.../helper/display/DisplayServer.kt` and `DisplaySession.k
    single use, valid 10 s.
 2. It opens up to three adb streams to the abstract socket `nearside-display` (the helper
    only accepts the shell uid): **control** (role 1), **video** (2), **audio** (3).
-3. Each stream starts with HELLO: `"ATD1"`, u16 version (1), u8 role, 16-byte session id,
+3. Each stream starts with HELLO: `"ATD1"`, u16 version (2), u8 role, 16-byte session id,
    32-byte ticket, then HMAC-SHA256 with the Mac's token over
    `nearside-display:<role>:<session hex>:<ticket hex>`. The helper answers HELLO with
    HMAC over `nearside-display-server:…` (same values); the Mac drops the stream otherwise.
@@ -26,7 +26,7 @@ stream; control packets are read up to 1 MiB. Unknown or short packets are ignor
 
 | Type | Name | Payload |
 |---|---|---|
-| 0x10 | OPEN | u16 w, u16 h, u16 dpi, u8 fps, u32 kbps, utf8 target (`pkg`, `pkg/activity`, `home`, `notification:<key hex>`) |
+| 0x10 | OPEN | u16 w, u16 h, u16 dpi, u8 fps, u32 kbps, u8 codec (0 HEVC, 1 H.264), utf8 target (`pkg`, `pkg/activity`, `home`, `notification:<key hex>`) |
 | 0x11 | RESUME | (empty) reattach to the session named in HELLO |
 | 0x12 | TOUCH | u8 action (down/up/move/cancel), u8 pointer, u32 gen, f32 x, f32 y, u64 event µs |
 | 0x13 | RESIZE | u16 w, u16 h, u16 dpi |
@@ -73,11 +73,15 @@ On the audio stream, after a MIC on from the phone:
 | 0x26 | TASKS | control | JSON `[{"id":…,"pkg":…}]`, top first |
 | 0x27 | SNAPSHOT | control | i32 task, JPEG |
 | 0x28 | INSETS | control | u16 top, u16 bottom (px); the Mac hides the top bar |
-| 0x30 | CONFIG | video | u32 gen, u16 w, u16 h, HEVC parameter sets |
-| 0x31 | FRAME | video | u32 gen, u64 pts µs, u64 encode µs, u8 keyframe, HEVC data |
+| 0x30 | CONFIG | video | u32 gen, u16 w, u16 h, parameter sets (Annex B: VPS, SPS, PPS for HEVC; SPS, PPS for H.264) |
+| 0x31 | FRAME | video | u32 gen, u64 pts µs, u64 encode µs, u8 keyframe, Annex-B data in the codec OPEN asked for |
 | 0x32 | AUDIO_CONFIG | audio | u32 sample rate, u8 channels |
 | 0x33 | AUDIO | audio | u64 pts µs, one 20 ms Opus packet; no packet: silence follows (nothing is sent until there's sound) |
 | 0x34 | MIC | audio | u8 1: an app on the display started recording (send the Mac's microphone), 0: stopped |
+
+The codec is the computer's choice: the Mac asks for HEVC; a computer without a hardware HEVC
+decoder asks for H.264, which every GPU decodes. The camera stream (role 5) asks the same way, in
+the last byte of CAMERA_OPEN (u8 facing, u16 w, u16 h, u8 fps, u8 codec).
 
 `gen` increases with every resize; input carrying an old `gen` is dropped, so a touch meant for
 the previous size never lands in the wrong place.

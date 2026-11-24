@@ -35,7 +35,8 @@ object HelperConnection {
         override fun onMacConnectionChanged(connected: Boolean) {
             if (Binder.getCallingUid() != SHELL_UID) return
             macConnected = connected
-            Status.lastEvent = if (connected) "Mac connected" else "Mac disconnected"
+            val name = context?.let { dev.nearside.Desktop.name(it) } ?: "computer"
+            Status.lastEvent = if (connected) "$name connected" else "$name disconnected"
             if (connected) NotificationMirror.macConnected()
             context?.let { PhoneStatus.macConnectionChanged(it, connected) }
             if (!connected) context?.let { PhotoFeed.macDisconnected(it) }
@@ -72,6 +73,8 @@ object HelperConnection {
         android.util.Log.i("Nearside", "from Mac: ${msg.optString("t")} (mirror ${if (NotificationMirror.instance != null) "on" else "off"})")
         when (msg.optString("t")) {
             // Health check for the whole Mac → helper → app → helper → Mac path.
+            // Which kind of computer is connected (the helper says on each connection), for the wording.
+            "desktop" -> context?.let { dev.nearside.Desktop.set(it, msg.optString("kind")) }
             "ping" -> send(JSONObject().put("t", "pong").put("id", msg.opt("id")))
             "notif-dismiss" -> NotificationMirror.instance?.dismiss(msg.optString("key"))
             "file-received" -> context?.let { FileNotifications.received(it, msg.optString("name")) }

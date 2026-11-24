@@ -48,6 +48,8 @@ object AppLink {
     lateinit var macConnected: () -> Boolean
 
     @Volatile private var app: IAppCallback? = null
+    /** The connected computer's kind ("mac" or "pc", from its hello): the app words its text by it. */
+    @Volatile var desktop = "mac"
     @Volatile private var appUid = -1
     /** The sticky unfreeze took (then the wake broadcast is only needed right after a re-link). */
     @Volatile private var unfrozen = false
@@ -195,6 +197,11 @@ object AppLink {
             app?.onMacConnectionChanged(connected)
         } catch (_: RemoteException) {
         }
+        if (connected) tellDesktop()
+    }
+
+    private fun tellDesktop() {
+        runCatching { app?.onMessage(JSONObject().put("t", "desktop").put("kind", desktop).toString()) }
     }
 
     private fun attach() {
@@ -256,6 +263,7 @@ object AppLink {
             keepUnfrozen()
             toMac(JSONObject().put("t", "app").put("linked", true))
             callback.onMacConnectionChanged(macConnected())
+            if (macConnected()) tellDesktop()
             onLinked()
             return true
         } finally {

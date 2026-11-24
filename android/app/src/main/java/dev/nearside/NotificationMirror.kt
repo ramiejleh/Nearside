@@ -189,7 +189,7 @@ class NotificationMirror : NotificationListenerService() {
             } else {
                 fire(action.actionIntent, null)
             }
-            Status.lastEvent = "ran \"${action.title}\" from the Mac"
+            Status.lastEvent = "ran \"${action.title}\" from your ${Desktop.name(this@NotificationMirror)}"
         }.onFailure { Status.lastEvent = "action failed: ${it.message}" }
     }
 

@@ -8,7 +8,7 @@ import android.provider.OpenableColumns
 import android.widget.Toast
 import dev.nearside.link.HelperConnection
 
-/** "Send to Mac" in the share sheet. No UI: hands the files to the helper and closes. */
+/** "Send to computer" in the share sheet. No UI: hands the files to the helper and closes. */
 class ShareActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -16,7 +16,7 @@ class ShareActivity : Activity() {
         val helper = HelperConnection.helper
         val message = when {
             uris.isEmpty() -> "Nothing to send"
-            helper == null || !HelperConnection.macConnected -> "Your Mac isn't connected"
+            helper == null || !HelperConnection.macConnected -> "Your ${Desktop.name(this)} isn't connected"
             else -> {
                 val sent = uris.count { uri ->
                     runCatching {
@@ -24,9 +24,9 @@ class ShareActivity : Activity() {
                     }.onFailure { android.util.Log.w("Nearside", "can't send $uri: $it") }.getOrDefault(false)
                 }
                 when (sent) {
-                    0 -> "Couldn't send to your Mac"
-                    1 -> "Sending to your Mac…"
-                    else -> "Sending $sent files to your Mac…"
+                    0 -> "Couldn't send to your ${Desktop.name(this)}"
+                    1 -> "Sending to your ${Desktop.name(this)}…"
+                    else -> "Sending $sent files to your ${Desktop.name(this)}…"
                 }
             }
         }

@@ -78,25 +78,30 @@ object DisplayWire {
     const val MOUSE_HOVER = 0; const val MOUSE_EXIT = 1; const val MOUSE_SECONDARY_DOWN = 2; const val MOUSE_SECONDARY_UP = 3
     const val GONE_EXITED = 0; const val GONE_MOVED = 1
     const val ERR_NOT_FOUND = 1; const val ERR_LAUNCH = 2; const val ERR_NO_SESSION = 3; const val ERR_BUSY = 4
-    const val VERSION = 1
+    const val VERSION = 2
+    /** Video codec, in OPEN and CAMERA_OPEN: the Mac asks for HEVC; a PC may ask for H.264 (it decodes everywhere). */
+    const val CODEC_HEVC = 0; const val CODEC_H264 = 1
+    fun mime(codec: Int) = if (codec == CODEC_H264) android.media.MediaFormat.MIMETYPE_VIDEO_AVC else android.media.MediaFormat.MIMETYPE_VIDEO_HEVC
     private const val MAX_PACKET = 1024 * 1024 // control packets are small; a paste can be long
 
-    /** OPEN: u16 width, u16 height, u16 dpi, u8 fps, u32 kbps, utf8 target (package or pkg/activity). */
-    class Open(val width: Int, val height: Int, val dpi: Int, val fps: Int, val kbps: Int, val target: String) {
+    /** OPEN: u16 width, u16 height, u16 dpi, u8 fps, u32 kbps, u8 codec, utf8 target (package or pkg/activity). */
+    class Open(val width: Int, val height: Int, val dpi: Int, val fps: Int, val kbps: Int, val codec: Int, val target: String) {
         companion object {
             fun parse(b: ByteArray): Open? {
-                if (b.size < 12) return null
+                if (b.size < 13) return null
                 val buf = ByteBuffer.wrap(b)
                 val w = buf.short.toInt() and 0xffff
                 val h = buf.short.toInt() and 0xffff
                 val dpi = buf.short.toInt() and 0xffff
                 val fps = buf.get().toInt() and 0xff
                 val kbps = buf.int
-                val target = String(b, 11, b.size - 11)
+                val codec = buf.get().toInt() and 0xff
+                val target = String(b, 12, b.size - 12)
                 if (w !in 64..4096 || h !in 64..4096 || dpi !in 72..640 || fps !in 1..120 || kbps !in 500..100_000) return null
+                if (codec != CODEC_HEVC && codec != CODEC_H264) return null
                 if (!target.matches(Regex("[A-Za-z0-9_.]+(/[A-Za-z0-9_.$]+)?")) &&
                     !target.matches(Regex("${NOTIFICATION_TARGET}([0-9a-f]{2}){1,1024}"))) return null
-                return Open(w and 1.inv(), h and 1.inv(), dpi, fps, kbps, target)
+                return Open(w and 1.inv(), h and 1.inv(), dpi, fps, kbps, codec, target)
             }
         }
     }
