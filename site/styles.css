@@ -219,7 +219,7 @@ p { margin: 0; max-width: 62ch; }
 figcaption { margin-top: 12px; font-size: 15px; color: var(--on-dusk-soft); text-align: center; }
 
 /* Everyday */
-.everyday, .how, .support { padding: clamp(64px, 9vw, 128px) 0; }
+.everyday, .how, .tested, .support { padding: clamp(64px, 9vw, 128px) 0; }
 .pair { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 6fr); gap: clamp(28px, 5vw, 80px); align-items: center; margin-top: 56px; }
 .pair img { width: min(100%, 420px); justify-self: center; }
 .pair p { margin-top: 12px; color: var(--soft); font-size: 19px; }
@@ -250,3 +250,14 @@ figcaption { margin-top: 12px; font-size: 15px; color: var(--on-dusk-soft); text
 /* Footer */
 .foot { padding: 40px 0 56px; border-top: 1.5px solid var(--line); font-size: 15px; color: var(--soft); }
 .foot p + p { margin-top: 8px; }
+
+/* Where it's tested: one row per feature, its status at the end of the line. */
+.tested .intro { max-width: 68ch; }
+.tested .intro b { color: var(--ink); font-weight: 600; }
+.matrix { list-style: none; margin: 40px 0 0; padding: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 56px; }
+.matrix li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; padding: 14px 0; border-bottom: 1px solid var(--line); }
+.matrix span { flex: 1 1 auto; font-weight: 600; }
+.matrix em { font-style: normal; font-size: 15px; color: var(--soft); white-space: nowrap; }
+.matrix em::before { content: ""; display: inline-block; width: 8px; height: 8px; margin-right: 7px; border-radius: 50%; background: var(--ok); vertical-align: 1px; }
+.matrix small { flex-basis: 100%; color: var(--soft); font-size: 14px; }
+@media (max-width: 700px) { .matrix { grid-template-columns: 1fr; } }

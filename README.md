@@ -172,9 +172,32 @@ The [architecture notes](docs/architecture.md) go deeper.
 
 | | |
 |---|---|
-| **Mac** | macOS 14 Sonoma or later (developed on Apple silicon; Intel untested) |
+| **Mac** | macOS 14 Sonoma or later |
 | **Phone** | Android 11 or later, on the same Wi-Fi network (or plugged in by USB once paired) |
-| **Phone apps on the Mac** | Developed and tested on Android 17 (Pixel 9 Pro); earlier versions untested |
+
+### What's tested, and where
+
+Everything below is tested on **one setup**: a **Google Pixel 9 Pro on Android 17 beta (API 37)**
+with a **MacBook Air (Apple M5) on macOS 27.0.1**, over Wi-Fi and over USB. Nothing else has been
+tested yet: other phones, Android 11 to 16, macOS 14 to 26 and Intel Macs may work, or may not.
+[Reports](https://github.com/ramiejleh/Nearside/issues/new/choose) from other setups are very
+welcome.
+
+| Feature | Pixel 9 Pro, Android 17 + macOS 27 | Notes |
+|---|---|---|
+| Clipboard, both ways, with history | Tested | |
+| Notifications, with buttons and replies | Tested | |
+| Text messages (SMS) | Tested | RCS stays in Google Messages |
+| Files, both ways | Tested | |
+| Phone apps in Mac windows, with sound | Tested | Uses Android's virtual devices |
+| The Mac's microphone in app windows | Tested | WhatsApp and Messenger calls |
+| Phone status (battery, signal, network) | Tested | |
+| Photos and screenshots | Tested | |
+| Incoming calls: answer, decline, reply | Tested | Phone, WhatsApp and Messenger calls |
+| Phone calls through the Mac (sound and microphone) | Tested | Uses the in-call audio paths Pixel's Call Screen uses |
+| Phone camera as a webcam, back and front | Tested | Release builds only (needs Apple signing) |
+| USB cable | Tested | |
+| Wi-Fi (wireless debugging) | Tested | |
 
 ### Install
 
@@ -226,8 +249,8 @@ vulnerability? Please report it privately; see [SECURITY.md](SECURITY.md).
 
 ## Status
 
-Nearside is **alpha** software. It's built and used daily on a Pixel 9 Pro (Android 17) with a
-MacBook. Known limitations:
+Nearside is **alpha** software. It's built and used daily on a Pixel 9 Pro (Android 17 beta)
+with a MacBook Air (macOS 27); see [what's tested](#whats-tested-and-where). Known limitations:
 
 - Apps that block screen capture (many banking apps) show black in a window. The window says so
   and offers to open the app on the phone.
