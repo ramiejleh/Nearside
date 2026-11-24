@@ -2,12 +2,28 @@ import Foundation
 
 /// File-name hygiene for files crossing between the devices.
 public enum FileNames {
-    /// A plain name: no directories, no control characters, not hidden, not empty.
+    /// A plain name: no directories, no control characters, not hidden, not empty. On Windows
+    /// also none of its reserved characters or device names (CON, NUL, COM1…), and no trailing
+    /// dots or spaces (Windows drops them, so "x.exe." would land as "x.exe").
     public static func safe(_ name: String) -> String {
-        let base = (name as NSString).lastPathComponent
-            .unicodeScalars.filter { $0.value >= 0x20 && $0 != "/" && $0 != ":" }
+        #if os(Windows)
+        let last = name.split(whereSeparator: { $0 == "/" || $0 == "\\" }).last.map(String.init) ?? ""
+        let banned: Set<Unicode.Scalar> = ["/", "\\", ":", "<", ">", "\"", "|", "?", "*"]
+        #else
+        let last = (name as NSString).lastPathComponent
+        let banned: Set<Unicode.Scalar> = ["/", ":"]
+        #endif
+        let base = last.unicodeScalars.filter { $0.value >= 0x20 && !banned.contains($0) }
         var cleaned = String(String.UnicodeScalarView(base)).trimmingCharacters(in: .whitespaces)
         while cleaned.hasPrefix(".") { cleaned.removeFirst() }
+        #if os(Windows)
+        while cleaned.hasSuffix(".") || cleaned.hasSuffix(" ") { cleaned.removeLast() }
+        let device = (cleaned.split(separator: ".").first.map(String.init) ?? "").uppercased()
+        if ["CON", "PRN", "AUX", "NUL"].contains(device) || ((device.hasPrefix("COM") || device.hasPrefix("LPT"))
+            && device.count == 4 && device.last!.isNumber) {
+            cleaned = "_" + cleaned
+        }
+        #endif
         guard !cleaned.isEmpty else { return "file" }
         guard cleaned.count > 200 else { return cleaned }
         // Too long: shorten the stem, never the extension (cutting "x.command.jpg" in the

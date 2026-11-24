@@ -41,10 +41,10 @@ public final class MacPlatform: Platform, @unchecked Sendable {
     }
 
     /// Quarantined like a browser or AirDrop download, so Gatekeeper checks it first.
-    public func markDownloaded(_ url: URL) {
+    public func markDownloaded(_ url: URL) -> Bool {
         let flags = "0083" // downloaded, Gatekeeper must check
         let value = "\(flags);\(String(Int(Date().timeIntervalSince1970), radix: 16));Nearside;\(UUID().uuidString)"
-        _ = value.withCString { setxattr(url.path, "com.apple.quarantine", $0, strlen($0), 0, 0) }
+        return value.withCString { setxattr(url.path, "com.apple.quarantine", $0, strlen($0), 0, 0) } == 0
     }
 
     public var preferredCodec: DisplayWire.Codec { VideoDecoder.preferredCodec }

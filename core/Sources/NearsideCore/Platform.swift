@@ -19,8 +19,8 @@ public protocol Platform: AnyObject, Sendable {
     /// Shows a file in Finder / Explorer.
     @MainActor func reveal(_ url: URL)
     /// Marks a file from the phone as downloaded (quarantine / Mark of the Web), so the system
-    /// checks it before anything in it can run.
-    func markDownloaded(_ url: URL)
+    /// checks it before anything in it can run. False if it couldn't (the file is then deleted).
+    func markDownloaded(_ url: URL) -> Bool
 
     /// The codec this computer decodes best.
     var preferredCodec: DisplayWire.Codec { get }

@@ -18,7 +18,22 @@ final class ConsolePlatform: Platform, @unchecked Sendable {
     @MainActor func makeScreenshotWatcher() -> any ScreenshotWatcher { NoScreenshots() }
     @MainActor func watchReachability(_ changed: @escaping @MainActor () -> Void) {}
     @MainActor func reveal(_ url: URL) {}
-    func markDownloaded(_ url: URL) {}
+    /// Mark of the Web, as a browser download gets: a Zone.Identifier stream saying "Internet",
+    /// so SmartScreen and Office check the file before anything in it runs.
+    func markDownloaded(_ url: URL) -> Bool {
+        #if os(Windows)
+        let mark = Array("[ZoneTransfer]\r\nZoneId=3\r\nHostUrl=about:internet\r\n".utf8)
+        return (url.path + ":Zone.Identifier").withCString(encodedAs: UTF16.self) { path in
+            let file = CreateFileW(path, DWORD(GENERIC_WRITE), 0, nil, DWORD(CREATE_ALWAYS), DWORD(FILE_ATTRIBUTE_NORMAL), nil)
+            guard file != INVALID_HANDLE_VALUE else { return false }
+            defer { CloseHandle(file) }
+            var written: DWORD = 0
+            return WriteFile(file, mark, DWORD(mark.count), &written, nil) && written == DWORD(mark.count)
+        }
+        #else
+        return false
+        #endif
+    }
     var preferredCodec: DisplayWire.Codec { .h264 }
     func makeVideoDecoder(codec: DisplayWire.Codec) -> any VideoDecoding { fatalError("no video in the console") }
     func makeAudioOutput() -> any AudioOutput { fatalError("no sound in the console") }
@@ -62,6 +77,7 @@ final class ConsolePlatform: Platform, @unchecked Sendable {
         last = now
         guard OpenClipboard(nil) else { return }
         defer { CloseClipboard() }
+        guard !Self.isPrivate() else { return } // a password manager's copy: not sent (as the Mac skips concealed ones)
         guard let handle = GetClipboardData(UINT(CF_UNICODETEXT)), let p = GlobalLock(handle) else { return }
         defer { GlobalUnlock(handle) }
         let text = String(decodingCString: p.assumingMemoryBound(to: UInt16.self), as: UTF16.self)
@@ -69,6 +85,27 @@ final class ConsolePlatform: Platform, @unchecked Sendable {
         #endif
     }
 }
+
+#if os(Windows)
+extension WindowsClipboard {
+    /// The formats apps add to keep a copy out of clipboard monitors, history and the cloud.
+    /// Call with the clipboard open.
+    static func isPrivate() -> Bool {
+        func format(_ name: String) -> UINT { name.withCString(encodedAs: UTF16.self) { RegisterClipboardFormatW($0) } }
+        if IsClipboardFormatAvailable(format("ExcludeClipboardContentFromMonitorProcessing")) ||
+            IsClipboardFormatAvailable(format("Clipboard Viewer Ignore")) { return true }
+        // These two carry a DWORD: 0 means "not in history" / "not to the cloud".
+        for name in ["CanIncludeInClipboardHistory", "CanUploadToCloudClipboard"] {
+            let f = format(name)
+            guard IsClipboardFormatAvailable(f), let handle = GetClipboardData(f), let p = GlobalLock(handle) else { continue }
+            let allowed = p.load(as: DWORD.self)
+            GlobalUnlock(handle)
+            if allowed == 0 { return true }
+        }
+        return false
+    }
+}
+#endif
 
 @MainActor final class PrintedNotifications: SystemNotifications {
     var onDismiss: ((String) -> Void)?
@@ -93,7 +130,7 @@ final class ConsolePlatform: Platform, @unchecked Sendable {
 }
 
 Platforms.current = ConsolePlatform()
-setvbuf(stdout, nil, _IOLBF, 0)
+setvbuf(stdout, nil, _IONBF, 0) // unbuffered: Windows rejects line buffering with no size
 let args = CommandLine.arguments.dropFirst().map { $0 }
 
 MainActor.assumeIsolated {

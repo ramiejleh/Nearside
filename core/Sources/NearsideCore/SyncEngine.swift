@@ -644,7 +644,10 @@ public final class SyncEngine {
                 setStatus(transfer.id, .failed("Couldn't copy it from the phone."))
                 return
             }
-            Self.quarantine(destination)
+            guard Self.quarantine(destination) else {
+                setStatus(transfer.id, .failed("Couldn't mark it as downloaded, so it wasn't kept."))
+                return
+            }
             setStatus(transfer.id, .done(destination))
             notifications.showLocal(id: Self.fileNotificationPrefix + destination.path,
                                     title: "Received \(destination.lastPathComponent)",
@@ -653,8 +656,12 @@ public final class SyncEngine {
     }
 
     /// Marks a received file as downloaded, so the system checks it before anything in it can run
-    /// (any app on the phone could have sent it).
-    nonisolated static func quarantine(_ url: URL) { Platforms.current.markDownloaded(url) }
+    /// (any app on the phone could have sent it). If that fails the file is deleted: never kept unmarked.
+    nonisolated static func quarantine(_ url: URL) -> Bool {
+        if Platforms.current.markDownloaded(url) { return true }
+        try? FileManager.default.removeItem(at: url)
+        return false
+    }
 
     public func dismissTransfer(_ id: UUID) {
         transfers.removeAll { $0.id == id }
@@ -696,7 +703,7 @@ public final class SyncEngine {
                 try? FileManager.default.removeItem(at: partial)
                 return nil
             }
-            Self.quarantine(partial)
+            guard Self.quarantine(partial) else { return nil }
             do {
                 try FileManager.default.moveItem(at: partial, to: local)
             } catch {
@@ -729,7 +736,10 @@ public final class SyncEngine {
                 setStatus(transfer.id, .failed("Couldn't copy it from the phone."))
                 return
             }
-            Self.quarantine(destination)
+            guard Self.quarantine(destination) else {
+                setStatus(transfer.id, .failed("Couldn't mark it as downloaded, so it wasn't kept."))
+                return
+            }
             setStatus(transfer.id, .done(destination))
             link.send(["t": "screenshot-sent", "name": destination.lastPathComponent]) // the phone says so too
             notifications.showLocal(id: Self.fileNotificationPrefix + destination.path,
