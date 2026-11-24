@@ -69,6 +69,12 @@ public func nearside_start(_ apkPath: UnsafePointer<CChar>?, _ callback: Nearsid
                 return decoder
             }
         }
+        platform.audioOutput = {
+            let session = Media.lock.withLock { Media.opening }
+            let output = BridgeAudio(session: session)
+            AudioMedia.lock.withLock { AudioMedia.outputs[session] = output }
+            return output
+        }
         Platforms.current = platform
         let engine = SyncEngine(apkURL: apk)
         engine.onArrival = { item in Bridge.emit("clip", ["id": item.id.uuidString]) }

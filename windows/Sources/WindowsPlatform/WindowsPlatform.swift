@@ -10,6 +10,8 @@ import WinSDK
 public final class WindowsPlatform: Platform, @unchecked Sendable {
     /// The decoder; nil where there's no video (the console tool).
     public var videoDecoder: ((DisplayWire.Codec) -> any VideoDecoding)?
+    /// Plays a phone window's sound; none if not set.
+    public var audioOutput: (() -> any AudioOutput)?
     /// Shows the phone's notifications; printed (app name only) if not set.
     public var notifications: (@MainActor () -> any SystemNotifications)?
     public init() {}
@@ -60,7 +62,7 @@ public final class WindowsPlatform: Platform, @unchecked Sendable {
         guard let videoDecoder else { fatalError("no video in the console") }
         return videoDecoder(codec)
     }
-    public func makeAudioOutput() -> any AudioOutput { NoSound() }
+    public func makeAudioOutput() -> any AudioOutput { audioOutput?() ?? NoSound() }
     public func makeMicrophone() -> any Microphone { NoMicrophone() }
     public func microphoneAllowed() async -> Bool { false }
 }

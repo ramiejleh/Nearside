@@ -27,6 +27,14 @@ internal static unsafe partial class Native
     [LibraryImport(Dll, EntryPoint = "nearside_set_video")]
     public static partial void SetVideo(delegate* unmanaged<long, int, int, byte*, int, uint, long, long, int> video);
 
+    /// Windows' sound: (session, kind, data, length, rate, channels, out, capacity) → samples decoded.
+    [LibraryImport(Dll, EntryPoint = "nearside_set_audio")]
+    public static partial void SetAudio(delegate* unmanaged<long, int, byte*, int, int, int, float*, int, int> audio);
+
+    /// The next `frames` frames of a session's sound, interleaved.
+    [LibraryImport(Dll, EntryPoint = "nearside_audio_read")]
+    public static partial void AudioRead(long session, float* output, int frames, int channels);
+
     [LibraryImport(Dll, EntryPoint = "nearside_session_open", StringMarshalling = StringMarshalling.Utf8)]
     public static partial byte* SessionOpen(string json);
 

@@ -44,6 +44,7 @@ public partial class App : Application
         var apk = Path.Combine(AppContext.BaseDirectory, "phone-app.apk");
         EngineHost.Start(queue, File.Exists(apk) ? apk : null);
         Video.VideoRouter.Install();
+        Audio.SoundRouter.Install();
         EngineHost.Event += (name, e) =>
         {
             if (name == "session") PhoneWindow.Route(e);
