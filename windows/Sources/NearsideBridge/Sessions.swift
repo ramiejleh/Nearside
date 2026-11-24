@@ -183,3 +183,24 @@ public func nearside_session_frame(_ id: Int64, _ gen: UInt32, _ pts: Int64, _ r
     guard let decoder = Media.decoder(id) else { return }
     decoder.onFrame?(BridgeFrame(gen: gen, ptsMicros: pts, receivedMicros: received, black: black != 0))
 }
+
+/// A key pressed in a phone window (Windows virtual-key code; modifiers: 1 Shift, 2 Ctrl, 4 Alt).
+/// Returns 0 if it's text (the app sends it as characters), 1 if handled here, 2 for Ctrl+V (the
+/// app pastes this PC's clipboard).
+@_cdecl("nearside_session_key")
+public func nearside_session_key(_ id: Int64, _ vk: UInt16, _ modifiers: UInt8) -> Int32 {
+    MainActor.assumeIsolated {
+        guard let session = Sessions.all[id] else { return 1 }
+        switch KeyMap.windowsAction(virtualKey: vk, modifiers: KeyMap.WindowsModifiers(rawValue: modifiers)) {
+        case .text: return 0
+        case .paste: return 2
+        case .keys(let keys):
+            session.keys(keys)
+            return 1
+        case .back:
+            session.back()
+            return 1
+        case .mac, .none: return 1
+        }
+    }
+}

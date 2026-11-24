@@ -299,10 +299,25 @@ public sealed class PhoneWindow : Window
 
     private void OnKey(object sender, KeyRoutedEventArgs e)
     {
-        if (e.Key == Windows.System.VirtualKey.Escape)
+        var modifiers = (byte)((Down(Windows.System.VirtualKey.Shift) ? 1 : 0) | (Down(Windows.System.VirtualKey.Control) ? 2 : 0)
+                               | (Down(Windows.System.VirtualKey.Menu) ? 4 : 0));
+        switch (Native.SessionKey(id, (ushort)e.Key, modifiers))
         {
-            Command("back");
-            e.Handled = true;
+            case 0: return; // text: it arrives as characters
+            case 2: _ = PasteAsync(); break;
         }
+        e.Handled = true;
+    }
+
+    private static bool Down(Windows.System.VirtualKey key) =>
+        InputKeyboardSource.GetKeyStateForCurrentThread(key).HasFlag(Windows.UI.Core.CoreVirtualKeyStates.Down);
+
+    /// Ctrl+V: this PC's clipboard text, pasted in the app.
+    private async Task PasteAsync()
+    {
+        var content = Windows.ApplicationModel.DataTransfer.Clipboard.GetContent();
+        string? text = null;
+        if (content.Contains(Windows.ApplicationModel.DataTransfer.StandardDataFormats.Text)) text = await content.GetTextAsync();
+        Command("paste", new { text });
     }
 }

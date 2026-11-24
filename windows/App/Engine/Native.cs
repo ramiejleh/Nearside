@@ -33,6 +33,10 @@ internal static unsafe partial class Native
     [LibraryImport(Dll, EntryPoint = "nearside_session_command", StringMarshalling = StringMarshalling.Utf8)]
     public static partial void SessionCommand(long id, string json);
 
+    /// 0: text (send its characters); 1: handled; 2: Ctrl+V (paste this PC's clipboard).
+    [LibraryImport(Dll, EntryPoint = "nearside_session_key")]
+    public static partial int SessionKey(long id, ushort virtualKey, byte modifiers);
+
     [LibraryImport(Dll, EntryPoint = "nearside_session_frame")]
     public static partial void SessionFrame(long id, uint gen, long pts, long received, int black);
 
