@@ -340,6 +340,8 @@ public final class PhoneAppSession: @unchecked Sendable {
         var (reader, pending) = start
         while true {
             for message in pending {
+                // A reconnect replaced this stream: the new one's reader owns the player now.
+                guard lock.withLock({ audio === stream }) else { return }
                 switch message {
                 case let .audioConfig(rate, channels):
                     NSLog("Nearside: phone app \(target): sound \(rate) Hz × \(channels)")

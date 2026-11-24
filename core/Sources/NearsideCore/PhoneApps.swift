@@ -45,6 +45,15 @@ public enum PhoneIconCache {
         "\(id.replacingOccurrences(of: "/", with: "~"))@\(version)\(adaptive ? ".a" : "").png"
     }
 
+    /// The cached icon's file and whether it's adaptive (full-bleed, for masking), if cached.
+    public static func file(_ app: PhoneApp) -> (url: URL, adaptive: Bool)? {
+        for adaptive in [true, false] {
+            let url = directory.appendingPathComponent(name(id: app.id, version: app.version, adaptive: adaptive))
+            if FileManager.default.fileExists(atPath: url.path) { return (url, adaptive) }
+        }
+        return nil
+    }
+
     public static func cached(_ app: PhoneApp) -> PhoneAppIcon? {
         for adaptive in [true, false] {
             let url = directory.appendingPathComponent(name(id: app.id, version: app.version, adaptive: adaptive))

@@ -40,10 +40,10 @@
                     <ColumnDefinition Width="*" />
                 </Grid.ColumnDefinitions>
                 <Button x:Name="PhoneButton" HorizontalAlignment="Stretch" Click="OnPhone"
-                        ToolTipService.ToolTip="Your phone's screen in a window">
+                        ToolTipService.ToolTip="Open a phone app on this PC">
                     <StackPanel Orientation="Horizontal" Spacing="6">
-                        <FontIcon Glyph="&#xE8EA;" FontSize="13" />
-                        <TextBlock Text="Phone" FontSize="12.5" />
+                        <FontIcon Glyph="&#xED35;" FontSize="13" />
+                        <TextBlock Text="Apps" FontSize="12.5" />
                     </StackPanel>
                 </Button>
                 <Button x:Name="SendFilesButton" Grid.Column="1" HorizontalAlignment="Stretch" Click="OnSendFiles"

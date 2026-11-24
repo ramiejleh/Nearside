@@ -31,6 +31,7 @@ enum Commands {
             engine.sendFiles(paths.map { URL(fileURLWithPath: $0) })
         case "dismissTransfer":
             if let id = (c["id"] as? String).flatMap(UUID.init(uuidString:)) { engine.dismissTransfer(id) }
+        case "listApps": listApps(engine)
         // A notification shown by the app: what the user did with it.
         case "notifDismissed": if let key = c["key"] as? String { Bridge.notifications?.onDismiss?(key) }
         case "notifOpened": if let key = c["key"] as? String { Bridge.notifications?.onOpen?(key) }
@@ -39,6 +40,30 @@ enum Commands {
                 Bridge.notifications?.onAction?(key, index, c["text"] as? String)
             }
         default: break
+        }
+    }
+
+    /// The phone's apps ("apps"), then their icons as they're cached ("appIcons": id → PNG file).
+    private static func listApps(_ engine: SyncEngine) {
+        Task { @MainActor in
+            guard let apps = await engine.phoneApps() else {
+                Bridge.emit("apps", ["failed": true])
+                return
+            }
+            Bridge.emit("apps", ["apps": apps.map { app -> [String: Any] in
+                var o: [String: Any] = ["id": app.id, "package": app.package, "activity": app.activity, "label": app.label]
+                if let used = app.lastUsed { o["lastUsed"] = Int64(used.timeIntervalSince1970 * 1000) }
+                return o
+            }])
+            let byID = Dictionary(apps.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+            await engine.phoneAppIcons(for: apps) { batch in
+                var icons: [String: Any] = [:]
+                for id in batch.keys {
+                    guard let app = byID[id], let file = PhoneIconCache.file(app) else { continue }
+                    icons[id] = ["path": file.url.path, "adaptive": file.adaptive]
+                }
+                Bridge.emit("appIcons", ["icons": icons])
+            }
         }
     }
 

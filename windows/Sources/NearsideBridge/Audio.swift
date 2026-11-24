@@ -25,31 +25,38 @@ final class BridgeAudio: AudioOutput, @unchecked Sendable {
     private var buffer: JitterBuffer?
     private var sampleRate = 0, channels = 0
     private var packets = 0
-    private var scratch = [Float](repeating: 0, count: 48_000 / 10 * 2) // 120 ms of stereo at most
+    /// Held across configuring and decoding, so the scratch buffer is never swapped under a decode
+    /// (an old reader may still run after a reconnect). Never taken by the output thread.
+    private let decoding = NSLock()
+    private var scratch = [Float](repeating: 0, count: 48_000 / 10 * 2) // 100 ms of stereo
 
     init(session: Int64) { self.session = session }
 
     func configure(sampleRate: Int, channels: Int) {
-        let same = lock.withLock { self.sampleRate == sampleRate && self.channels == channels && buffer != nil }
-        if same { return }
-        lock.withLock {
-            self.sampleRate = sampleRate
-            self.channels = channels
-            buffer = JitterBuffer(channels: channels, sampleRate: sampleRate)
-            scratch = [Float](repeating: 0, count: sampleRate / 10 * channels)
+        decoding.withLock {
+            let same = lock.withLock { self.sampleRate == sampleRate && self.channels == channels && buffer != nil }
+            if same { return }
+            lock.withLock {
+                self.sampleRate = sampleRate
+                self.channels = channels
+                buffer = JitterBuffer(channels: channels, sampleRate: sampleRate)
+            }
+            scratch = [Float](repeating: 0, count: max(sampleRate, 1) / 10 * max(channels, 1))
+            _ = call(0, Data(), sampleRate: sampleRate, channels: channels, out: nil, capacity: 0)
         }
-        _ = call(0, Data(), sampleRate: sampleRate, channels: channels, out: nil, capacity: 0)
     }
 
-    /// Called from the session's audio reading thread only (so `scratch` is its own).
     func play(_ packet: Data, ptsMicros: Int64, receivedMicros: Int64) {
-        let (rate, count) = lock.withLock { (sampleRate, channels) }
-        guard rate > 0 else { return }
-        let decoded = scratch.withUnsafeMutableBufferPointer { out in
-            Int(call(1, packet, sampleRate: rate, channels: count, out: out.baseAddress, capacity: Int32(out.count)))
+        let samples: [Float]? = decoding.withLock {
+            let (rate, count) = lock.withLock { (sampleRate, channels) }
+            guard rate > 0 else { return nil }
+            let decoded = scratch.withUnsafeMutableBufferPointer { out in
+                Int(call(1, packet, sampleRate: rate, channels: count, out: out.baseAddress, capacity: Int32(out.count)))
+            }
+            guard decoded > 0 else { return nil }
+            return Array(scratch[0..<min(decoded, scratch.count)])
         }
-        guard decoded > 0 else { return }
-        let samples = Array(scratch[0..<min(decoded, scratch.count)])
+        guard let samples else { return }
         lock.withLock {
             buffer?.write(samples)
             packets += 1
@@ -66,8 +73,10 @@ final class BridgeAudio: AudioOutput, @unchecked Sendable {
     }
 
     func stop() {
-        lock.withLock { buffer = nil; sampleRate = 0; channels = 0 }
-        _ = call(3, Data(), sampleRate: 0, channels: 0, out: nil, capacity: 0)
+        decoding.withLock {
+            lock.withLock { buffer = nil; sampleRate = 0; channels = 0 }
+            _ = call(3, Data(), sampleRate: 0, channels: 0, out: nil, capacity: 0)
+        }
         AudioMedia.lock.withLock { AudioMedia.outputs[session] = nil }
     }
 

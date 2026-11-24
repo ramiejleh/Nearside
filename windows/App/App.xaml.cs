@@ -28,7 +28,7 @@ public partial class App : Application
         panel = new PanelWindow();
         panel.SetupRequested += OpenSetup;
         panel.SettingsRequested += OpenSettings;
-        panel.PhoneRequested += () => PhoneWindow.Show();
+        panel.PhoneRequested += OpenLauncher;
         tray = new TrayIcon(onSelect: TogglePanel, onSettings: OpenSettings, onQuit: Quit);
         EngineHost.Changed += snapshot => tray.Update(snapshot);
         SingleInstance.OnShowRequested(() => queue.TryEnqueue(() => panel.ShowNearTray(tray)));
@@ -57,7 +57,8 @@ public partial class App : Application
             {
                 if (!s.Connected || !s.AppLinked) return;
                 EngineHost.Changed -= OpenOnce;
-                PhoneWindow.Show();
+                if (line.Contains("--launcher")) OpenLauncher();
+                else PhoneWindow.Show();
             }
             EngineHost.Changed += OpenOnce;
         }
@@ -101,6 +102,19 @@ public partial class App : Application
             setup.Closed += (_, _) => setup = null;
         }
         setup.ShowCentered();
+    }
+
+    private LauncherWindow? launcher;
+
+    private void OpenLauncher()
+    {
+        if (!EngineHost.Current.Connected) return;
+        if (launcher == null)
+        {
+            launcher = new LauncherWindow();
+            launcher.Closed += (_, _) => launcher = null;
+        }
+        launcher.ShowCentered();
     }
 
     private void OpenSettings()
