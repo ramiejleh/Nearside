@@ -35,6 +35,7 @@ final class Webcam: NSObject {
 
     @ObservationIgnored private let engine: SyncEngine
     @ObservationIgnored private var poll: Timer?
+    @ObservationIgnored private var checks = 0
     @ObservationIgnored private var device: CMIOObjectID = 0
     @ObservationIgnored private var sink: CMIOStreamID = 0
     @ObservationIgnored private var session: CameraSession?
@@ -113,7 +114,14 @@ final class Webcam: NSObject {
             device = Self.findDevice()
             if device != 0 { log.notice("found Nearside Camera") }
         }
-        guard device != 0 else { return }
+        checks += 1
+        guard device != 0 else {
+            if checks % 15 == 1 {
+                let all = Self.ids(CMIOObjectID(kCMIOObjectSystemObject), kCMIOHardwarePropertyDevices)
+                log.notice("Nearside Camera not found among \(all.count, privacy: .public) cameras: \(all.map { Self.string($0, kCMIODevicePropertyDeviceUID) ?? "?" }, privacy: .public)")
+            }
+            return
+        }
         let used = Self.readInUse(device)
         if used != inUse {
             inUse = used
