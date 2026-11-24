@@ -25,6 +25,17 @@ jobs:
         working-directory: mac
         run: swift test
 
+  core-linux:
+    # Keeps core/ free of Apple-only code until the Windows build exists.
+    name: Engine on Linux (portability check)
+    runs-on: ubuntu-latest
+    container: swift:6.4.3
+    steps:
+      - uses: actions/checkout@v5
+      - name: Test
+        working-directory: core
+        run: swift test
+
   android:
     name: Phone app (assembleDebug)
     runs-on: ubuntu-latest

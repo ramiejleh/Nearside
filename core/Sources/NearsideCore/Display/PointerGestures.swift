@@ -1,6 +1,17 @@
 #if canImport(CoreGraphics)
 import CoreGraphics
 #endif
+import Foundation
+
+#if !canImport(CoreGraphics)
+/// CoreGraphics' CGVector, where only Foundation's CGPoint and CGSize exist (Windows).
+public struct CGVector: Equatable, Sendable {
+    public var dx: CGFloat
+    public var dy: CGFloat
+    public init(dx: CGFloat, dy: CGFloat) { self.dx = dx; self.dy = dy }
+    public static let zero = CGVector(dx: 0, dy: 0)
+}
+#endif
 
 /// Turns Mac trackpad gestures into the fingers Android expects (pure, so it's tested).
 ///

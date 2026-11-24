@@ -81,8 +81,9 @@ final class HelperLink {
         guard isConnected, let stream,
               var data = try? JSONSerialization.data(withJSONObject: message) else { return }
         data.append(0x0A)
+        let line = data
         writer.async {
-            if (try? stream.write(data)) == nil { stream.close() }
+            if (try? stream.write(line)) == nil { stream.close() }
         }
     }
 

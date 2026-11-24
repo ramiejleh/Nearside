@@ -44,8 +44,7 @@ public enum Pairing {
     public static func pair(host: String, port: UInt16, code: String, key: AdbKey, publicKey: String,
                             timeout: TimeInterval = 15) throws -> Result {
         let socket = try TCPSocket(host: host, port: port, timeout: timeout)
-        var tv = timeval(tv_sec: Int(timeout), tv_usec: 0)
-        setsockopt(socket.fd, SOL_SOCKET, SO_RCVTIMEO, &tv, socklen_t(MemoryLayout<timeval>.size))
+        socket.setReadTimeout(timeout)
         // Both sides speak right after the handshake, so no post-handshake peek here.
         let tls = try TLSChannel(socket: socket, key: key, expectedPeerKey: nil, peekAfterHandshake: false)
         defer { tls.close() }

@@ -81,12 +81,13 @@ struct NativeAdbLiveTests {
     @Test func manyStreamsAtOnce() throws {
         let adb = try AdbConnection.connect(host: host, port: port, key: try AdbKey(pemFile: AdbKey.defaultPath), expectedPeerKey: nil)
         defer { adb.close() }
-        let results = UnsafeMutableBufferPointer<Int32>.allocate(capacity: 8)
-        defer { results.deallocate() }
+        final class Results: @unchecked Sendable { let lock = NSLock(); var codes = [Int32](repeating: -1, count: 8) }
+        let results = Results()
         DispatchQueue.concurrentPerform(iterations: 8) { i in
-            results[i] = (try? adb.shell("exit \(i)").exitCode) ?? -1
+            let code = (try? adb.shell("exit \(i)").exitCode) ?? -1
+            results.lock.withLock { results.codes[i] = code }
         }
-        #expect(Array(results) == Array(0..<8))
+        #expect(results.codes == Array(0..<8))
     }
 }
 

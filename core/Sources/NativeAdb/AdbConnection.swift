@@ -70,8 +70,7 @@ public final class AdbConnection: @unchecked Sendable {
     public static func connect(host: String, port: UInt16, key: AdbKey, expectedPeerKey: Data?,
                                timeout: TimeInterval = 10) throws -> AdbConnection {
         let socket = try TCPSocket(host: host, port: port, timeout: timeout)
-        var tv = timeval(tv_sec: Int(timeout), tv_usec: 0) // handshake reads only; cleared below
-        setsockopt(socket.fd, SOL_SOCKET, SO_RCVTIMEO, &tv, socklen_t(MemoryLayout<timeval>.size))
+        socket.setReadTimeout(timeout) // handshake reads only; cleared below
 
         try socket.write(Packet(command: Packet.cnxn, arg0: version, arg1: UInt32(maxPayload),
                                 payload: Data("host::features=\(features)".utf8)).encoded())
@@ -85,8 +84,7 @@ public final class AdbConnection: @unchecked Sendable {
 
         let hello = try Packet.read(from: tls, maxPayload: maxPayload)
         guard hello.command == Packet.cnxn else { throw AdbError.protocolError("expected CNXN after TLS") }
-        tv = timeval(tv_sec: 0, tv_usec: 0)
-        setsockopt(socket.fd, SOL_SOCKET, SO_RCVTIMEO, &tv, socklen_t(MemoryLayout<timeval>.size))
+        socket.setReadTimeout(0)
 
         let connection = AdbConnection(channel: tls, banner: String(decoding: hello.payload, as: UTF8.self),
                                        peerMaxPayload: Int(hello.arg1), peerKeySHA256: tls.peerKeySHA256)

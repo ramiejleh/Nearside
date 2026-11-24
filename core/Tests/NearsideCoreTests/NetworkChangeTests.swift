@@ -1,3 +1,4 @@
+#if canImport(Darwin) // the Mac's TCPSocket
 import Darwin
 import Foundation
 @testable import NativeAdb
@@ -43,3 +44,4 @@ import Testing
         connection.close()
     }
 }
+#endif

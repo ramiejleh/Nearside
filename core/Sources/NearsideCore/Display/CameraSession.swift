@@ -28,9 +28,7 @@ public final class CameraSession: @unchecked Sendable {
         self.width = width; self.height = height; self.fps = fps
         self.token = token
         self.requestTicket = requestTicket
-        var bytes = [UInt8](repeating: 0, count: 16)
-        _ = SecRandomCopyBytes(kSecRandomDefault, bytes.count, &bytes)
-        id = Data(bytes)
+        id = secureRandomBytes(16)
     }
 
     public func start() {

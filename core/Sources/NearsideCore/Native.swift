@@ -2,6 +2,8 @@
 import Darwin
 #elseif os(Windows)
 import WinSDK
+#elseif canImport(Glibc)
+import Glibc
 #endif
 import Foundation
 import NativeAdb
@@ -229,8 +231,13 @@ enum Native {
 
     /// Resolves an mDNS host name ("Android_X.local.") to an IPv4 address.
     static func ipv4(_ host: String) -> String? {
-        var hints = addrinfo(ai_flags: 0, ai_family: AF_INET, ai_socktype: SOCK_STREAM, ai_protocol: 0,
-                             ai_addrlen: 0, ai_canonname: nil, ai_addr: nil, ai_next: nil)
+        var hints = addrinfo() // fields set by name: their order differs between systems
+        hints.ai_family = AF_INET
+        #if canImport(Glibc)
+        hints.ai_socktype = Int32(SOCK_STREAM.rawValue)
+        #else
+        hints.ai_socktype = SOCK_STREAM
+        #endif
         var result: UnsafeMutablePointer<addrinfo>?
         guard getaddrinfo(host, nil, &hints, &result) == 0, let info = result else { return nil }
         defer { freeaddrinfo(result) }

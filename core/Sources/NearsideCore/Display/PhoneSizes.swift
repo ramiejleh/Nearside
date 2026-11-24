@@ -1,6 +1,7 @@
 #if canImport(CoreGraphics)
 import CoreGraphics
 #endif
+import Foundation
 
 /// The sizes a phone app (or the phone window) can be shown at, in Android dp. A window is one
 /// of these, never an arbitrary size: switching re-lays the app out once; zooming (⌘+ / ⌘−) only

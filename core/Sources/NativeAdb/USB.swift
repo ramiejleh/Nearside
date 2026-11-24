@@ -1,3 +1,4 @@
+#if os(macOS)
 import Foundation
 import IOKit
 import IOUSBHost
@@ -151,3 +152,4 @@ final class USBChannel: Channel, @unchecked Sendable {
 
     func close() { interface.destroy() } // aborts pending reads: the reader thread ends
 }
+#endif

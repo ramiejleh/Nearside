@@ -1,3 +1,4 @@
+#if canImport(dnssd)
 import dnssd
 import Foundation
 
@@ -64,3 +65,4 @@ public enum Discovery {
     private final class Browser { var found: [(String, String, String, UInt32)] = [] }
     private final class Resolver { var result: (String, UInt16)? }
 }
+#endif

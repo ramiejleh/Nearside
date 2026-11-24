@@ -51,6 +51,10 @@ Its logs: `/usr/bin/log show --last 5m --predicate 'category == "webcam" OR (pro
 - `cd core && swift test`: protocol encoding and decoding, input mapping, key map, sizes, the
   audio jitter buffer, clipboard history, adb key format and more.
 - `cd mac && swift test`: the Mac parts (a real Opus round trip, quarantine).
+- The engine also builds and tests on Linux, which catches Apple-only code creeping into
+  `core/` (CI does this): `docker run --rm -v "$PWD/core":/src:ro swift:6.4.3 bash -c 'cp -r /src
+  /w && rm -rf /w/.build && cd /w && swift test'`. Sockets, mDNS and USB are placeholders there
+  (`Unsupported.swift`), so the macOS-only network tests are left out.
 - Live tests against a phone are opt-in: `cd core && NEARSIDE_DEVICE=<ip:port> swift test`
   (`NEARSIDE_INSTALL_APK=<apk>` adds the install test).
 

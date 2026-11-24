@@ -77,9 +77,7 @@ public final class PhoneAppSession: @unchecked Sendable {
         self.soundOnMac = soundOnMac
         self.token = token
         self.requestTicket = requestTicket
-        var bytes = [UInt8](repeating: 0, count: 16)
-        _ = SecRandomCopyBytes(kSecRandomDefault, bytes.count, &bytes)
-        id = Data(bytes)
+        id = secureRandomBytes(16)
     }
 
     public func start() {

@@ -1,6 +1,7 @@
 #if canImport(CoreGraphics)
 import CoreGraphics
 #endif
+import Foundation
 import Testing
 @testable import NearsideCore
 

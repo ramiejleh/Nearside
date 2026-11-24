@@ -24,13 +24,16 @@ enum Token {
         if let existing = try? String(contentsOf: Paths.token, encoding: .utf8), existing.count >= 32 {
             return existing
         }
-        // The system's secure random source on every platform (arc4random_buf, BCryptGenRandom).
-        var random = SystemRandomNumberGenerator()
-        let bytes = (0..<32).map { _ in UInt8.random(in: .min ... .max, using: &random) }
-        let token = bytes.map { String(format: "%02x", $0) }.joined()
+        let token = secureRandomBytes(32).map { String(format: "%02x", $0) }.joined()
         try? FileManager.default.createDirectory(at: Paths.support, withIntermediateDirectories: true)
         FileManager.default.createFile(atPath: Paths.token.path, contents: Data(token.utf8),
                                        attributes: [.posixPermissions: 0o600])
         return token
     }()
+}
+
+/// From the system's secure random source on every platform (arc4random_buf, BCryptGenRandom).
+func secureRandomBytes(_ count: Int) -> Data {
+    var random = SystemRandomNumberGenerator()
+    return Data((0..<count).map { _ in UInt8.random(in: .min ... .max, using: &random) })
 }
