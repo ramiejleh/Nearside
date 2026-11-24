@@ -16,6 +16,16 @@ enum Snapshot {
             "unseen": engine.unseenIDs.map(\.uuidString),
             "transfers": engine.transfers.map(transfer),
             "setupSteps": engine.setupSteps.map(step),
+            "settings": [
+                "mirrorNotifications": engine.mirrorNotifications,
+                "textMessages": engine.textMessages,
+                "recentPhotos": engine.recentPhotos,
+                "screenshotsToPC": engine.screenshotsToMac,
+                "screenshotsToPhone": engine.screenshotsToPhone,
+                "showCalls": engine.showCalls,
+                "ringHere": engine.ringOnMac,
+                "historyLimit": engine.historyLimit,
+            ] as [String: Any],
         ]
         if let inUseOn = engine.inUseOn { s["inUseOn"] = inUseOn }
         if let qr = engine.qrPairing { s["qrPayload"] = qr.payload }

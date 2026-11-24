@@ -2,6 +2,7 @@
 // Draws the Windows app's icons (run on a Mac: swift windows/scripts/make-icons.swift), from the
 // logo's geometry in mac/Sources/Nearside/Logo.swift:
 //   App/Assets/Nearside.ico               the app icon: the graphite tile with the white mark
+//   App/Assets/Logo.png                   that tile edge to edge, for the app's own windows
 //   App/Assets/tray-{dark,light}{,-off}.ico  the tray mark, white for dark taskbars and black for
 //                                            light ones; "-off" is outlined (not connected)
 import AppKit
@@ -24,8 +25,9 @@ func png(_ size: Int, _ draw: (CGFloat) -> Void) -> Data {
     return rep.representation(using: .png, properties: [:])!
 }
 
-func tile(_ size: CGFloat) {
-    let inset = size * 0.04 // Windows icons keep a small margin
+func tile(_ size: CGFloat) { tile(size, inset: size * 0.04) } // Windows icons keep a small margin
+
+func tile(_ size: CGFloat, inset: CGFloat) {
     let side = size - 2 * inset
     let s = side / 824
     NSColor(red: 0.11, green: 0.11, blue: 0.12, alpha: 1).setFill()
@@ -78,6 +80,7 @@ let out = URL(fileURLWithPath: CommandLine.arguments[0]).deletingLastPathCompone
     .appendingPathComponent("../App/Assets").standardized
 try FileManager.default.createDirectory(at: out, withIntermediateDirectories: true)
 try ico([16, 20, 24, 32, 40, 48, 64, 256].map { ($0, png($0, tile)) }).write(to: out.appendingPathComponent("Nearside.ico"))
+try png(256) { tile($0, inset: 0) }.write(to: out.appendingPathComponent("Logo.png"))
 for (name, color) in [("dark", NSColor.white), ("light", NSColor.black)] {
     for outlined in [false, true] {
         let images = [16, 20, 24, 32, 40, 48].map { ($0, png($0) { mark($0, color: color, outlined: outlined) }) }

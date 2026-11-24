@@ -35,7 +35,7 @@ public sealed partial class PanelWindow : Window
         InitializeComponent();
         Title = "Nearside";
         SystemBackdrop = new DesktopAcrylicBackdrop();
-        LogoImage.Source = new BitmapImage(new Uri(Path.Combine(AppContext.BaseDirectory, "Assets", "Nearside.ico")));
+        LogoImage.Source = new BitmapImage(new Uri(Path.Combine(AppContext.BaseDirectory, "Assets", "Logo.png")));
         HistoryList.ItemsSource = clips;
         TransferList.ItemsSource = transfers;
 
@@ -82,24 +82,6 @@ public sealed partial class PanelWindow : Window
         Win32.SetForegroundWindow(hwnd);
         IsShown = true;
         clock.Start();
-    }
-
-    /// The panel as drawn, as a PNG (the demo's screenshots).
-    public async Task SaveShotAsync(string path)
-    {
-        await Task.Delay(1500); // laid out and drawn
-        var bitmap = new RenderTargetBitmap();
-        await bitmap.RenderAsync(Root);
-        var pixels = await bitmap.GetPixelsAsync();
-        using var stream = new Windows.Storage.Streams.InMemoryRandomAccessStream();
-        var encoder = await Windows.Graphics.Imaging.BitmapEncoder.CreateAsync(Windows.Graphics.Imaging.BitmapEncoder.PngEncoderId, stream);
-        var dpi = Win32.GetDpiForWindow(Microsoft.UI.Win32Interop.GetWindowFromWindowId(AppWindow.Id));
-        encoder.SetPixelData(Windows.Graphics.Imaging.BitmapPixelFormat.Bgra8, Windows.Graphics.Imaging.BitmapAlphaMode.Premultiplied,
-            (uint)bitmap.PixelWidth, (uint)bitmap.PixelHeight, dpi, dpi, System.Runtime.InteropServices.WindowsRuntime.WindowsRuntimeBufferExtensions.ToArray(pixels));
-        await encoder.FlushAsync();
-        using var file = File.Create(path);
-        await stream.AsStreamForRead().CopyToAsync(file);
-        Log.Info($"saved a shot of the panel: {bitmap.PixelWidth}x{bitmap.PixelHeight}");
     }
 
     public void HidePanel()
@@ -222,7 +204,9 @@ public sealed partial class PanelWindow : Window
     {
         var id = (string)((FrameworkElement)sender).Tag;
         var path = EngineHost.Current.Transfers.FirstOrDefault(t => t.Id == id)?.Path;
-        if (path != null && File.Exists(path)) Process.Start("explorer.exe", $"/select,\"{path}\"");
+        // Explorer by its full path: never one found in the working directory.
+        var explorer = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "explorer.exe");
+        if (path != null && File.Exists(path)) Process.Start(explorer, $"/select,\"{path}\"");
     }
 
     private void OnDismissTransfer(object sender, RoutedEventArgs e) =>
@@ -278,7 +262,7 @@ public sealed record ClipRow(string Id, string Preview, string Meta, string Glyp
         clip.Id,
         clip.Text.Length > 400 ? clip.Text[..400] : clip.Text,
         $"{(clip.FromPhone ? phone : "This PC")}  ·  {Relative(clip.When)}",
-        clip.FromPhone ? "" : "",
+        clip.FromPhone ? "\uE8EA" : "\uE7F4",
         isNew ? Visibility.Visible : Visibility.Collapsed)
     { }
 
@@ -306,7 +290,7 @@ public sealed record TransferRow(string Id, string Name, string Status, string G
             ("done", false) => "Saved to Downloads",
             _ => t.Message ?? "Failed",
         },
-        t.ToPhone ? "" : "",
+        t.ToPhone ? "\uE898" : "\uE896",
         t.Status == "inProgress" ? Visibility.Visible : Visibility.Collapsed,
         t.Status == "done" && t.Path != null ? Visibility.Visible : Visibility.Collapsed,
         t.Status == "inProgress" ? Visibility.Collapsed : Visibility.Visible)

@@ -21,6 +21,7 @@ public sealed record Snapshot
     public List<string> Unseen { get; init; } = [];
     public List<Transfer> Transfers { get; init; } = [];
     public List<SetupStep> SetupSteps { get; init; } = [];
+    public Settings Settings { get; init; } = new();
 
     public bool Connected => State == "connected";
     public bool NeedsSetup => State == "needsSetup";
@@ -38,5 +39,17 @@ public sealed record Transfer(string Id, string Name, bool ToPhone, string Statu
 public sealed record SetupStep(int Id, string Title, string Status, string? Message);
 
 public sealed record PhoneStatus(int Battery, bool Charging, bool Wifi, int? Signal, string? Network);
+
+public sealed record Settings
+{
+    public bool MirrorNotifications { get; init; }
+    public bool TextMessages { get; init; }
+    public bool RecentPhotos { get; init; }
+    public bool ScreenshotsToPC { get; init; }
+    public bool ScreenshotsToPhone { get; init; }
+    public bool ShowCalls { get; init; }
+    public bool RingHere { get; init; }
+    public int HistoryLimit { get; init; }
+}
 
 public sealed record PhoneAppProblem(string Kind, string? Message);

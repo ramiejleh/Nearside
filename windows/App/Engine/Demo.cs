@@ -3,8 +3,18 @@ namespace Nearside.Engine;
 /// Made-up content for screenshots (Nearside.exe --demo).
 internal static class Demo
 {
-    public static Snapshot Snapshot()
+    public static Snapshot Snapshot(bool setup)
     {
+        if (setup)
+        {
+            return new Snapshot
+            {
+                State = "needsSetup",
+                QrPayload = "WIFI:T:ADB;S:nearside-demo;P:demo-password;;",
+                Settings = new Settings { MirrorNotifications = true, TextMessages = true },
+                ClipboardToastHidden = false,
+            };
+        }
         var now = DateTimeOffset.Now;
         long Ago(double minutes) => now.AddMinutes(-minutes).ToUnixTimeMilliseconds();
         return new Snapshot

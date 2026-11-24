@@ -20,6 +20,7 @@ enum Commands {
             if let hostPort = c["hostPort"] as? String, let code = c["code"] as? String {
                 engine.pair(hostPort: hostPort, code: code)
             }
+        case "set": set(engine, c["key"] as? String ?? "", c["value"])
         case "qrStart": engine.startQRPairing()
         case "qrStop": engine.stopQRPairing()
         case "resetSetup": engine.resetSetup()
@@ -38,6 +39,24 @@ enum Commands {
                 Bridge.notifications?.onAction?(key, index, c["text"] as? String)
             }
         default: break
+        }
+    }
+
+    /// A setting (the names in the snapshot's "settings").
+    private static func set(_ engine: SyncEngine, _ key: String, _ value: Any?) {
+        if let on = value as? Bool {
+            switch key {
+            case "mirrorNotifications": engine.mirrorNotifications = on
+            case "textMessages": engine.textMessages = on
+            case "recentPhotos": engine.recentPhotos = on
+            case "screenshotsToPC": engine.screenshotsToMac = on
+            case "screenshotsToPhone": engine.screenshotsToPhone = on
+            case "showCalls": engine.showCalls = on
+            case "ringHere": engine.ringOnMac = on
+            default: break
+            }
+        } else if key == "historyLimit", let limit = value as? Int, limit > 0 {
+            engine.historyLimit = limit
         }
     }
 }

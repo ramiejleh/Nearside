@@ -23,9 +23,9 @@ public static unsafe class EngineHost
     private static string lastState = "";
 
     /// Sample content instead of the engine (Nearside.exe --demo), for screenshots: nothing personal.
-    public static void StartDemo()
+    public static void StartDemo(bool setup)
     {
-        Current = Demo.Snapshot();
+        Current = Demo.Snapshot(setup);
         Changed?.Invoke(Current);
     }
 
