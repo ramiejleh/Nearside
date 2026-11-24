@@ -1,5 +1,8 @@
 import Foundation
 import NativeAdb
+import os
+
+private let log = Logger(subsystem: "dev.nearside.mac", category: "webcam")
 
 /// The phone's camera on this Mac: one "camera" stream on the display socket (same single-use
 /// ticket and proofs as a window's streams). The phone's camera is on exactly while this runs.
@@ -34,10 +37,11 @@ public final class CameraSession: @unchecked Sendable {
     public func start() {
         decoder.onFrame = { [weak self] in self?.onFrame?($0) }
         Task.detached { [self] in
-            guard let ticket = await requestTicket(), let adb = Native.current(),
+            guard let ticket = await requestTicket() else { log.error("camera: no ticket from the phone"); onEnded?(); return }
+            guard let adb = Native.current(),
                   let stream = try? adb.open("localabstract:nearside-display", window: 2 * 1024 * 1024),
                   (try? stream.write(DisplayWire.hello(role: .camera, session: id, ticket: ticket, token: token))) != nil else {
-                NSLog("Nearside: camera: couldn't reach the phone")
+                log.error("camera: couldn't open the stream to the phone")
                 onEnded?()
                 return
             }
@@ -73,9 +77,10 @@ public final class CameraSession: @unchecked Sendable {
             if reader.failed { return }
             if !proven {
                 guard let first = messages.first else { continue }
-                guard case .serverHello(let proof) = first, proof == expected else { return }
+                guard case .serverHello(let proof) = first, proof == expected else { log.error("camera: the phone's proof didn't match"); return }
                 proven = true
                 messages.removeFirst()
+                log.notice("camera: connected to the phone")
                 // Only now, to the proven helper: which camera.
                 guard (try? stream.write(DisplayWire.cameraOpen(front: front, width: width, height: height, fps: fps))) != nil else { return }
                 // Every 5 s: the phone turns its camera off after 15 s without hearing from us.

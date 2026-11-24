@@ -215,6 +215,11 @@ final class SinkSource: NSObject, CMIOExtensionStreamSource, @unchecked Sendable
     func authorizedToStartStream(for client: CMIOExtensionClient) -> Bool {
         // The extension isn't told the client's signing ID (it reads "unknown" here): check its
         // actual code signature instead.
+        // When it is given, though, any other name is refused outright.
+        if let id = client.signingID, id != "unknown", id != "dev.nearside.mac" {
+            log.error("refused a sink writer signed as \(id, privacy: .public)")
+            return false
+        }
         guard Self.isNearside(pid: client.pid) else {
             log.error("refused a sink writer that isn't Nearside (pid \(client.pid, privacy: .public))")
             return false
@@ -239,8 +244,8 @@ final class SinkSource: NSObject, CMIOExtensionStreamSource, @unchecked Sendable
         client = nil
     }
 
-    /// The signing ID is only a name a program claims: also require Nearside's real signature,
-    /// Developer ID from its team. Any error refuses.
+    /// Nearside's real signature: Developer ID, from its team, identifier dev.nearside.mac. Any
+    /// error refuses. (By process id: CMIO gives extensions no audit token; see docs/security.md.)
     private static func isNearside(pid: pid_t) -> Bool {
         var code: SecCode?
         let found = SecCodeCopyGuestWithAttributes(nil, [kSecGuestAttributePid: pid] as CFDictionary, [], &code)

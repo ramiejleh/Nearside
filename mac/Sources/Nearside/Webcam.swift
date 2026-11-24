@@ -43,6 +43,9 @@ final class Webcam: NSObject {
     @ObservationIgnored private var stoppedOnPhone = false
     /// After the stream failed (not stopped by us): the next try waits until then.
     @ObservationIgnored private var retryAfter = Date.distantPast
+    /// When the current session started, and whether a picture has come since.
+    @ObservationIgnored private var startedAt = Date.distantPast
+    @ObservationIgnored private let frames = FrameCount()
 
     /// The phone's "Stop" on its in-use notification.
     func phoneStopped() {
@@ -53,7 +56,15 @@ final class Webcam: NSObject {
     init(engine: SyncEngine) {
         self.engine = engine
         super.init()
-        if UserDefaults.standard.bool(forKey: Self.enabledKey) { askForCamera(); watch(true) }
+        if UserDefaults.standard.bool(forKey: Self.enabledKey) {
+            // Every launch, as Apple recommends: an updated Nearside brings its updated camera
+            // (the delegate replaces the old one); one already current is a no-op.
+            let request = OSSystemExtensionRequest.activationRequest(forExtensionWithIdentifier: Self.extensionID, queue: .main)
+            request.delegate = self
+            OSSystemExtensionManager.shared.submitRequest(request)
+            askForCamera()
+            watch(true)
+        }
     }
 
     var enabled: Bool {
@@ -77,7 +88,7 @@ final class Webcam: NSObject {
         switch AVCaptureDevice.authorizationStatus(for: .video) {
         case .notDetermined:
             AVCaptureDevice.requestAccess(for: .video) { granted in
-                log.info("camera access \(granted ? "granted" : "denied", privacy: .public)")
+                log.notice("camera access \(granted ? "granted" : "denied", privacy: .public)")
             }
         case .denied, .restricted:
             status = "Allow Nearside in System Settings › Privacy & Security › Camera (it only uses it to find Nearside Camera)."
@@ -100,16 +111,23 @@ final class Webcam: NSObject {
     private func check() {
         if device == 0 {
             device = Self.findDevice()
-            if device != 0 { log.info("found Nearside Camera") }
+            if device != 0 { log.notice("found Nearside Camera") }
         }
         guard device != 0 else { return }
         let used = Self.readInUse(device)
         if used != inUse {
             inUse = used
-            log.info("Nearside Camera \(used ? "in use" : "not in use", privacy: .public)")
+            log.notice("Nearside Camera \(used ? "in use" : "not in use", privacy: .public)")
         }
         if !used { stoppedOnPhone = false } // the app let go: the next start is a new one
-        if used, session == nil, !stoppedOnPhone, Date() >= retryAfter, engine.state == .connected { startFeeding() }
+        // Started but no picture in 10 s (the phone never answered): drop it and try again.
+        if session != nil, frames.value == 0, Date().timeIntervalSince(startedAt) > 10 {
+            log.error("no picture from the phone in 10 s; trying again")
+            stopFeeding()
+        }
+        if used, session == nil, !stoppedOnPhone, Date() >= retryAfter {
+            if engine.state == .connected { startFeeding() } else { log.notice("waiting for the phone to connect") ; retryAfter = Date().addingTimeInterval(5) }
+        }
         if !used, session != nil { stopFeeding() }
     }
 
@@ -123,18 +141,25 @@ final class Webcam: NSObject {
         let feeder = SinkFeeder(queue: queue)
         self.feeder = feeder
         let camera = engine.makeCameraSession(front: UserDefaults.standard.bool(forKey: Self.frontKey))
-        camera.onFrame = { frame in feeder.push(frame.image) }
+        let frames = frames
+        frames.reset()
+        startedAt = Date()
+        camera.onFrame = { frame in
+            if frames.increment() == 1 { log.notice("first picture from the phone") }
+            feeder.push(frame.image)
+        }
         camera.onEnded = { [weak self] in
             Task { @MainActor in
                 // The phone went (or its camera couldn't open): try again in a few seconds.
                 guard let self, self.session === camera else { return }
+                log.error("the phone's camera stream ended")
                 self.stopFeeding()
                 self.retryAfter = Date().addingTimeInterval(5)
             }
         }
         session = camera
         camera.start()
-        log.info("an app is using Nearside Camera; phone camera on")
+        log.notice("an app is using Nearside Camera; phone camera on")
     }
 
     private func stopFeeding() {
@@ -145,7 +170,7 @@ final class Webcam: NSObject {
         if sink != 0 { CMIODeviceStopStream(device, sink) }
         sink = 0
         feeder = nil
-        log.info("phone camera off")
+        log.notice("phone camera off")
     }
 
     // MARK: Core Media I/O
@@ -265,4 +290,13 @@ private final class SinkFeeder: @unchecked Sendable {
         guard let sample else { return }
         CMSimpleQueueEnqueue(queue, element: Unmanaged.passRetained(sample).toOpaque())
     }
+}
+
+/// Pictures received in the current session (any thread).
+private final class FrameCount: @unchecked Sendable {
+    private let lock = NSLock()
+    private var n = 0
+    var value: Int { lock.withLock { n } }
+    func reset() { lock.withLock { n = 0 } }
+    func increment() -> Int { lock.withLock { n += 1; return n } }
 }
