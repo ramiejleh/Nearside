@@ -28,8 +28,8 @@ final class BridgeNotifications: SystemNotifications {
 
     func remove(key: String) { Bridge.emit("notifyRemove", ["key": key]) }
 
-    /// Toasts the user cleared come back as notifDismissed, as they happen.
-    func reconcile() {}
+    /// The app checks which ones were cleared on this PC (they come back as notifDismissed).
+    func reconcile() { Bridge.emit("notifyReconcile") }
 
     func keepOnly(_ keys: Set<String>) { Bridge.emit("notifyKeepOnly", ["keys": Array(keys)]) }
 

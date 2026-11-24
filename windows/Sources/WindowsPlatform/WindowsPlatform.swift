@@ -21,7 +21,16 @@ public final class WindowsPlatform: Platform, @unchecked Sendable {
     @MainActor public func makeNotifications() -> any SystemNotifications { notifications?() ?? PrintedNotifications() }
     @MainActor public func makeScreenshotWatcher() -> any ScreenshotWatcher { NoScreenshots() }
     @MainActor public func watchReachability(_ changed: @escaping @MainActor () -> Void) {}
-    @MainActor public func reveal(_ url: URL) {}
+    /// Opens the folder in Explorer with the file selected.
+    @MainActor public func reveal(_ url: URL) {
+        #if os(Windows)
+        url.path.replacingOccurrences(of: "/", with: "\\").withCString(encodedAs: UTF16.self) { path in
+            guard let item = ILCreateFromPathW(path) else { return }
+            defer { ILFree(item) }
+            _ = SHOpenFolderAndSelectItems(item, 0, nil, 0)
+        }
+        #endif
+    }
     /// Mark of the Web, as a browser download gets: a Zone.Identifier stream saying "Internet",
     /// so SmartScreen and Office check the file before anything in it runs.
     public func markDownloaded(_ url: URL) -> Bool {

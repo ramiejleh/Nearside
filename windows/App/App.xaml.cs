@@ -11,6 +11,7 @@ public partial class App : Application
     private TrayIcon? tray;
     private PanelWindow? panel;
     private SetupWindow? setup;
+    private Notifications? notifications;
     private DispatcherQueue? queue;
 
     public App()
@@ -36,6 +37,7 @@ public partial class App : Application
             RunDemo(line);
             return;
         }
+        notifications = new Notifications(queue);
         var apk = Path.Combine(AppContext.BaseDirectory, "phone-app.apk");
         EngineHost.Start(queue, File.Exists(apk) ? apk : null);
         if (EngineHost.Current.NeedsSetup) OpenSetup();
@@ -84,6 +86,7 @@ public partial class App : Application
     private void Quit()
     {
         tray?.Dispose();
+        notifications?.Unregister();
         Exit();
     }
 }
