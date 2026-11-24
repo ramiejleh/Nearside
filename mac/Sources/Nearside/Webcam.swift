@@ -112,7 +112,13 @@ final class Webcam: NSObject {
     private func check() {
         if device == 0 {
             device = Self.findDevice()
-            if device != 0 { log.notice("found Nearside Camera") }
+            if device != 0 {
+                log.notice("found Nearside Camera")
+                // Subscribing is what keeps these fresh in this process: without listeners Core
+                // Media I/O kept answering "nuse" with the value from launch.
+                Self.listen(device, Int(Self.fourCC("nuse")))
+                Self.listen(device, kCMIODevicePropertyDeviceIsRunningSomewhere)
+            }
         }
         checks += 1
         guard device != 0 else {
@@ -122,7 +128,9 @@ final class Webcam: NSObject {
             }
             return
         }
-        let used = Self.readInUse(device)
+        // The extension's flag, or (before we feed it, when only apps can be running it) macOS's
+        // own "running somewhere".
+        let used = Self.readInUse(device) || (session == nil && Self.runningSomewhere(device))
         if used != inUse {
             inUse = used
             log.notice("Nearside Camera \(used ? "in use" : "not in use", privacy: .public)")
@@ -218,6 +226,20 @@ final class Webcam: NSObject {
     }
 
     private static func fourCC(_ s: String) -> UInt32 { s.utf8.reduce(0) { $0 << 8 | UInt32($1) } }
+
+    private static func runningSomewhere(_ device: CMIOObjectID) -> Bool {
+        var address = address(kCMIODevicePropertyDeviceIsRunningSomewhere)
+        var value: UInt32 = 0
+        var used: UInt32 = 0
+        return CMIOObjectGetPropertyData(device, &address, 0, nil, UInt32(MemoryLayout<UInt32>.size), &used, &value) == 0 && value != 0
+    }
+
+    /// A no-op listener: its existence makes Core Media I/O track the property for this process.
+    private static func listen(_ device: CMIOObjectID, _ selector: Int) {
+        var address = address(selector)
+        let status = CMIOObjectAddPropertyListenerBlock(device, &address, DispatchQueue.main) { _, _ in }
+        if status != 0 { log.error("listening to \(selector, privacy: .public) failed: \(status, privacy: .public)") }
+    }
 
     /// The sink stream (the one that takes our frames), started, with its queue.
     private static func openSink(_ device: CMIOObjectID) -> (CMIOStreamID, CMSimpleQueue)? {
