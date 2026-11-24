@@ -241,41 +241,11 @@ final class Webcam: NSObject {
         if status != 0 { log.error("listening to \(selector, privacy: .public) failed: \(status, privacy: .public)") }
     }
 
-    /// Proves to the extension that the writer is us: a fresh random key in the app group's
-    /// container (only Nearside and the extension can open it), presented on the stream.
-    private static func presentKey(on stream: CMIOStreamID) -> Bool {
-        guard let dir = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: "X97D6QH7RS.dev.nearside.mac") else {
-            log.error("no app group container")
-            return false
-        }
-        var bytes = [UInt8](repeating: 0, count: 32)
-        guard SecRandomCopyBytes(kSecRandomDefault, bytes.count, &bytes) == errSecSuccess else { return false }
-        let key = bytes.map { String(format: "%02x", $0) }.joined()
-        let file = dir.appendingPathComponent("sink-key")
-        let stored = "\(ProcessInfo.processInfo.processIdentifier):\(key)"
-        guard FileManager.default.createFile(atPath: file.path, contents: Data(stored.utf8), attributes: [.posixPermissions: 0o600]) else {
-            log.error("couldn't write the camera key")
-            return false
-        }
-        var address = address(Int(fourCC("skey")))
-        var value: CFString = key as CFString
-        let status = CMIOObjectSetPropertyData(stream, &address, 0, nil, UInt32(MemoryLayout<CFString>.size), &value)
-        if status != 0 { log.error("presenting the camera key failed: \(status, privacy: .public)") }
-        return status == 0
-    }
-
-    private static func wipeKey() {
-        guard let dir = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: "X97D6QH7RS.dev.nearside.mac") else { return }
-        try? FileManager.default.removeItem(at: dir.appendingPathComponent("sink-key"))
-    }
-
     /// The sink stream (the one that takes our frames), started, with its queue.
     private static func openSink(_ device: CMIOObjectID) -> (CMIOStreamID, CMSimpleQueue)? {
         for stream in ids(device, kCMIODevicePropertyStreams) {
             // By name (the extension's SinkSource): which "direction" a sink reports is murky.
             guard string(stream, kCMIOObjectPropertyName) == "Nearside Camera Input" else { continue }
-            guard presentKey(on: stream) else { continue }
-            defer { wipeKey() } // used (or not): never left lying there
             var queue: Unmanaged<CMSimpleQueue>?
             guard CMIOStreamCopyBufferQueue(stream, { _, _, _ in }, nil, &queue) == 0, let queue else { continue }
             guard CMIODeviceStartStream(device, stream) == 0 else { continue }

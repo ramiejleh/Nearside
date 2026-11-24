@@ -21,9 +21,6 @@ enum Camera {
     static let sinkID = UUID(uuidString: "6E2A2B0C-4C1D-4B8E-9D55-73696E6B0000")!
     /// "An app is using the camera": "1" or "0" (read by Nearside).
     static let inUse = CMIOExtensionProperty(rawValue: "4cc_nuse_glob_0000")
-    /// The sink's key, presented by its writer (see SinkSource).
-    static let sinkKey = CMIOExtensionProperty(rawValue: "4cc_skey_glob_0000")
-    static let group = "X97D6QH7RS.dev.nearside.mac"
 }
 
 final class DeviceSource: NSObject, CMIOExtensionDeviceSource, @unchecked Sendable {
@@ -198,13 +195,9 @@ final class SinkSource: NSObject, CMIOExtensionStreamSource, @unchecked Sendable
     var formats: [CMIOExtensionStreamFormat] { [format] }
     var availableProperties: Set<CMIOExtensionProperty> {
         [.streamActiveFormatIndex, .streamFrameDuration, .streamSinkBufferQueueSize, .streamSinkBuffersRequiredForStartup,
-         .streamSinkBufferUnderrunCount, .streamSinkEndOfData, Camera.sinkKey]
+         .streamSinkBufferUnderrunCount, .streamSinkEndOfData]
     }
 
-    /// The key last presented (once: it's cleared when a writer is authorized or refused), keys
-    /// already used, and the lock for them and `client`.
-    private var presented: String?
-    private var usedKeys: Set<String> = []
     private let lock = NSLock()
 
     func streamProperties(forProperties properties: Set<CMIOExtensionProperty>) throws -> CMIOExtensionStreamProperties {
@@ -213,67 +206,25 @@ final class SinkSource: NSObject, CMIOExtensionStreamSource, @unchecked Sendable
         if properties.contains(.streamFrameDuration) { p.frameDuration = CMTime(value: 1, timescale: Camera.fps) }
         if properties.contains(.streamSinkBufferQueueSize) { p.sinkBufferQueueSize = 1 }
         if properties.contains(.streamSinkBuffersRequiredForStartup) { p.sinkBuffersRequiredForStartup = 1 }
-        if properties.contains(Camera.sinkKey) {
-            // Writable (so Nearside can present its key) but never reads back a key.
-            p.setPropertyState(CMIOExtensionPropertyState(value: "" as NSString,
-                                                          attributes: CMIOExtensionPropertyAttributes(minValue: nil, maxValue: nil,
-                                                                                                      validValues: nil, readOnly: false)),
-                               forProperty: Camera.sinkKey)
-        }
         return p
     }
 
-    func setStreamProperties(_ streamProperties: CMIOExtensionStreamProperties) throws {
-        guard let state = streamProperties.propertiesDictionary[Camera.sinkKey] else { return }
-        let key = state.value as? String
-        log.notice("a writer presented a key (\(key == nil ? "unreadable" : "\(key!.count) chars", privacy: .public))")
-        lock.withLock { presented = key }
-    }
+    func setStreamProperties(_ streamProperties: CMIOExtensionStreamProperties) throws {}
 
-    /// Only Nearside: it writes "<its pid>:<a fresh random key>" into the app group's container
-    /// (which other sandboxed apps can't open; a sandboxed extension can't check other processes'
-    /// code signatures, so this is the proof), presents the key as a property, then starts. The
-    /// writer's pid must match, each key works once, and a known signing ID must be Nearside's.
-    /// One writer at a time.
+    /// One writer at a time, and never one macOS names as something other than Nearside. macOS
+    /// gives a camera extension no reliable way to tell who a writer is (no audit token; the
+    /// sandbox blocks code-signature lookups; it runs as its own user, so no shared files): see
+    /// docs/security.md.
     func authorizedToStartStream(for client: CMIOExtensionClient) -> Bool {
         if let id = client.signingID, id != "unknown", id != "dev.nearside.mac" {
             log.error("refused a sink writer signed as \(id, privacy: .public)")
             return false
         }
         return lock.withLock {
-            let offered = presented
-            presented = nil
-            guard let offered, offered.count == 64, offered.allSatisfy(\.isHexDigit), !usedKeys.contains(offered) else {
-                log.error("refused a sink writer: \(offered == nil ? "no" : "a bad or used", privacy: .public) key")
-                return false
-            }
-            guard let stored = Self.stored(), stored.key == offered, stored.pid == client.pid else {
-                log.error("refused a sink writer: its key or pid doesn't match Nearside's")
-                return false
-            }
-            usedKeys.insert(offered)
             if running, let current = self.client, current.clientID != client.clientID { return false }
             self.client = client
             return true
         }
-    }
-
-    /// What Nearside wrote: its pid and the key, if the file is fresh (under a minute old).
-    private static func stored() -> (pid: pid_t, key: String)? {
-        guard let dir = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: Camera.group) else {
-            log.error("no app group container")
-            return nil
-        }
-        let file = dir.appendingPathComponent("sink-key")
-        guard let modified = (try? FileManager.default.attributesOfItem(atPath: file.path))?[.modificationDate] as? Date,
-              Date().timeIntervalSince(modified) < 60,
-              let text = try? String(contentsOf: file, encoding: .utf8) else {
-            log.error("no fresh key from Nearside")
-            return nil
-        }
-        let parts = text.trimmingCharacters(in: .whitespacesAndNewlines).split(separator: ":")
-        guard parts.count == 2, let pid = pid_t(parts[0]) else { return nil }
-        return (pid, String(parts[1]))
     }
 
     func startStream() throws {

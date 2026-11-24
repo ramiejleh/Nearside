@@ -142,11 +142,11 @@ what a window shows to a file of the caller's choosing.
 
 ## Known limitations
 
-- Nearside Camera accepts pictures only from a writer that presents the key Nearside just wrote
-  into their shared app group container (a fresh random key each time, usable once). A sandboxed
-  camera extension can't check other processes' code signatures, so this is the proof: other
-  sandboxed apps can't open that container, but a program already running unsandboxed as you
-  could read the key.
+- Nearside Camera takes pictures from one writer at a time, and refuses one macOS names as
+  anything but Nearside, but it can't prove the writer is Nearside: macOS gives camera extensions
+  no audit token, their sandbox blocks code-signature lookups, and they run as their own user
+  (no files shared with the app). So a program already running on your Mac could feed it pictures;
+  such a program could equally create a camera of its own. Apple's own sample accepts any writer.
 
 - Any foreground phone app can invoke "Send to Mac" with a file of its choosing (Android's share
   sheet doesn't tell the target who started it). The notification and quarantine contain this.
