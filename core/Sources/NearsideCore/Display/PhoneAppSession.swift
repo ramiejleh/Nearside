@@ -219,6 +219,9 @@ public final class PhoneAppSession: @unchecked Sendable {
             let batch = pending
             pending = []
             for message in batch {
+                // Replaced by a reconnect's stream: stop here, so the old stream's leftovers never
+                // reach the decoder while the new one configures it.
+                guard lock.withLock({ video === stream }) else { return }
                 switch message {
                 case let .config(gen, width, height, sets):
                     NSLog("Nearside: phone app \(target): video \(width)x\(height) (gen \(gen))")

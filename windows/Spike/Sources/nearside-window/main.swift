@@ -33,10 +33,13 @@ struct WindowFrame: VideoFrame {
     }
 }
 
-/// H.264 (or HEVC) with FFmpeg's software decoder, frames converted to BGRA. Fed from one thread.
+/// H.264 (or HEVC) with FFmpeg's software decoder, frames converted to BGRA. Safe from any
+/// thread: a reconnecting window's old reader may still be decoding when the new one configures,
+/// so FFmpeg's state is only touched under `state` (and frames are handed out after it).
 final class FFmpegDecoder: VideoDecoding, @unchecked Sendable {
     let codec: DisplayWire.Codec
-    private(set) var gen: UInt32 = 0
+    private var currentGen: UInt32 = 0
+    var gen: UInt32 { state.withLock { currentGen } }
     var onFrame: (@Sendable (any VideoFrame) -> Void)?
     private var context: UnsafeMutablePointer<AVCodecContext>?
     private var packet = av_packet_alloc()
@@ -45,6 +48,8 @@ final class FFmpegDecoder: VideoDecoding, @unchecked Sendable {
     private var scaler: UnsafeMutablePointer<SwsContext>?
     /// Sent ahead of the next frame (the decoder learns the stream from them).
     private var pendingConfig: Data?
+    /// Guards everything FFmpeg owns (context, packet, frames, scaler, gen).
+    private let state = NSLock()
     /// Decode time totals since the stats last asked.
     private let lock = NSLock()
     private var decodeMicros: Int64 = 0, decoded = 0
@@ -56,7 +61,9 @@ final class FFmpegDecoder: VideoDecoding, @unchecked Sendable {
         av_packet_free(&packet); av_frame_free(&frame); av_frame_free(&converted)
     }
 
-    func invalidate() {
+    func invalidate() { state.withLock { freeLocked() } }
+
+    private func freeLocked() {
         if context != nil { avcodec_free_context(&context) }
         if let scaler { sws_freeContext(scaler) }
         scaler = nil
@@ -64,7 +71,9 @@ final class FFmpegDecoder: VideoDecoding, @unchecked Sendable {
 
     @discardableResult
     func configure(parameterSets annexB: Data, gen: UInt32) -> Bool {
-        invalidate()
+        state.lock()
+        defer { state.unlock() }
+        freeLocked()
         guard let decoder = avcodec_find_decoder(codec == .h264 ? AV_CODEC_ID_H264 : AV_CODEC_ID_HEVC),
               let context = avcodec_alloc_context3(decoder) else { return false }
         context.pointee.flags |= Int32(AV_CODEC_FLAG_LOW_DELAY)
@@ -77,22 +86,28 @@ final class FFmpegDecoder: VideoDecoding, @unchecked Sendable {
             return false
         }
         self.context = context
-        self.gen = gen
+        currentGen = gen
         pendingConfig = annexB
         return true
     }
 
     func decode(annexB: Data, gen: UInt32, ptsMicros: Int64, receivedMicros: Int64) {
-        guard gen == self.gen, let context, let packet, let frame, let converted else { return }
+        let pictures = state.withLock { decodeLocked(annexB, gen: gen, ptsMicros: ptsMicros, receivedMicros: receivedMicros) }
+        pictures.forEach { onFrame?($0) } // outside the lock: the callback may take its time
+    }
+
+    private func decodeLocked(_ annexB: Data, gen: UInt32, ptsMicros: Int64, receivedMicros: Int64) -> [WindowFrame] {
+        guard gen == currentGen, let context, let packet, let frame, let converted else { return [] }
+        var pictures: [WindowFrame] = []
         var data = annexB
         if let config = pendingConfig { data = config + annexB; pendingConfig = nil }
         let started = monotonicMicros()
-        guard av_new_packet(packet, Int32(data.count)) == 0 else { return }
+        guard av_new_packet(packet, Int32(data.count)) == 0 else { return [] }
         data.withUnsafeBytes { packet.pointee.data.update(from: $0.bindMemory(to: UInt8.self).baseAddress!, count: data.count) }
         packet.pointee.pts = ptsMicros
         let sent = avcodec_send_packet(context, packet)
         av_packet_unref(packet)
-        guard sent == 0 else { return }
+        guard sent == 0 else { return [] }
         while avcodec_receive_frame(context, frame) == 0 {
             let w = Int(frame.pointee.width), h = Int(frame.pointee.height)
             scaler = sws_getCachedContext(scaler, Int32(w), Int32(h), AVPixelFormat(frame.pointee.format),
@@ -109,8 +124,9 @@ final class FFmpegDecoder: VideoDecoding, @unchecked Sendable {
             }
             av_frame_unref(frame)
             lock.withLock { decodeMicros += monotonicMicros() - started; decoded += 1 }
-            onFrame?(WindowFrame(bgra: bgra, width: w, height: h, gen: gen, ptsMicros: ptsMicros, receivedMicros: receivedMicros))
+            pictures.append(WindowFrame(bgra: bgra, width: w, height: h, gen: gen, ptsMicros: ptsMicros, receivedMicros: receivedMicros))
         }
+        return pictures
     }
 
     /// Average decode (and convert) time per frame since the last call, ms.
