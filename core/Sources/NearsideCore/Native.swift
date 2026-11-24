@@ -244,7 +244,12 @@ enum Native {
         var buffer = [CChar](repeating: 0, count: Int(INET_ADDRSTRLEN))
         return info.pointee.ai_addr.withMemoryRebound(to: sockaddr_in.self, capacity: 1) { addr in
             var a = addr.pointee.sin_addr
-            return inet_ntop(AF_INET, &a, &buffer, socklen_t(buffer.count)).map { String(cString: $0) }
+            #if os(Windows)
+            let size = buffer.count // size_t there
+            #else
+            let size = socklen_t(buffer.count)
+            #endif
+            return inet_ntop(AF_INET, &a, &buffer, size).map { String(cString: $0) }
         }
     }
 }
