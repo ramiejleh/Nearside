@@ -6,7 +6,7 @@
 import CFFmpeg
 import Foundation
 import NearsideCore
-import SpikePlatform
+import WindowsPlatform
 import WinSDK
 
 // MARK: - Decoding
@@ -255,7 +255,7 @@ setvbuf(stdout, nil, _IONBF, 0)
 let args = CommandLine.arguments.dropFirst().compactMap { Int($0) }
 let (width, height, dpi) = args.count == 3 ? (args[0], args[1], args[2]) : (720, 1600, 320)
 
-let platform = SpikePlatform()
+let platform = WindowsPlatform()
 platform.videoDecoder = { codec in
     let decoder = FFmpegDecoder(codec: codec)
     decoders.append(decoder)

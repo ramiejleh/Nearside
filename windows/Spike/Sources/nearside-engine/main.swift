@@ -1,13 +1,13 @@
 import Foundation
 import NearsideCore
-import SpikePlatform
+import WindowsPlatform
 
 // The engine in a console, for Phase 3: the same SyncEngine as the Mac app, with a minimal
-// platform (SpikePlatform: the Windows clipboard; no video or sound).
+// platform (WindowsPlatform: the Windows clipboard; no video or sound).
 //   nearside-engine pair <ip:port> <code> [apk]   set up: pair, install the phone app, start the helper
 //   nearside-engine                               run: connect, sync the clipboard, print what happens
 
-Platforms.current = SpikePlatform()
+Platforms.current = WindowsPlatform()
 setvbuf(stdout, nil, _IONBF, 0) // unbuffered: Windows rejects line buffering with no size
 let args = CommandLine.arguments.dropFirst().map { $0 }
 

@@ -4,19 +4,21 @@ import NearsideCore
 import WinSDK
 #endif
 
-// What the Windows test tools run the engine with: the Windows clipboard and Mark of the Web;
-// video and sound only where a tool brings its own (the window's FFmpeg decoder).
+// The engine's view of a Windows PC: the clipboard and Mark of the Web here; notifications,
+// video and sound from whoever runs the engine (the app's bridge, or a test tool).
 
-public final class SpikePlatform: Platform, @unchecked Sendable {
-    /// The window's decoder; nil in the console (no video there).
+public final class WindowsPlatform: Platform, @unchecked Sendable {
+    /// The decoder; nil where there's no video (the console tool).
     public var videoDecoder: ((DisplayWire.Codec) -> any VideoDecoding)?
+    /// Shows the phone's notifications; printed (app name only) if not set.
+    public var notifications: (@MainActor () -> any SystemNotifications)?
     public init() {}
 
     public var computerName: String { ProcessInfo.processInfo.hostName }
     public var osName: String? { "windows" }
     public var bundledPhoneAppVersion: Int? { nil } // don't update the phone app from here
     @MainActor public func makeClipboard(onCopy: @escaping @MainActor (String) -> Void) -> any Clipboard { WindowsClipboard(onCopy: onCopy) }
-    @MainActor public func makeNotifications() -> any SystemNotifications { PrintedNotifications() }
+    @MainActor public func makeNotifications() -> any SystemNotifications { notifications?() ?? PrintedNotifications() }
     @MainActor public func makeScreenshotWatcher() -> any ScreenshotWatcher { NoScreenshots() }
     @MainActor public func watchReachability(_ changed: @escaping @MainActor () -> Void) {}
     @MainActor public func reveal(_ url: URL) {}

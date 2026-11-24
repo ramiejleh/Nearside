@@ -21,3 +21,6 @@ xcuserdata/
 *.keystore
 *.p12
 .env
+# .NET (the Windows app)
+bin/
+obj/
