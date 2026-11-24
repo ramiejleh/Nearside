@@ -96,9 +96,16 @@ screenshot land in Downloads, and each Mac screenshot go to the phone's gallery.
 
 ### Calls
 Incoming calls ring on the Mac with Answer, Decline, or decline with a text, for phone calls and
-app calls (WhatsApp, Messenger, Signal) alike. During a call a small card under the menu-bar icon
-shows the time, Mute and End. Call a number from Messages or from clipboard history. A phone
-call itself still talks through the phone; a call in an app window talks through the Mac.
+app calls (WhatsApp, Messenger, Signal) alike. Answered or placed on the Mac, a call talks
+through the Mac: its sound and the Mac's microphone, the phone's own microphone off. During a
+call a small card under the menu-bar icon shows the time, Mute and End, and moves the call to the
+phone and back in one click. Call a number from Messages or from clipboard history.
+
+### Phone camera as a webcam
+Pick "Nearside Camera" in FaceTime, Zoom, a browser or Photo Booth: the phone's back or front
+camera, upright however you hold it. The phone's camera is on only while an app uses it, and the
+phone says so, with a Stop button. Turn it on in Settings › Phone camera (macOS asks you to allow
+the camera extension once).
 
 ### Phone status
 The menu bar shows your phone's battery, signal and network (5G, LTE) while it's connected,
@@ -224,8 +231,11 @@ MacBook. Known limitations:
 
 - Apps that block screen capture (many banking apps) show black in a window. The window says so
   and offers to open the app on the phone.
-- A phone call's sound stays on the phone (Android doesn't let the Mac's microphone into a
-  cellular call). Calls in app windows, such as WhatsApp, talk through the Mac.
+- Calls on the Mac use Android's in-call audio paths (the ones Pixel's Call Screen uses); other
+  phones may not offer them, and then a call talks on the phone.
+- The webcam needs Nearside from the releases (or your own Apple developer signing, see
+  [development.md](docs/development.md)): macOS loads camera extensions only when signed,
+  provisioned and notarised.
 - The phone's own on-screen keyboard can't show in a Mac window; you type with the Mac's.
 - The Android app isn't on Google Play, because it needs SMS and notification access that
   Google restricts.

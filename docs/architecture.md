@@ -119,6 +119,25 @@ conversation read also presses that conversation notification's "Mark as read" a
   and, during a call, a card pinned under the menu-bar icon, unless the call's app is open in a
   Mac window.
 - **Missed calls** are the Phone app's own notification, mirrored with its buttons.
+- **A phone call's sound on the Mac** (`CallAudio` in the helper, `CallAudioSession` on the Mac):
+  a "call" stream on the display socket (role 4, same tickets and proofs). The helper records the
+  call's downlink (`VOICE_DOWNLINK`) and sends it as Opus; the Mac's microphone comes back as PCM
+  and plays into the call's uplink through the telephony output (`TYPE_TELEPHONY`, telephony-tx).
+  Meanwhile the phone's microphone is muted and its earpiece turned down, both restored when the
+  stream closes. Calls answered or placed on the Mac (or with the Phone app in a Mac window) talk
+  there; the in-call card moves a call either way.
+
+### Webcam
+- **Phone** (`CameraStream`): a "camera" stream on the display socket (role 5). The helper opens
+  Camera2 as the shell, captures the whole 4:3 sensor (1920×1440), encodes HEVC and sends it like a
+  window's video. It reads the accelerometer while on and sends the turn needed to make the picture
+  upright (`CAMERA_INFO`). Open exactly while the stream is; the in-use notification says so.
+- **Mac** (`Webcam`, `CameraSession`): watches the extension's "in use" property (with a property
+  listener, else it goes stale) and while it's set opens the phone's camera, turns each frame
+  upright, cuts the middle 16:9 and writes it into the extension's sink stream.
+- **Extension** (`NearsideCamera`, a Core Media I/O camera extension): one device, "Nearside
+  Camera", with a source stream for apps and a sink stream Nearside writes into; black until the
+  phone's picture arrives.
 
 ### Phone status
 `PhoneStatus` in the phone app reads the battery (the sticky `ACTION_BATTERY_CHANGED`), the

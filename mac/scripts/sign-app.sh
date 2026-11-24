@@ -14,6 +14,12 @@ PROFILES="${NEARSIDE_PROFILES:-$HOME/nearside-profiles}"
 
 sign() { codesign --force --options runtime $TIMESTAMP --sign "$SIGN_ID" "$@"; }
 
+# The camera's entitlements name the signing team: filled in from scripts/team-id.
+TEAM_ID="$(tr -d '[:space:]' < "$MAC_DIR/scripts/team-id")"
+TMP="$(mktemp -d)"
+trap 'rm -rf "$TMP"' EXIT
+entitlements() { sed "s/\$(TEAM_ID)/$TEAM_ID/g" "$MAC_DIR/$1" > "$TMP/$1"; echo "$TMP/$1"; }
+
 SPARKLE="$APP/Contents/Frameworks/Sparkle.framework/Versions/B"
 sign "$SPARKLE/XPCServices/Installer.xpc"
 sign --preserve-metadata=entitlements "$SPARKLE/XPCServices/Downloader.xpc"
@@ -25,9 +31,9 @@ EXT="$APP/Contents/Library/SystemExtensions/dev.nearside.mac.camera.systemextens
 ENTITLEMENTS="$MAC_DIR/Nearside.entitlements"
 if [[ -d "$EXT" ]]; then
   cp "$PROFILES/camera.provisionprofile" "$EXT/Contents/embedded.provisionprofile"
-  sign --entitlements "$MAC_DIR/NearsideCamera.entitlements" "$EXT"
+  sign --entitlements "$(entitlements NearsideCamera.entitlements)" "$EXT"
   cp "$PROFILES/app.provisionprofile" "$APP/Contents/embedded.provisionprofile"
-  ENTITLEMENTS="$MAC_DIR/NearsideWebcam.entitlements"
+  ENTITLEMENTS="$(entitlements NearsideWebcam.entitlements)"
 fi
 sign --entitlements "$ENTITLEMENTS" "$APP"
 codesign --verify --strict --verbose=2 "$APP"

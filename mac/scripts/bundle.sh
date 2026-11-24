@@ -96,7 +96,8 @@ PLIST
 # The camera extension ("Nearside Camera"), only when its Developer ID provisioning profiles are
 # here to sign it with (sign-app.sh): macOS won't load it otherwise, so plain builds leave it out.
 PROFILES="${NEARSIDE_PROFILES:-$HOME/nearside-profiles}"
-TEAM_ID="X97D6QH7RS"
+# The Apple developer team that signs the camera (forks: put yours in scripts/team-id).
+TEAM_ID="$(tr -d '[:space:]' < "$MAC_DIR/scripts/team-id")"
 if [[ -f "$PROFILES/app.provisionprofile" && -f "$PROFILES/camera.provisionprofile" ]]; then
   swift build -c release --product NearsideCamera
   EXT="$APP/Contents/Library/SystemExtensions/dev.nearside.mac.camera.systemextension"

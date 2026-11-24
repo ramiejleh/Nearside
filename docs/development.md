@@ -24,6 +24,28 @@ Logs:
 - Mac: `/usr/bin/log show --last 10m --predicate 'subsystem == "dev.nearside.mac"'`
   (in zsh, plain `log` is a shell builtin)
 
+### Signed builds (the webcam)
+
+macOS only loads the camera extension ("Nearside Camera") from a build that is signed with a
+Developer ID, carries provisioning profiles allowing a system extension, is notarised, and sits
+in /Applications. Plain builds leave the extension out and work otherwise.
+
+To build it yourself you need your own Apple developer account:
+
+1. Identifiers: App IDs `dev.nearside.mac` (with the System Extension capability) and
+   `dev.nearside.mac.camera` (or your own IDs, changed throughout).
+2. Profiles: a Developer ID profile for each, saved as `~/nearside-profiles/app.provisionprofile`
+   and `~/nearside-profiles/camera.provisionprofile`.
+3. Your team ID in `mac/scripts/team-id`, and a notarytool profile (`xcrun notarytool
+   store-credentials nearside`).
+4. `mac/scripts/install-signed.sh`: builds, signs, notarises (a few minutes) and installs to
+   /Applications. Then Settings › Phone camera, and allow it in System Settings › General ›
+   Login Items & Extensions.
+
+Its logs: `/usr/bin/log show --last 5m --predicate 'category == "webcam" OR (process ==
+"dev.nearside.mac.camera" AND category == "camera")'`. Info-level lines only show live
+(`log stream --level info`).
+
 ## Tests
 
 - `cd mac && swift test`: protocol encoding and decoding, input mapping, key map, sizes, audio
