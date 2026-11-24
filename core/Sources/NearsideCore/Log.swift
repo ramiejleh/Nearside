@@ -23,7 +23,7 @@ public struct Log: Sendable {
         #if canImport(os)
         logger.info("\(message, privacy: .public)")
         #else
-        NSLog("Nearside [\(category)]: \(message)")
+        NSLog("%@", "Nearside [\(category)]: \(message)") // never a format string from data
         #endif
     }
 
@@ -31,7 +31,7 @@ public struct Log: Sendable {
         #if canImport(os)
         logger.notice("\(message, privacy: .public)")
         #else
-        NSLog("Nearside [\(category)]: \(message)")
+        NSLog("%@", "Nearside [\(category)]: \(message)") // never a format string from data
         #endif
     }
 
@@ -39,7 +39,7 @@ public struct Log: Sendable {
         #if canImport(os)
         logger.error("\(message, privacy: .public)")
         #else
-        NSLog("Nearside [\(category)]: error: \(message)")
+        NSLog("%@", "Nearside [\(category)]: error: \(message)")
         #endif
     }
 }

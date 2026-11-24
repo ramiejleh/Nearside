@@ -9,5 +9,7 @@ let package = Package(
     dependencies: [.package(path: "../../core")],
     targets: [
         .executableTarget(name: "nearside-spike", dependencies: [.product(name: "NativeAdb", package: "core")]),
+        // The whole engine (SyncEngine) in a console, with the Windows clipboard.
+        .executableTarget(name: "nearside-engine", dependencies: [.product(name: "NearsideCore", package: "core")]),
     ]
 )

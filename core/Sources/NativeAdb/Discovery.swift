@@ -23,6 +23,7 @@ public enum Discovery {
             guard error == kDNSServiceErr_NoError, flags & UInt32(kDNSServiceFlagsAdd) != 0,
                   let name, let type, let domain, let context else { return }
             let browser = Unmanaged<Browser>.fromOpaque(context).takeUnretainedValue()
+            guard browser.found.count < 64 else { return } // bounded, whatever the network sends
             browser.found.append((String(cString: name), String(cString: type), String(cString: domain), interface))
         }, context) == kDNSServiceErr_NoError, let ref else { return [] }
         defer { DNSServiceRefDeallocate(ref) }
@@ -43,7 +44,7 @@ public enum Discovery {
             }, rcontext) == kDNSServiceErr_NoError, let rref else { continue }
             pump(rref, until: Date().addingTimeInterval(1)) { resolver.result != nil }
             DNSServiceRefDeallocate(rref)
-            if let (host, port) = resolver.result, !services.contains(where: { $0.name == name }) {
+            if let (host, port) = resolver.result, isAdbName(name), !services.contains(where: { $0.name == name }) {
                 services.append(Service(name: name, host: host, port: port))
             }
         }
@@ -59,6 +60,13 @@ public enum Discovery {
             var pfd = pollfd(fd: fd, events: Int16(POLLIN), revents: 0)
             guard poll(&pfd, 1, Int32(remaining * 1000)) > 0 else { return }
             guard DNSServiceProcessResult(ref) == kDNSServiceErr_NoError else { return }
+        }
+    }
+
+    /// adb's service names are "adb-<serial>-<random>": letters, digits, "-" and "_" only.
+    static func isAdbName(_ name: String) -> Bool {
+        !name.isEmpty && name.count <= 128 && name.unicodeScalars.allSatisfy {
+            ($0.isASCII && ($0.properties.isAlphabetic || ("0"..."9").contains($0))) || $0 == "-" || $0 == "_"
         }
     }
 

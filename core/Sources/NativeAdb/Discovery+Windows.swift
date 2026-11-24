@@ -17,10 +17,14 @@ public enum Discovery {
     /// Everything advertising `type` that answers within `timeout`.
     public static func browse(_ type: String, timeout: TimeInterval = 1.5) -> [Service] {
         let suffix = ".\(type).local"
+        // Resolving gets what's left of one deadline (a busy network can't stretch it), 1 s at most each.
+        let deadline = Date().addingTimeInterval(timeout + 3)
         var services: [Service] = []
-        for instance in browseInstances("\(type).local", timeout: timeout) {
-            guard instance.lowercased().hasSuffix(suffix.lowercased()), let found = resolve(instance) else { continue }
+        for instance in browseInstances("\(type).local", suffix: suffix, timeout: timeout) {
+            let remaining = deadline.timeIntervalSinceNow
+            guard remaining > 0 else { break }
             let name = String(instance.dropLast(suffix.count))
+            guard isAdbName(name), let found = resolve(instance, timeout: min(1, remaining)) else { continue }
             if !services.contains(where: { $0.name == name }) {
                 services.append(Service(name: name, host: found.host, port: found.port))
             }
@@ -28,17 +32,26 @@ public enum Discovery {
         return services
     }
 
+    /// adb's service names are "adb-<serial>-<random>": letters, digits, "-" and "_" only.
+    static func isAdbName(_ name: String) -> Bool {
+        !name.isEmpty && name.count <= 128 && name.unicodeScalars.allSatisfy {
+            ($0.isASCII && ($0.properties.isAlphabetic || ("0"..."9").contains($0))) || $0 == "-" || $0 == "_"
+        }
+    }
+
     /// Collects what the callbacks report. Shared with Windows' callback thread, under `lock`.
     private final class Box: @unchecked Sendable {
         let lock = NSLock()
         var names: [String] = []
+        var suffix = ""
         var resolved: (host: String, port: UInt16)?
         let done = DispatchSemaphore(value: 0)
     }
 
     /// Full instance names ("adb-….\_adb-tls-connect.\_tcp.local") answering within `timeout`.
-    private static func browseInstances(_ query: String, timeout: TimeInterval) -> [String] {
+    private static func browseInstances(_ query: String, suffix: String, timeout: TimeInterval) -> [String] {
         let box = Box()
+        box.suffix = suffix.lowercased()
         // Retained until Windows reports the browse cancelled (its last callback).
         let context = Unmanaged.passRetained(box).toOpaque()
         var cancel = DNS_SERVICE_CANCEL()
@@ -61,7 +74,12 @@ public enum Discovery {
                     if r.pointee.wType == WORD(DNS_TYPE_PTR), let target = r.pointee.Data.PTR.pNameHost {
                         // Swift sees the ANSI DNS_RECORD, but this API is Unicode only: the name is UTF-16.
                         let name = String(decodingCString: UnsafeRawPointer(target).assumingMemoryBound(to: UInt16.self), as: UTF16.self)
-                        box.lock.withLock { if !box.names.contains(name) { box.names.append(name) } }
+                        box.lock.withLock {
+                            // Only this service's names, and a bounded list whatever the network sends.
+                            if name.lowercased().hasSuffix(box.suffix), box.names.count < 64, !box.names.contains(name) {
+                                box.names.append(name)
+                            }
+                        }
                     }
                     record = r.pointee.pNext
                 }

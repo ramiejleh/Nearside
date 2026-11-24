@@ -81,7 +81,7 @@ enum Native {
 
     /// How this Mac shows up in the phone's "Paired devices" list.
     static func publicKey(_ key: AdbKey) -> String? {
-        let name = Host.current().localizedName ?? ProcessInfo.processInfo.hostName
+        let name = Platforms.current.computerName
         return try? key.androidPublicKey(comment: "\(NSUserName())@\(name)")
     }
 
