@@ -38,7 +38,10 @@ let package = Package(
             ]
         ),
         // A native adb client: wireless-debugging TLS, the adb wire protocol, shell, streams.
-        .target(name: "NativeAdb", dependencies: ["CNIOBoringSSL"]),
+        .target(name: "NativeAdb", dependencies: ["CNIOBoringSSL"], linkerSettings: [
+            .linkedLibrary("ws2_32", .when(platforms: [.windows])), // Winsock
+            .linkedLibrary("dnsapi", .when(platforms: [.windows])), // mDNS (DnsServiceBrowse)
+        ]),
         // Logic with no UI: adb, the helper tunnel, clipboard history, sync state, display streams.
         .target(name: "NearsideCore", dependencies: [
             "NativeAdb",

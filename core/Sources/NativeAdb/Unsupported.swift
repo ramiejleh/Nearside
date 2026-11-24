@@ -1,5 +1,5 @@
 // Placeholders where this system's sockets, mDNS and USB aren't written yet (Windows still needs
-// DnsServiceBrowse and WinUSB; its sockets are in TCPSocket+Windows.swift). Same API as the Mac's; everything fails or finds nothing.
+// WinUSB; its sockets and mDNS are in TCPSocket+Windows.swift and Discovery+Windows.swift). Same API as the Mac's; everything fails or finds nothing.
 #if !canImport(Darwin)
 import Foundation
 
@@ -18,6 +18,7 @@ final class TCPSocket: Channel, @unchecked Sendable {
 }
 #endif
 
+#if !os(Windows) // Windows: Discovery+Windows.swift
 public enum Discovery {
     public struct Service: Sendable, Equatable {
         public let name: String
@@ -28,6 +29,7 @@ public enum Discovery {
     public static let pairingType = "_adb-tls-pairing._tcp"
     public static func browse(_ type: String, timeout: TimeInterval = 1.5) -> [Service] { [] }
 }
+#endif
 
 public enum USB {
     public struct Device: Sendable, Equatable {

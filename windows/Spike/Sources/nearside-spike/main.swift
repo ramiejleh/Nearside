@@ -24,6 +24,14 @@ func fail(_ message: String) -> Never {
 }
 
 let args = CommandLine.arguments.dropFirst().map { $0 }
+// nearside-spike find   phones advertising wireless debugging (mDNS)
+if args.first == "find" {
+    let started = Date()
+    let found = Discovery.browse(Discovery.connectType)
+    print("\(found.count) found in \(Int(Date().timeIntervalSince(started) * 1000)) ms")
+    for s in found { print("  \(s.name) at \(s.host):\(s.port)") }
+    exit(0)
+}
 guard args.count >= 3, let port = UInt16(args[2]) else {
     fail("usage: nearside-spike pair <ip> <pairing port> <code> <debugging port> | shell <ip> <port> <command>")
 }
