@@ -210,6 +210,13 @@ final class SinkSource: NSObject, CMIOExtensionStreamSource, @unchecked Sendable
         if properties.contains(.streamFrameDuration) { p.frameDuration = CMTime(value: 1, timescale: Camera.fps) }
         if properties.contains(.streamSinkBufferQueueSize) { p.sinkBufferQueueSize = 1 }
         if properties.contains(.streamSinkBuffersRequiredForStartup) { p.sinkBuffersRequiredForStartup = 1 }
+        if properties.contains(Camera.sinkKey) {
+            // Writable (so Nearside can present its key) but never reads back a key.
+            p.setPropertyState(CMIOExtensionPropertyState(value: "" as NSString,
+                                                          attributes: CMIOExtensionPropertyAttributes(minValue: nil, maxValue: nil,
+                                                                                                      validValues: nil, readOnly: false)),
+                               forProperty: Camera.sinkKey)
+        }
         return p
     }
 
