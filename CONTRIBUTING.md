@@ -21,7 +21,7 @@ See [Build it yourself](README.md#build-it-yourself). For a development loop:
 ```sh
 (cd android && ./gradlew assembleDebug) && adb install -r android/app/build/outputs/apk/debug/app-debug.apk
 adb shell 'kill $(pidof nearside-helper)'     # the Mac starts the new helper
-(cd mac && swift test) && mac/scripts/bundle.sh && open mac/build/Nearside.app
+(cd core && swift test) && (cd mac && swift test) && mac/scripts/bundle.sh && open mac/build/Nearside.app
 ```
 
 The Mac app has test hooks driven by environment variables (`NEARSIDE_OPEN_APP`,
@@ -31,7 +31,7 @@ The Mac app has test hooks driven by environment variables (`NEARSIDE_OPEN_APP`,
 ## Pull requests
 
 - Keep changes focused: one fix or feature per pull request.
-- Run `swift test` in `mac/` and build the Android app before opening it.
+- Run `swift test` in `core/` and `mac/` and build the Android app before opening it.
 - Match the style around you: small functions, comments that say *why*, plain names.
 - Anything that touches security (authentication, the helper's permissions, what the phone
   exposes) needs a short explanation of the threat it handles in the description.

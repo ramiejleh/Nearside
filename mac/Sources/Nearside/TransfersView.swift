@@ -1,4 +1,5 @@
 import NearsideCore
+import NearsideMac
 import SwiftUI
 
 /// The few most recent file transfers, above the history list.

@@ -277,10 +277,14 @@ Bug reports from phones other than the Pixel 9 Pro help just as much. See
 ## Project layout
 
 ```
+core/                    Swift package: the engine, shared with the coming Windows app
+  Sources/NearsideCore/    sync engine, protocols, display, call and camera streams
+  Sources/NativeAdb/       adb client: TLS, pairing, USB, streams, file sync
 mac/                     Swift package: the Mac app
   Sources/Nearside/        menu-bar app, windows, launcher, settings
-  Sources/NearsideCore/    sync engine, protocols, video and audio pipeline
-  Sources/NativeAdb/       adb client: TLS, pairing, USB, streams, file sync
+  Sources/NearsideMac/     the engine's Mac parts: video decoding, audio, microphone,
+                           pasteboard, notifications, screenshots
+  Sources/NearsideCamera/  the camera extension (the phone as a webcam)
 android/                 Kotlin: the phone app and the shell-user helper
 docs/                    architecture, security design, protocol, development
 site/                    the project website (GitHub Pages)

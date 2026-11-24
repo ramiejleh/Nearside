@@ -1,4 +1,5 @@
 import NearsideCore
+import NearsideMac
 import AppKit
 
 /// View → Show Statistics: a small readout over a phone window's picture, once a second:

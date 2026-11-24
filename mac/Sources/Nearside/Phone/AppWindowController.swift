@@ -1,4 +1,5 @@
 import NearsideCore
+import NearsideMac
 import AppKit
 import Carbon
 import SwiftUI
@@ -150,7 +151,7 @@ final class AppWindowController: NSObject, NSWindowDelegate {
         session = engine.makePhoneAppSession(app, width: size.width, height: size.height, dpi: size.dpi, notification: notification)
         render(.opening)
 
-        session.onFrame = { [renderer] frame in renderer.show(frame) }
+        session.onFrame = { [renderer] frame in if let frame = frame as? VideoDecoder.Frame { renderer.show(frame) } }
         session.onState = { [weak self] state in self?.render(state) }
         session.onThermal = { [weak self] reduced in
             NSLog("Nearside: phone \(reduced ? "warm: quality reduced" : "cool again")")

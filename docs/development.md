@@ -48,9 +48,10 @@ Its logs: `/usr/bin/log show --last 5m --predicate 'category == "webcam" OR (pro
 
 ## Tests
 
-- `cd mac && swift test`: protocol encoding and decoding, input mapping, key map, sizes, audio
-  (a real Opus round trip), clipboard history, adb key format and more.
-- Live tests against a phone are opt-in: `NEARSIDE_DEVICE=<ip:port> swift test`
+- `cd core && swift test`: protocol encoding and decoding, input mapping, key map, sizes, the
+  audio jitter buffer, clipboard history, adb key format and more.
+- `cd mac && swift test`: the Mac parts (a real Opus round trip, quarantine).
+- Live tests against a phone are opt-in: `cd core && NEARSIDE_DEVICE=<ip:port> swift test`
   (`NEARSIDE_INSTALL_APK=<apk>` adds the install test).
 
 ## Test hooks
@@ -106,9 +107,13 @@ Notes:
 ## Code map
 
 ```
+core/Sources/NearsideCore/  SyncEngine, helper link, clipboard history, Display/ streams;
+                            Platform.swift: what each app provides (the Mac's: NearsideMac)
+core/Sources/NativeAdb/     adb client: TLS, pairing, mDNS discovery, streams, sync, install
 mac/Sources/Nearside/       UI: menu-bar panel, setup, settings, Messages, phone-app windows
-mac/Sources/NearsideCore/   SyncEngine, helper link, notifications, clipboard, Display/ pipeline
-mac/Sources/NativeAdb/      adb client: TLS, pairing, mDNS discovery, streams, sync, install
+mac/Sources/NearsideMac/    the engine's Mac parts: VideoToolbox decoding, audio, microphone,
+                            pasteboard, notifications, screenshots, quarantine
+mac/Sources/NearsideCamera/ the camera extension
 android/app/src/main/java/dev/nearside/
   helper/                   the shell-user helper (Main.kt) and display/ (virtual displays,
                             encoder, input, audio, system bars, app catalog)

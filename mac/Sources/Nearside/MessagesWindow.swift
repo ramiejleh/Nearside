@@ -1,4 +1,5 @@
 import NearsideCore
+import NearsideMac
 import SwiftUI
 
 /// A real window (not the panel): conversations take more room than a menu-bar popover has.

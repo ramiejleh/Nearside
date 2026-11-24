@@ -1,4 +1,5 @@
 import NearsideCore
+import NearsideMac
 import SwiftUI
 
 /// A drop zone that slides in under the menu-bar icon while you drag files toward the top of

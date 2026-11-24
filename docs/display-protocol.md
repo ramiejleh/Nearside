@@ -1,7 +1,7 @@
 # Phone-app stream protocol
 
 The binary protocol between the Mac and the helper for phone-app windows. Mac side:
-`mac/Sources/NearsideCore/Display/DisplayProtocol.swift` (encoders, decoder, tests);
+`core/Sources/NearsideCore/Display/DisplayProtocol.swift` (encoders, decoder, tests);
 helper side: `android/.../helper/display/DisplayServer.kt` and `DisplaySession.kt`.
 
 ## Connection

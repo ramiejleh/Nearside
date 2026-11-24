@@ -1,4 +1,5 @@
 import NearsideCore
+import NearsideMac
 import AppKit
 import Carbon
 @preconcurrency import CoreSpotlight

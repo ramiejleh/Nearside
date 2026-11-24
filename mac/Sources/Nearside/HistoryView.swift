@@ -1,4 +1,5 @@
 import NearsideCore
+import NearsideMac
 import SwiftUI
 
 struct HistoryView: View {

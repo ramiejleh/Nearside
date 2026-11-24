@@ -18,7 +18,10 @@ jobs:
         with:
           xcode-version: latest-stable
       - run: swift --version
-      - name: Test
+      - name: Test the engine
+        working-directory: core
+        run: swift test
+      - name: Test the Mac parts
         working-directory: mac
         run: swift test
 

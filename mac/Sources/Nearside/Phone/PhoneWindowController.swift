@@ -1,4 +1,5 @@
 import NearsideCore
+import NearsideMac
 import AppKit
 import SwiftUI
 
@@ -124,7 +125,7 @@ final class PhoneWindowController: NSObject, NSWindowDelegate {
         recentsModel.onDismiss = { [weak self] in self?.hideRecents() }
         recentsModel.onHome = { [weak self] in self?.goHome(nil) }
 
-        session.onFrame = { [renderer] frame in renderer.show(frame) }
+        session.onFrame = { [renderer] frame in if let frame = frame as? VideoDecoder.Frame { renderer.show(frame) } }
         session.onState = { [weak self] state in self?.render(state) }
         session.onVideoSize = { [weak self] size in
             guard let self else { return }

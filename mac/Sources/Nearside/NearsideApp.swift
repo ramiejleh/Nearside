@@ -1,4 +1,5 @@
 import NearsideCore
+import NearsideMac
 import CoreSpotlight
 import SwiftUI
 
@@ -7,6 +8,7 @@ import SwiftUI
 @main
 enum NearsideMain {
     static func main() {
+        Platforms.current = MacPlatform() // before anything in NearsideCore runs
         let app = NSApplication.shared
         let delegate = AppDelegate()
         app.delegate = delegate
@@ -235,6 +237,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 let started = Date()
                 camera.onRotation = { NSLog("Nearside: test camera: rotation \($0)") }
                 camera.onFrame = { frame in
+                    guard let frame = frame as? VideoDecoder.Frame else { return }
                     if count.increment() == 1 {
                         NSLog("Nearside: test camera: first frame after \(Int(Date().timeIntervalSince(started) * 1000)) ms, \(CVPixelBufferGetWidth(frame.image))x\(CVPixelBufferGetHeight(frame.image))")
                     }

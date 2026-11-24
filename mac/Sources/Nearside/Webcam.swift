@@ -4,6 +4,7 @@ import CoreImage
 import CoreMediaIO
 import os
 import NearsideCore
+import NearsideMac
 import SystemExtensions
 
 /// The phone's camera as a Mac webcam: "Nearside Camera", a camera extension inside the app.
@@ -166,6 +167,7 @@ final class Webcam: NSObject {
         frames.reset()
         startedAt = Date()
         camera.onFrame = { frame in
+            guard let frame = frame as? VideoDecoder.Frame else { return } // the Mac's decoder's
             if frames.increment() == 1 { log.notice("first picture from the phone") }
             feeder.push(frame.image)
         }

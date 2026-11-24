@@ -1,5 +1,6 @@
 import AppKit
 import NearsideCore
+import NearsideMac
 import SwiftUI
 
 /// The phone's calls on the Mac:

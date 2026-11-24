@@ -10,9 +10,13 @@ design see [security.md](security.md); for the phone-app stream format see
 Mac app ──(adb over TLS, wireless debugging)──> helper (shell user) <──(Binder)──> phone app
 ```
 
-- **Mac app** (`mac/`, Swift): a menu-bar app. `NearsideCore` holds the sync engine,
-  protocols and the video/audio pipeline; `NativeAdb` is a complete adb client (TLS, pairing,
-  streams, file sync, install) so nothing else needs installing; `Nearside` is the UI.
+- **Mac app** (`mac/`, Swift): a menu-bar app. The engine is its own package (`core/`), to be
+  shared with a Windows app: `NearsideCore` holds the sync engine, protocols and the display,
+  call and camera streams; `NativeAdb` is a complete adb client (TLS, pairing, streams, file
+  sync, install) so nothing else needs installing. What differs per computer is behind
+  `Platform` (`core/Sources/NearsideCore/Platform.swift`): the Mac's side, `NearsideMac`, decodes
+  video with VideoToolbox, plays and records sound with AVAudioEngine, and handles the
+  pasteboard, notifications, screenshots and quarantine. `Nearside` is the UI.
 - **Helper** (`android/.../helper/`, Kotlin): a process the Mac starts with
   `app_process` from the phone app's own APK, over adb, so it runs as the **shell user** — the
   rights `adb shell` has. It reads the clipboard in the background, starts activities, creates
