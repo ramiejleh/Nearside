@@ -73,7 +73,8 @@ whoever uninstalls; settings and history in `%LOCALAPPDATA%\Nearside` stay.
 
 With **Settings → Phone apps in the Start menu** on, each phone app gets a shortcut in the Start
 menu's "Nearside Phone Apps" folder, with its own icon. Each opens
-`nearside://open?package=<package>` with Nearside, which opens the app in a window (only apps on
+`nearside://open?package=<package>` with Nearside (as `Nearside.exe --link <link>`, which takes
+no other switches), which opens the app in a window (only apps on
 the phone; Windows Hello first if it's asked for). The installer registers `nearside:` links, so
 other launchers can use them too; a second start hands its link to the running Nearside.
 

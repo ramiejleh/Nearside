@@ -39,7 +39,7 @@ public partial class App : Application
         SingleInstance.OnShowRequested(() => queue.TryEnqueue(() => panel.ShowNearTray(tray)));
         Log.Info($"started: version {Updates.Version}, build {(Updates.Build.Length > 0 ? Updates.Build : "dev")}");
 
-        var line = Environment.GetCommandLineArgs();
+        var line = Arguments();
         if (line.Contains("--demo"))
         {
             RunDemo(line);
@@ -184,9 +184,21 @@ public partial class App : Application
 
     private ArrivalCard? arrival;
 
-    /// The `nearside:` link Nearside was started with (a Start-menu shortcut), if any.
-    public static string? LinkArgument() =>
-        Environment.GetCommandLineArgs().Skip(1).FirstOrDefault(a => a.StartsWith("nearside:", StringComparison.OrdinalIgnoreCase));
+    /// The `nearside:` link Nearside was started with (`Nearside.exe --link <link>`: a Start-menu
+    /// shortcut, or Windows for a link), if any. Nothing else on such a command line counts.
+    public static string? LinkArgument()
+    {
+        var args = Environment.GetCommandLineArgs();
+        return args.Length == 3 && args[1] == "--link" && args[2].StartsWith("nearside:", StringComparison.OrdinalIgnoreCase) ? args[2] : null;
+    }
+
+    /// The command line's switches (--demo, --open-phone...), none when started for a link: a
+    /// link comes from elsewhere, and must not be able to carry switches.
+    private static string[] Arguments()
+    {
+        var args = Environment.GetCommandLineArgs();
+        return args.Length > 1 && args[1] == "--link" ? [] : args;
+    }
 
     private string? pendingPackage;
 

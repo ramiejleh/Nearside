@@ -61,7 +61,13 @@ internal static class PhoneAppShortcuts
         }
     }
 
-    /// A shortcut per app (two apps with one name get their packages added); others removed.
+    /// What a package's shortcut runs Nearside with (the package is letters, digits, dots and
+    /// underscores: nothing to quote).
+    private static string Arguments(string package) => $"--link nearside://open?package={package}";
+
+    /// A shortcut per app; apps sharing a name all get their packages added, so a newly installed
+    /// app can never take another's shortcut. One that runs anything else is written again;
+    /// others are removed.
     private static void Sync(JsonElement list)
     {
         apps = [];
@@ -73,16 +79,18 @@ internal static class PhoneAppShortcuts
             apps[app.GetProperty("id").GetString()!] = (package, app.GetProperty("label").GetString() ?? package);
         }
         Directory.CreateDirectory(Folder);
+        var shared = apps.Values.GroupBy(a => FileName(a.Label), StringComparer.OrdinalIgnoreCase)
+            .Where(g => g.Count() > 1).Select(g => g.Key).ToHashSet(StringComparer.OrdinalIgnoreCase);
         var wanted = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var (id, (package, label)) in apps.OrderBy(a => a.Value.Package, StringComparer.Ordinal))
+        foreach (var (package, label) in apps.Values)
         {
             var name = FileName(label);
-            if (wanted.Contains($"{name}.lnk")) name = $"{name} ({package})";
+            if (shared.Contains(name)) name = $"{name} ({package})";
             wanted.Add($"{name}.lnk");
             var path = Path.Combine(Folder, $"{name}.lnk");
             shortcuts[package] = path;
             var icon = Path.Combine(IconFolder, $"{package}.ico");
-            if (!File.Exists(path)) Write(path, package, label, File.Exists(icon) ? icon : null);
+            if (ArgumentsOf(path) != Arguments(package)) Write(path, package, label, File.Exists(icon) ? icon : null);
         }
         foreach (var file in Directory.GetFiles(Folder, "*.lnk"))
         {
@@ -169,12 +177,34 @@ internal static class PhoneAppShortcuts
     {
         var link = (IShellLinkW)new ShellLink();
         link.SetPath(Environment.ProcessPath!);
-        link.SetArguments($"nearside://open?package={package}"); // checked: letters, digits, dots, underscores
+        link.SetArguments(Arguments(package));
         link.SetDescription($"{label} on your phone, in a window (Nearside)");
         link.SetWorkingDirectory(AppContext.BaseDirectory);
         if (icon != null) link.SetIconLocation(icon, 0);
         ((IPersistFile)link).Save(path, true);
         Marshal.ReleaseComObject(link);
+    }
+
+    /// What an existing shortcut runs Nearside with; null if there's none (or it can't be read).
+    private static string? ArgumentsOf(string path)
+    {
+        if (!File.Exists(path)) return null;
+        var link = (IShellLinkW)new ShellLink();
+        try
+        {
+            ((IPersistFile)link).Load(path, 0);
+            var args = new System.Text.StringBuilder(1024);
+            link.GetArguments(args, args.Capacity);
+            return args.ToString();
+        }
+        catch (COMException)
+        {
+            return null;
+        }
+        finally
+        {
+            Marshal.ReleaseComObject(link);
+        }
     }
 
     public static bool SafePackage(string package) =>

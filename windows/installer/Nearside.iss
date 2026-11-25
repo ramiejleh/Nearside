@@ -70,7 +70,7 @@ Name: "{autoprograms}\Nearside"; Filename: "{app}\Nearside.exe"
 Root: HKLM; Subkey: "Software\Classes\nearside"; ValueType: string; ValueData: "URL:Nearside"; Flags: uninsdeletekey
 Root: HKLM; Subkey: "Software\Classes\nearside"; ValueType: string; ValueName: "URL Protocol"; ValueData: ""
 Root: HKLM; Subkey: "Software\Classes\nearside\DefaultIcon"; ValueType: string; ValueData: "{app}\Nearside.exe,0"
-Root: HKLM; Subkey: "Software\Classes\nearside\shell\open\command"; ValueType: string; ValueData: """{app}\Nearside.exe"" ""%1"""
+Root: HKLM; Subkey: "Software\Classes\nearside\shell\open\command"; ValueType: string; ValueData: """{app}\Nearside.exe"" --link ""%1"""
 
 [UninstallDelete]
 ; The Start-menu shortcuts to phone apps (Settings), for whoever uninstalls.
