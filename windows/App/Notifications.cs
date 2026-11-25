@@ -146,7 +146,10 @@ internal sealed class Notifications
                 .SetAttributionText(app)
                 .AddText(title.Length > 0 ? title : app)
                 .AddText(text);
-            if (e.TryGetProperty("icon", out var icon) && SaveIcon(e.GetProperty("package").GetString() ?? app, icon.GetString()) is { } file)
+            var iconPackage = e.GetProperty("package").GetString() ?? app;
+            // The phone sends an app's icon once per connection: later ones use the saved file.
+            var iconData = e.TryGetProperty("icon", out var icon) ? icon.GetString() : null;
+            if (SaveIcon(iconPackage, iconData) is { } file)
             {
                 builder.SetAppLogoOverride(new Uri(file), AppNotificationImageCrop.Default);
             }
@@ -282,16 +285,17 @@ internal sealed class Notifications
     /// A short, stable tag for a key of any length.
     private static string Tag(string key) => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(key)))[..32];
 
-    /// The app's icon as a file (Windows shows images from files): one per app, rewritten as it changes.
+    /// The app's icon as a file (Windows shows images from files): one per app, rewritten as it changes;
+    /// the saved one when none came.
     private string? SaveIcon(string package, string? base64)
     {
-        if (string.IsNullOrEmpty(base64)) return null;
+        var path = Path.Combine(iconFolder, Tag(package) + ".png");
+        if (string.IsNullOrEmpty(base64)) return File.Exists(path) ? path : null;
         try
         {
             var bytes = Convert.FromBase64String(base64);
             if (bytes.Length > 512 * 1024) return null;
             Directory.CreateDirectory(iconFolder);
-            var path = Path.Combine(iconFolder, Tag(package) + ".png");
             if (!File.Exists(path) || new FileInfo(path).Length != bytes.Length) File.WriteAllBytes(path, bytes);
             return path;
         }

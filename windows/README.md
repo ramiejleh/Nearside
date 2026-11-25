@@ -94,7 +94,7 @@ PC's key. `nearside-spike usb` (in `Spike/`) lists phones on a cable, and
   `--shot <file.png>` saves the window as drawn, then quits.
 - `--open-phone` opens the phone window once connected (`--launcher`: the launcher instead).
 - `--camera-test` feeds the camera a generated picture instead of the phone's camera.
-- `--demo --arrival` shows the clip-arrival card. `NEARSIDE_TEST_PHONE=recents` or
+- `--demo --arrival` shows the clip-arrival card; `--demo --muted` the panel with notifications muted. `NEARSIDE_TEST_PHONE=recents` or
   `size:<phone|foldable|tablet>` (with `--open-phone`) opens Recents or changes the size once the
   window shows, and logs what came back (counts and sizes only).
 - Updates (release builds): `NEARSIDE_UPDATE_FEED=<url>` reads another feed (updates must still

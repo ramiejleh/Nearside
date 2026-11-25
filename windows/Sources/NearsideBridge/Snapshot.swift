@@ -29,6 +29,10 @@ enum Snapshot {
             ] as [String: Any],
         ]
         if let inUseOn = engine.inUseOn { s["inUseOn"] = inUseOn }
+        if let until = engine.notificationsMutedUntil {
+            s["mutedIndefinitely"] = until == .distantFuture
+            if until != .distantFuture { s["mutedUntil"] = millis(until) }
+        }
         if let qr = engine.qrPairing { s["qrPayload"] = qr.payload }
         if let hidden = engine.clipboardToastHidden { s["clipboardToastHidden"] = hidden }
         if let status = engine.phoneStatus {

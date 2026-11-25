@@ -136,10 +136,33 @@ public final class SyncEngine {
             defaults.set(mirrorNotifications, forKey: "mirrorNotifications")
             if !mirrorNotifications {
                 notifications.removeAll(); phoneNotifications = []
+                snooze.forgetHeld()
                 if calls.muted { calls.setMuted(false) }
                 calls.connectionLost()
             }
             applyNotificationAccess()
+        }
+    }
+
+    /// Phone notifications muted (not shown here) until this; `.distantFuture` until turned back on.
+    public var notificationsMutedUntil: Date? { snooze.isOn() ? snooze.until : nil }
+    private var snooze = NotificationSnooze()
+
+    /// Mutes phone notifications for `hours`, or until `unmuteNotifications()` when nil.
+    public func muteNotifications(hours: Int?) {
+        let until = hours.map { Date().addingTimeInterval(TimeInterval($0) * 3600) } ?? .distantFuture
+        snooze.start(until: until)
+        defaults.set(until.timeIntervalSince1970, forKey: "notificationsMutedUntil")
+    }
+
+    /// Ends the mute: what arrived meanwhile and is still on the phone appears now.
+    public func unmuteNotifications() {
+        defaults.removeObject(forKey: "notificationsMutedUntil")
+        let waiting = snooze.end(current: phoneNotifications)
+        guard mirrorNotifications, !demoNotifications else { return }
+        for (note, quiet) in waiting.reversed() { // oldest first, so the newest ends on top
+            notifications.show(key: note.key, package: note.package, app: note.app, title: note.title, text: note.text,
+                               iconPNG: nil, actions: note.actions, quiet: quiet)
         }
     }
 
@@ -205,6 +228,9 @@ public final class SyncEngine {
         history = ClipHistory.load(from: Paths.history, limit: limit)
         phoneName = defaults.string(forKey: "phoneName") ?? "Phone"
         mirrorNotifications = defaults.object(forKey: "mirrorNotifications") as? Bool ?? true
+        if let until = defaults.object(forKey: "notificationsMutedUntil") as? Double {
+            snooze = NotificationSnooze(until: Date(timeIntervalSince1970: until))
+        }
         textMessages = defaults.object(forKey: "textMessages") as? Bool ?? true
         lowBatteryAlert = defaults.object(forKey: "lowBatteryAlert") as? Bool ?? true
         recentPhotos = defaults.object(forKey: "recentPhotos") as? Bool ?? true
@@ -268,6 +294,7 @@ public final class SyncEngine {
             appLinked = false
             phoneStatus = nil // sent again when the phone is back
             phoneNotifications = [] // the phone sends them all again when it's back
+            snooze.forgetHeld() // and they're held again
         }
 
         // Keep the helper and tunnel alive: whenever we're idle, try to (re)establish them.
@@ -311,6 +338,7 @@ public final class SyncEngine {
         // the notification service).
         ticks += 1
         if state == .connected, mirrorNotifications, ticks % 5 == 0 { notifications.reconcile() }
+        if snooze.until != nil, !snooze.isOn() { unmuteNotifications() }
         overUSB = state == .connected && Native.isOverUSB
         moveToUSBIfPluggedIn()
         // Only ever talk to the phone pinned during the user-run pairing flow; no discovery
@@ -530,6 +558,10 @@ public final class SyncEngine {
             phoneNotifications.removeAll { $0.key == key }
             phoneNotifications.append(note)
             phoneNotifications.sort { $0.posted > $1.posted }
+            if snooze.isOn() {
+                snooze.hold(key, quiet: message["quiet"] as? Bool ?? false)
+                return
+            }
             notifications.show(key: key, package: note.package, app: note.app, title: note.title, text: note.text,
                                iconPNG: (message["icon"] as? String).flatMap { Data(base64Encoded: $0) },
                                actions: actions.map { .init(title: $0.title, isReply: $0.isReply) },
@@ -538,11 +570,13 @@ public final class SyncEngine {
             if mirrorNotifications, !demoNotifications, let keys = message["keys"] as? [String] {
                 notifications.keepOnly(Set(keys))
                 calls.keepOnly(Set(keys))
+                snooze.keepOnly(Set(keys))
                 phoneNotifications.removeAll { !keys.contains($0.key) }
             }
         case "notif-removed":
             if !demoNotifications, let key = message["key"] as? String {
                 notifications.remove(key: key)
+                snooze.drop(key)
                 phoneNotifications.removeAll { $0.key == key }
             }
         default:
@@ -556,6 +590,7 @@ public final class SyncEngine {
     public func dismissPhoneNotification(_ key: String) {
         phoneNotifications.removeAll { $0.key == key }
         notifications.remove(key: key)
+        snooze.drop(key)
         link.send(["t": "notif-dismiss", "key": key])
     }
 

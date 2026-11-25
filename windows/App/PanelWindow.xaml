@@ -20,10 +20,28 @@
                     <ColumnDefinition Width="Auto" />
                     <ColumnDefinition Width="*" />
                     <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="Auto" />
                 </Grid.ColumnDefinitions>
                 <Image x:Name="LogoImage" Width="26" Height="26" />
+                <!-- Mute the phone's notifications for a while, or until turned back on. -->
+                <Button x:Name="MuteButton" Grid.Column="2" Padding="6,4" Style="{ThemeResource SubtleButtonStyle}"
+                        ToolTipService.ToolTip="Mute notifications from your phone">
+                    <FontIcon x:Name="MuteIcon" Glyph="&#xEA8F;" FontSize="13" />
+                    <Button.Flyout>
+                        <MenuFlyout Placement="BottomEdgeAlignedRight">
+                            <MenuFlyoutItem x:Name="UnmuteItem" Text="Turn notifications back on" Click="OnUnmute" />
+                            <MenuFlyoutSeparator x:Name="UnmuteSeparator" />
+                            <MenuFlyoutItem Text="Mute for 1 hour" Tag="1" Click="OnMute" />
+                            <MenuFlyoutItem Text="Mute for 2 hours" Tag="2" Click="OnMute" />
+                            <MenuFlyoutItem Text="Mute for 4 hours" Tag="4" Click="OnMute" />
+                            <MenuFlyoutItem Text="Mute for 8 hours" Tag="8" Click="OnMute" />
+                            <MenuFlyoutItem Text="Mute for 24 hours" Tag="24" Click="OnMute" />
+                            <MenuFlyoutItem Text="Mute until I turn them back on" Click="OnMute" />
+                        </MenuFlyout>
+                    </Button.Flyout>
+                </Button>
                 <TextBlock Grid.Column="1" Text="Nearside" FontSize="14" FontWeight="SemiBold" VerticalAlignment="Center" />
-                <Border x:Name="StatusPill" Grid.Column="2" CornerRadius="11" Padding="9,3,9,4"
+                <Border x:Name="StatusPill" Grid.Column="3" CornerRadius="11" Padding="9,3,9,4"
                         Background="{ThemeResource SubtleFillColorSecondaryBrush}">
                     <StackPanel Orientation="Horizontal" Spacing="6">
                         <Ellipse x:Name="StatusDot" Width="7" Height="7" VerticalAlignment="Center" />
@@ -108,6 +126,11 @@
                 <InfoBar x:Name="InUseBar" Severity="Informational" IsClosable="False">
                     <InfoBar.ActionButton>
                         <Button Content="Use on this PC" Click="OnUseHere" />
+                    </InfoBar.ActionButton>
+                </InfoBar>
+                <InfoBar x:Name="MutedBar" Severity="Informational" IsClosable="False" Title="Notifications muted">
+                    <InfoBar.ActionButton>
+                        <Button Content="Turn on" Click="OnUnmute" />
                     </InfoBar.ActionButton>
                 </InfoBar>
                 <InfoBar x:Name="ProblemBar" Severity="Warning" IsClosable="False">

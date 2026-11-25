@@ -13,6 +13,10 @@ public sealed record Snapshot
     public bool IsPairing { get; init; }
     public bool ReinstallingPhoneApp { get; init; }
     public string? InUseOn { get; init; }
+    /// Phone notifications muted: until then (ms since 1970), or until turned back on.
+    public long? MutedUntil { get; init; }
+    public bool? MutedIndefinitely { get; init; }
+    public bool Muted => MutedIndefinitely != null;
     public string? QrPayload { get; init; }
     public bool? ClipboardToastHidden { get; init; }
     public PhoneStatus? PhoneStatus { get; init; }

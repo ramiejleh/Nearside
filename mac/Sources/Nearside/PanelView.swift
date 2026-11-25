@@ -26,6 +26,7 @@ struct PanelView: View {
                         SetupPrompt(openSetup: openSetup)
                     case .searching, .connected:
                         if let other = engine.inUseOn, engine.state != .connected { InUseElsewhere(phoneName: engine.phoneName, other: other) { engine.useHere() } }
+                        if let until = engine.notificationsMutedUntil { MutedBanner(until: until) { engine.unmuteNotifications() } }
                         if let problem = engine.phoneAppProblem {
                             PhoneAppProblemBanner(problem: problem, phoneName: engine.phoneName,
                                                   working: engine.reinstallingPhoneApp) { engine.reinstallPhoneApp() }
@@ -73,6 +74,7 @@ struct PanelView: View {
                     .font(.system(size: 14, weight: .semibold))
                     .fixedSize()
                 Spacer(minLength: 8)
+                if engine.mirrorNotifications { MuteMenu(engine: engine) }
                 StatusPill(state: engine.state, phoneName: engine.phoneName, inUseOn: engine.inUseOn, overUSB: engine.overUSB,
                            status: engine.state == .connected ? engine.phoneStatus : nil)
             }
@@ -292,6 +294,67 @@ struct InUseElsewhere: View {
         .padding(.horizontal, 14)
         .padding(.vertical, 10)
         .background(.quaternary.opacity(0.4))
+    }
+}
+
+/// The bell beside the status: mute the phone's notifications for a while, or until turned back on.
+private struct MuteMenu: View {
+    let engine: SyncEngine
+
+    var body: some View {
+        let muted = engine.notificationsMutedUntil != nil
+        Menu {
+            if muted {
+                Button("Turn notifications back on") { engine.unmuteNotifications() }
+                Divider()
+            }
+            Section(muted ? "Mute instead" : "Mute notifications") {
+                ForEach(NotificationSnooze.hours, id: \.self) { hours in
+                    Button(hours == 1 ? "For 1 hour" : "For \(hours) hours") { engine.muteNotifications(hours: hours) }
+                }
+                Button("Until I turn them back on") { engine.muteNotifications(hours: nil) }
+            }
+        } label: {
+            Image(systemName: muted ? "bell.slash.fill" : "bell")
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(muted ? Color.orange : Color.secondary)
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .help(muted ? "Notifications from your phone are muted" : "Mute notifications from your phone")
+        .accessibilityLabel(muted ? "Notifications muted" : "Mute notifications")
+    }
+}
+
+/// Phone notifications are muted: until when, and a way to turn them back on.
+struct MutedBanner: View {
+    let until: Date
+    let unmute: () -> Void
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "bell.slash")
+                .font(.system(size: 18))
+                .foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Notifications muted").font(.system(size: 12.5, weight: .semibold))
+                Text(detail).font(.system(size: 11)).foregroundStyle(.secondary)
+            }
+            Spacer(minLength: 4)
+            Button("Turn on", action: unmute)
+                .controlSize(.small)
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
+        .background(.quaternary.opacity(0.4))
+    }
+
+    private var detail: String {
+        if until == .distantFuture { return "Until you turn them back on." }
+        let sameDay = Calendar.current.isDate(until, inSameDayAs: Date())
+        let time = until.formatted(sameDay ? .dateTime.hour().minute() : .dateTime.weekday(.abbreviated).hour().minute())
+        return "Until \(time). What arrives meanwhile shows then."
     }
 }
 

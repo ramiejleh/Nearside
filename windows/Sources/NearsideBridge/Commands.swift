@@ -25,6 +25,8 @@ enum Commands {
         case "qrStop": engine.stopQRPairing()
         case "resetSetup": engine.resetSetup()
         case "useHere": engine.useHere()
+        case "muteNotifications": engine.muteNotifications(hours: (c["hours"] as? NSNumber)?.intValue)
+        case "unmuteNotifications": engine.unmuteNotifications()
         case "reinstallPhoneApp": engine.reinstallPhoneApp()
         case "sendFiles":
             let paths = c["paths"] as? [String] ?? []

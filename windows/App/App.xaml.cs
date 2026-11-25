@@ -89,14 +89,14 @@ public partial class App : Application
         }
     }
 
-    /// --demo [--setup <page> | --settings] [--shot <file.png>]: made-up content in the panel (or a
+    /// --demo [--setup <page> | --settings] [--muted] [--shot <file.png>]: made-up content in the panel (or a
     /// setup page, or settings);
     /// --shot saves the window as drawn, then quits. For screenshots: nothing personal shows.
     private void RunDemo(string[] line)
     {
         string? Value(string flag) => Array.IndexOf(line, flag) is var i and > 0 && i + 1 < line.Length ? line[i + 1] : null;
         var page = Value("--setup");
-        EngineHost.StartDemo(setup: page != null);
+        EngineHost.StartDemo(setup: page != null, muted: line.Contains("--muted"));
         Task saved = Task.CompletedTask;
         var shot = Value("--shot");
         if (line.Contains("--call"))

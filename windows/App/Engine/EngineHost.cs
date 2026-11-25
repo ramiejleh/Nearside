@@ -23,9 +23,10 @@ public static unsafe class EngineHost
     private static string lastState = "";
 
     /// Sample content instead of the engine (Nearside.exe --demo), for screenshots: nothing personal.
-    public static void StartDemo(bool setup)
+    public static void StartDemo(bool setup, bool muted = false)
     {
         Current = Demo.Snapshot(setup);
+        if (muted) Current = Current with { MutedIndefinitely = false, MutedUntil = DateTimeOffset.Now.AddHours(2).ToUnixTimeMilliseconds() };
         Changed?.Invoke(Current);
     }
 

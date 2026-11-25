@@ -160,6 +160,14 @@ public sealed partial class PanelWindow : Window
         InUseBar.IsOpen = s.InUseOn != null && !s.Connected;
         InUseBar.Title = $"{phone} is in use on {s.InUseOn}";
         InUseBar.Message = "This PC reconnects once it's free.";
+        MuteButton.Visibility = s.Settings.MirrorNotifications ? Visibility.Visible : Visibility.Collapsed;
+        MuteIcon.Glyph = s.Muted ? "\uE708" : "\uEA8F"; // the moon, as Windows' do not disturb; else a bell
+        var muteWords = s.Muted ? "Notifications from your phone are muted" : "Mute notifications from your phone";
+        ToolTipService.SetToolTip(MuteButton, muteWords);
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(MuteButton, muteWords);
+        UnmuteItem.Visibility = UnmuteSeparator.Visibility = s.Muted ? Visibility.Visible : Visibility.Collapsed;
+        MutedBar.IsOpen = s.Muted;
+        MutedBar.Message = MutedWords(s);
         ProblemBar.IsOpen = s.PhoneAppProblem != null;
         if (s.PhoneAppProblem is { } problem)
         {
@@ -322,6 +330,25 @@ public sealed partial class PanelWindow : Window
     }
 
     private void OnUseHere(object sender, RoutedEventArgs e) => EngineHost.Command("useHere");
+
+    private void OnMute(object sender, RoutedEventArgs e)
+    {
+        if (((FrameworkElement)sender).Tag is string tag && int.TryParse(tag, out var hours))
+            EngineHost.Command("muteNotifications", new { hours });
+        else
+            EngineHost.Command("muteNotifications");
+    }
+
+    private void OnUnmute(object sender, RoutedEventArgs e) => EngineHost.Command("unmuteNotifications");
+
+    /// "Until 15:30. What arrives meanwhile shows then." (a weekday when it's not today).
+    private static string MutedWords(Snapshot s)
+    {
+        if (s.MutedIndefinitely == true || s.MutedUntil is not { } ms) return "Until you turn them back on.";
+        var until = DateTimeOffset.FromUnixTimeMilliseconds(ms).LocalDateTime;
+        var time = until.ToString(until.Date == DateTime.Today ? "t" : "ddd t");
+        return $"Until {time}. What arrives meanwhile shows then.";
+    }
     private void OnSetUp(object sender, RoutedEventArgs e) => SetupRequested?.Invoke();
     private void OnSettings(object sender, RoutedEventArgs e) => SettingsRequested?.Invoke();
 
