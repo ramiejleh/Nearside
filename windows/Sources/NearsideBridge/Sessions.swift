@@ -230,3 +230,47 @@ public func nearside_session_key(_ id: Int64, _ vk: UInt16, _ modifiers: UInt8) 
         }
     }
 }
+
+/// The phone's camera for "Nearside Camera": its video goes to the app (as a window's does,
+/// under the app's id), which turns it upright and feeds the virtual camera.
+@MainActor
+enum Camera {
+    static var session: CameraSession?
+    static var id: Int64 = 0
+
+    static func start(id: Int64, front: Bool) {
+        stop()
+        guard let engine = Bridge.engine, engine.state == .connected else {
+            Bridge.emit("cameraEnded", ["id": id])
+            return
+        }
+        Media.lock.withLock { Media.opening = id }
+        // The whole 4:3 sensor: held either way, an upright 16:9 picture can be cut from it.
+        let camera = engine.makeCameraSession(front: front, width: 1920, height: 1440)
+        Media.lock.withLock { Media.opening = 0 }
+        camera.onRotation = { degrees in
+            Task { @MainActor in Bridge.emit("cameraRotation", ["id": id, "degrees": degrees]) }
+        }
+        camera.onEnded = {
+            Task { @MainActor in
+                guard Camera.id == id else { return }
+                Camera.session = nil
+                Media.lock.withLock { Media.decoders[id] = nil }
+                Bridge.emit("cameraEnded", ["id": id])
+            }
+        }
+        // Frames reach the app through its decoder; this only keeps the session's own hook set.
+        camera.onFrame = { _ in }
+        Camera.id = id
+        session = camera
+        camera.start()
+    }
+
+    static func stop() {
+        guard let session else { return }
+        session.onEnded = nil
+        session.stop()
+        self.session = nil
+        Media.lock.withLock { Media.decoders[id] = nil }
+    }
+}

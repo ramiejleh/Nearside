@@ -70,15 +70,25 @@ public sealed unsafe class Decoder : IDisposable
         }
     }
 
-    /// The pictures in one access unit (usually one).
+    /// The pictures in one access unit (usually one), as BGRA.
     public List<Picture> Decode(ReadOnlySpan<byte> annexB, uint frameGen, long pts)
     {
         var pictures = new List<Picture>(1);
+        DecodeFrames(annexB, frameGen, pts, _ =>
+        {
+            if (Convert() is { } picture) pictures.Add(picture);
+        });
+        return pictures;
+    }
+
+    /// Each decoded frame as FFmpeg has it (valid during the call, under the decoder's lock).
+    public void DecodeFrames(ReadOnlySpan<byte> annexB, uint frameGen, long pts, Action<nint> each)
+    {
         lock (gate)
         {
-            if (frameGen != gen || context == null) return pictures;
+            if (frameGen != gen || context == null) return;
             var length = annexB.Length + (pendingConfig?.Length ?? 0);
-            if (ffmpeg.av_new_packet(packet, length) != 0) return pictures;
+            if (ffmpeg.av_new_packet(packet, length) != 0) return;
             var target = new Span<byte>(packet->data, length);
             if (pendingConfig != null)
             {
@@ -90,14 +100,13 @@ public sealed unsafe class Decoder : IDisposable
             packet->pts = pts;
             var sent = ffmpeg.avcodec_send_packet(context, packet);
             ffmpeg.av_packet_unref(packet);
-            if (sent != 0) return pictures;
+            if (sent != 0) return;
             while (ffmpeg.avcodec_receive_frame(context, frame) == 0)
             {
-                if (Convert() is { } picture) pictures.Add(picture);
+                each((nint)frame);
                 ffmpeg.av_frame_unref(frame);
             }
         }
-        return pictures;
     }
 
     private Picture? Convert()

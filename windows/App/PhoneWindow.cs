@@ -19,6 +19,7 @@ public sealed class PhoneWindow : Window
     private const double ToolbarHeight = 40;
 
     private readonly long id;
+    private readonly StackPanel toolbar;
     private readonly SwapChainPanel panel = new();
     private readonly VideoView view;
     private readonly Border overlay = new() { Visibility = Visibility.Collapsed };
@@ -84,7 +85,7 @@ public sealed class PhoneWindow : Window
         AppWindow.SetIcon(Path.Combine(AppContext.BaseDirectory, "Assets", "Nearside.ico"));
         view = new VideoView(panel);
 
-        var toolbar = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4, Padding = new Thickness(6, 4, 6, 4), Height = ToolbarHeight };
+        toolbar = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4, Padding = new Thickness(6, 4, 6, 4), Height = ToolbarHeight };
         toolbar.Children.Add(ToolButton("", "Back (Esc)", () => Command("back")));
         toolbar.Children.Add(ToolButton("", "Home", () => Command("home")));
         toolbar.Children.Add(ToolButton("", "Open on the phone", () => Command("openOnPhone")));
@@ -173,7 +174,10 @@ public sealed class PhoneWindow : Window
                 Log.Info($"phone window {id}: {state}");
                 switch (state)
                 {
-                    case "showing": if (!covered) overlay.Visibility = Visibility.Collapsed; break;
+                    case "showing":
+                        sessionState = null;
+                        Overlay();
+                        break;
                     case "opening": ShowOverlay("Opening…", busy: true); break;
                     case "reconnecting": ShowOverlay("Reconnecting…", busy: true); break;
                     case "exited": ShowOverlay("The app was closed on your phone.", busy: false); break;
@@ -189,39 +193,65 @@ public sealed class PhoneWindow : Window
                 view.Crop = e.GetProperty("rows").GetInt32();
                 break;
             case "secure":
-                if (e.GetProperty("on").GetBoolean()) ShowOverlay("This app doesn't allow its screen to be shown elsewhere.", busy: false);
-                else overlay.Visibility = Visibility.Collapsed;
+                secure = e.GetProperty("on").GetBoolean();
+                Overlay();
                 break;
         }
     }
 
     private bool covered;
+    /// What the session says (its overlay text and spinner; null while showing) and whether the
+    /// app blocks capture: the overlay comes from these and `covered`, in Overlay().
+    private (string Text, bool Busy)? sessionState = ("Opening…", true);
+    private bool secure;
 
-    /// The PC locked: the window shows nothing (and gets no video) until Windows Hello says it's you.
+    /// The PC locked: the window shows nothing, takes no input and gets no video until Windows
+    /// Hello says it's you.
     private void Cover()
     {
+        // Fingers down are lifted first (nothing reaches the phone once covered).
+        foreach (var finger in fingers.Values) Command("touch", new { a = 3, p = finger, x = 0f, y = 0f });
+        fingers.Clear();
         covered = true;
+        foreach (var button in toolbar.Children.OfType<Control>()) button.IsEnabled = false;
         Command("visibility", new { v = 1 });
-        ShowOverlay("Locked. Click to show it again.", busy: false);
+        Overlay();
     }
 
     private async Task UncoverAsync()
     {
         if (!await AuthGate.AuthenticateAsync(Microsoft.UI.Win32Interop.GetWindowFromWindowId(AppWindow.Id), opening: false)) return;
         covered = false;
-        overlay.Visibility = Visibility.Collapsed;
+        foreach (var button in toolbar.Children.OfType<Control>()) button.IsEnabled = true;
+        Overlay();
         Command("visibility", new { v = 0 });
     }
 
     private void ShowOverlay(string text, bool busy)
     {
-        overlayText.Text = text;
-        overlayRing.Visibility = busy ? Visibility.Visible : Visibility.Collapsed;
-        overlay.Visibility = Visibility.Visible;
+        sessionState = (text, busy);
+        Overlay();
+    }
+
+    /// The one place the overlay is decided: the lock first, then a capture-blocking app, then the
+    /// session's state.
+    private void Overlay()
+    {
+        (string Text, bool Busy)? shown = covered ? ("Locked. Click to show it again.", false)
+            : secure ? ("This app doesn't allow its screen to be shown elsewhere.", false)
+            : sessionState;
+        overlay.Visibility = shown == null ? Visibility.Collapsed : Visibility.Visible;
+        if (shown is { } s)
+        {
+            overlayText.Text = s.Text;
+            overlayRing.Visibility = s.Busy ? Visibility.Visible : Visibility.Collapsed;
+        }
     }
 
     private void Command(string name, object? fields = null)
     {
+        // Covered: nothing reaches the phone but hiding it and closing it.
+        if (covered && name is not ("visibility" or "close")) return;
         var json = JsonSerializer.SerializeToNode(fields ?? new { })!.AsObject();
         json["c"] = name;
         Native.SessionCommand(id, json.ToJsonString());
@@ -335,6 +365,11 @@ public sealed class PhoneWindow : Window
 
     private void OnKey(object sender, KeyRoutedEventArgs e)
     {
+        if (covered)
+        {
+            e.Handled = true;
+            return;
+        }
         var modifiers = (byte)((Down(Windows.System.VirtualKey.Shift) ? 1 : 0) | (Down(Windows.System.VirtualKey.Control) ? 2 : 0)
                                | (Down(Windows.System.VirtualKey.Menu) ? 4 : 0));
         switch (Native.SessionKey(id, (ushort)e.Key, modifiers))

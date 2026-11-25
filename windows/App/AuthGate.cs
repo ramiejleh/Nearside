@@ -11,7 +11,13 @@ internal static class AuthGate
 
     private const string Key = "PhoneAppsAuthentication";
     private static bool unlocked;
-    private static Task<bool>? asking;
+    private static (string Reason, Task<bool> Task)? asking;
+    /// Hello verified someone in this run: from then on, it being unavailable never lets anyone in.
+    private static bool helloWorked;
+
+    /// Windows' lock notifications couldn't be had: without them "after a wake or unlock" can't
+    /// be told, so it asks every time.
+    public static bool NoLockSignal { get; set; }
 
     /// The PC locked or went to sleep: open windows cover themselves.
     public static event Action? Locked;
@@ -37,7 +43,7 @@ internal static class AuthGate
         switch (Current)
         {
             case Mode.Never: return true;
-            case Mode.AfterWake when unlocked: return true;
+            case Mode.AfterWake when unlocked && !NoLockSignal: return true;
             case Mode.EveryOpen when unlocked && !opening: return true;
         }
         var ok = await AskAsync(window, "Show your phone's apps");
@@ -48,11 +54,17 @@ internal static class AuthGate
     /// Always asks: for turning the protection down in settings.
     public static Task<bool> ConfirmAsync(nint window, string reason) => AskAsync(window, reason);
 
-    private static Task<bool> AskAsync(nint window, string reason)
+    /// One prompt at a time: the same question shares the prompt up; another waits for it, then asks.
+    private static async Task<bool> AskAsync(nint window, string reason)
     {
-        if (asking is { IsCompleted: false }) return asking; // one prompt at a time
-        asking = Ask(window, reason);
-        return asking;
+        while (asking is { } pending && !pending.Task.IsCompleted)
+        {
+            if (pending.Reason == reason) return await pending.Task;
+            await pending.Task;
+        }
+        var task = Ask(window, reason);
+        asking = (reason, task);
+        return await task;
     }
 
     private static async Task<bool> Ask(nint window, string reason)
@@ -60,11 +72,16 @@ internal static class AuthGate
         var availability = await UserConsentVerifier.CheckAvailabilityAsync();
         if (availability != UserConsentVerifierAvailability.Available)
         {
-            Log.Info($"Windows Hello can't ask ({availability}); allowing");
-            return true;
+            // No Hello on this PC (as the Mac allows without Touch ID); anything else (busy,
+            // blocked by policy), or Hello vanishing after it worked, keeps phone apps hidden.
+            var allow = !helloWorked && availability is UserConsentVerifierAvailability.DeviceNotPresent
+                or UserConsentVerifierAvailability.NotConfiguredForUser;
+            Log.Info($"Windows Hello can't ask ({availability}); {(allow ? "allowing" : "refusing")}");
+            return allow;
         }
         // The prompt belongs to a window: ours, else whatever is in front.
         var result = await UserConsentVerifierInterop.RequestVerificationForWindowAsync(window != 0 ? window : Win32.GetForegroundWindow(), reason);
+        if (result == UserConsentVerificationResult.Verified) helloWorked = true;
         return result == UserConsentVerificationResult.Verified;
     }
 }

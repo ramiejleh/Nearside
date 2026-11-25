@@ -4,8 +4,16 @@ using Nearside.Engine;
 
 namespace Nearside.Video;
 
+/// Where a session's video goes: a window, or the virtual camera.
+public interface IVideoSink : IDisposable
+{
+    bool Configure(int codec, ReadOnlySpan<byte> parameterSets, uint gen);
+    void Decode(ReadOnlySpan<byte> annexB, uint gen, long pts, long received);
+    void Invalidate();
+}
+
 /// A phone window's video: decoded, drawn, and each frame reported back to the session.
-public sealed class PhoneStream(long id, VideoView view) : IDisposable
+public sealed class PhoneStream(long id, VideoView view) : IVideoSink
 {
     private readonly Decoder decoder = new();
     private readonly object counts = new();
@@ -53,7 +61,7 @@ public sealed class PhoneStream(long id, VideoView view) : IDisposable
 /// Hands each session's video (from the engine's reading threads) to its window's stream.
 public static unsafe class VideoRouter
 {
-    private static readonly ConcurrentDictionary<long, PhoneStream> Streams = new();
+    private static readonly ConcurrentDictionary<long, IVideoSink> Streams = new();
     private static long lastId;
 
     public static void Install()
@@ -64,9 +72,11 @@ public static unsafe class VideoRouter
 
     public static long NextId() => Interlocked.Increment(ref lastId);
 
-    public static void Add(long id, PhoneStream stream) => Streams[id] = stream;
+    public static void Add(long id, IVideoSink stream) => Streams[id] = stream;
 
-    public static PhoneStream? Get(long id) => Streams.TryGetValue(id, out var stream) ? stream : null;
+    public static PhoneStream? Get(long id) => Get<PhoneStream>(id);
+
+    public static T? Get<T>(long id) where T : class => Streams.TryGetValue(id, out var stream) ? stream as T : null;
 
     public static void Remove(long id)
     {

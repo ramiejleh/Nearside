@@ -32,6 +32,9 @@ enum Commands {
         case "dismissTransfer":
             if let id = (c["id"] as? String).flatMap(UUID.init(uuidString:)) { engine.dismissTransfer(id) }
         case "listApps": listApps(engine)
+        case "cameraStart":
+            if let id = (c["id"] as? NSNumber)?.int64Value, id > 0 { Camera.start(id: id, front: c["front"] as? Bool ?? false) }
+        case "cameraStop": Camera.stop()
         // The panel and its photo strip.
         case "panelOpen":
             let open = c["open"] as? Bool ?? false

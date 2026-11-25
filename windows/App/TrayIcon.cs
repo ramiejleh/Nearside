@@ -33,7 +33,12 @@ internal sealed unsafe class TrayIcon : IDisposable
         window = CreateWindow();
         Show();
         // Locking or sleeping this PC locks phone apps again (Windows Hello to show them).
-        Win32.WTSRegisterSessionNotification(window, 0);
+        if (!Win32.WTSRegisterSessionNotification(window, 0))
+        {
+            AuthGate.NoLockSignal = true; // can't tell a lock: ask every time
+            Log.Error("no session notifications: Windows Hello is asked every time");
+        }
+        Win32.RegisterPowerSettingNotification(window, Win32.ConsoleDisplayState, 0); // the display turning off
         // Ctrl+Alt+N opens the launcher from anywhere.
         if (!Win32.RegisterHotKey(window, 1, Win32.MOD_CONTROL | Win32.MOD_ALT | Win32.MOD_NOREPEAT, 'N')) Log.Info("Ctrl+Alt+N is taken by another app");
     }
@@ -164,8 +169,13 @@ internal sealed unsafe class TrayIcon : IDisposable
                 return 0;
             }
             if (self != null && message == Win32.WM_SETTINGCHANGE) self.Show(); // maybe the theme
-            if (message == Win32.WM_WTSSESSION_CHANGE && wParam == Win32.WTS_SESSION_LOCK) AuthGate.Lock();
+            if (message == Win32.WM_WTSSESSION_CHANGE && wParam is Win32.WTS_SESSION_LOCK or Win32.WTS_CONSOLE_DISCONNECT or Win32.WTS_REMOTE_DISCONNECT) AuthGate.Lock();
             if (message == Win32.WM_POWERBROADCAST && wParam == Win32.PBT_APMSUSPEND) AuthGate.Lock();
+            if (message == Win32.WM_POWERBROADCAST && wParam == Win32.PBT_POWERSETTINGCHANGE && lParam != 0)
+            {
+                var setting = *(Win32.POWERBROADCAST_SETTING*)lParam;
+                if (setting.PowerSetting == Win32.ConsoleDisplayState && setting.Data == 0) AuthGate.Lock();
+            }
             if (self != null && message == Win32.WM_HOTKEY) self.OnHotKey?.Invoke();
         }
         catch (Exception e)

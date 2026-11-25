@@ -14,6 +14,7 @@ public partial class App : Application
     private SettingsWindow? settings;
     private Notifications? notifications;
     private CallCard? calls;
+    private Video.CameraFeed? camera;
     private DispatcherQueue? queue;
 
     public App()
@@ -49,6 +50,8 @@ public partial class App : Application
         Video.VideoRouter.Install();
         Audio.SoundRouter.Install();
         Audio.MicRouter.Install();
+        camera = new Video.CameraFeed(queue) { TestPattern = line.Contains("--camera-test") };
+        camera.Start();
         EngineHost.Event += (name, e) =>
         {
             if (name == "session") PhoneWindow.Route(e);
@@ -169,6 +172,7 @@ public partial class App : Application
     {
         tray?.Dispose();
         notifications?.Unregister();
+        camera?.Dispose(); // the camera goes with the app
         Log.Info("quit");
         // The engine's threads (network, sound) don't end by themselves: the process does, now.
         Environment.Exit(0);

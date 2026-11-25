@@ -16,7 +16,21 @@ internal static unsafe partial class Win32
     public const uint TPM_RIGHTBUTTON = 0x2, TPM_BOTTOMALIGN = 0x20, TPM_RETURNCMD = 0x100;
     public const uint MONITOR_DEFAULTTONEAREST = 2;
     public const uint WM_WTSSESSION_CHANGE = 0x02B1, WM_POWERBROADCAST = 0x0218, WM_HOTKEY = 0x0312;
-    public const int WTS_SESSION_LOCK = 7, PBT_APMSUSPEND = 4;
+    public const int WTS_SESSION_LOCK = 7, WTS_CONSOLE_DISCONNECT = 2, WTS_REMOTE_DISCONNECT = 4;
+    public const int PBT_APMSUSPEND = 4, PBT_POWERSETTINGCHANGE = 0x8013;
+    /// GUID_CONSOLE_DISPLAY_STATE: the display turned off (0), on (1) or dimmed (2).
+    public static readonly Guid ConsoleDisplayState = new("6fe69556-704a-47a0-8f24-c28d936fda47");
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct POWERBROADCAST_SETTING
+    {
+        public Guid PowerSetting;
+        public uint DataLength;
+        public uint Data;
+    }
+
+    [LibraryImport("user32.dll")]
+    public static partial nint RegisterPowerSettingNotification(nint recipient, in Guid setting, uint flags);
     public const uint MOD_ALT = 0x1, MOD_CONTROL = 0x2, MOD_NOREPEAT = 0x4000;
 
     [StructLayout(LayoutKind.Sequential)]

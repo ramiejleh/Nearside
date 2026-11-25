@@ -39,5 +39,8 @@
     <Content Include="..\.build\$(SwiftConfiguration)\NearsideBridge.dll" Link="NearsideBridge.dll"
              CopyToOutputDirectory="PreserveNewest" Condition="Exists('..\.build\$(SwiftConfiguration)\NearsideBridge.dll')" />
     <Content Include="$(FFmpegDir)\bin\*.dll" CopyToOutputDirectory="PreserveNewest" Visible="false" />
+    <!-- The virtual camera (windows/Camera/build.cmd); the installer registers it (as an administrator). -->
+    <Content Include="..\Camera\build\$(Platform.ToLowerInvariant())\NearsideCamera.dll" Link="NearsideCamera.dll"
+             CopyToOutputDirectory="PreserveNewest" Condition="Exists('..\Camera\build\$(Platform.ToLowerInvariant())\NearsideCamera.dll')" />
   </ItemGroup>
 </Project>
