@@ -26,7 +26,6 @@ public sealed class PhoneWindow : Window
     private readonly ProgressRing overlayRing = new() { IsActive = true, Width = 28, Height = 28 };
     /// Pointers down on the picture, as the phone's pointer numbers (0 for the mouse).
     private readonly Dictionary<uint, byte> fingers = [];
-    private bool closing;
 
     /// Opens the phone's home screen (no `app`) or an app; null if the phone isn't connected.
     /// With `notification`, the app opens at that notification (its call, its chat).
@@ -40,7 +39,6 @@ public sealed class PhoneWindow : Window
         if (reply == null)
         {
             VideoRouter.Remove(id);
-            window.closing = true;
             window.Close();
             return null;
         }
@@ -133,7 +131,7 @@ public sealed class PhoneWindow : Window
         Closed += (_, _) =>
         {
             statsTimer.Stop();
-            if (!closing) Command("close");
+            Command("close"); // always (closing twice is harmless): the bridge forgets the window
             Open.Remove(id);
             VideoRouter.Remove(id);
             view.Dispose();
@@ -168,7 +166,6 @@ public sealed class PhoneWindow : Window
                     case "failed": ShowOverlay(e.TryGetProperty("message", out var m) ? m.GetString() ?? "" : "Couldn't open.", busy: false); break;
                     case "movedToPhone":
                     case "closed":
-                        closing = true;
                         Close();
                         break;
                 }

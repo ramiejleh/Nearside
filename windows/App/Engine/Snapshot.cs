@@ -23,6 +23,8 @@ public sealed record Snapshot
     public List<SetupStep> SetupSteps { get; init; } = [];
     public Settings Settings { get; init; } = new();
     public CallsView Calls { get; init; } = new();
+    /// Only while the panel is open (and recent photos are on).
+    public PhotosView? Photos { get; init; }
     /// Only while the Messages window is open.
     public MessagesView? Messages { get; init; }
 
@@ -55,6 +57,14 @@ public sealed record Settings
     public int HistoryLimit { get; init; }
     public bool LowBatteryAlert { get; init; }
 }
+
+public sealed record PhotosView
+{
+    public bool Denied { get; init; }
+    public List<PhonePhoto> Items { get; init; } = [];
+}
+
+public sealed record PhonePhoto(long Id, string Name, long Date, bool IsScreenshot, int Width, int Height, bool Thumbnail);
 
 public sealed record CallsView
 {

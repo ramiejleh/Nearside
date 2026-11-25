@@ -21,6 +21,16 @@ public sealed class SettingsWindow : Window
         Title = "New phone screenshots go to this PC",
         Text = "Each one lands in Downloads.",
     };
+    private readonly Choice recentPhotos = new()
+    {
+        Title = "Show the phone's recent photos",
+        Text = "In the panel, while it's open. Click one to open it here.",
+    };
+    private readonly Choice screenshotsToPhone = new()
+    {
+        Title = "PC screenshots go to the phone",
+        Text = "Into Pictures/Nearside, where the phone's gallery shows them.",
+    };
     private readonly ComboBox historyLimit = new() { MinWidth = 130 };
     private readonly Choice startup = new()
     {
@@ -54,6 +64,8 @@ public sealed class SettingsWindow : Window
 
         mirror.Toggled += on => EngineHost.Command("set", new { key = "mirrorNotifications", value = on });
         screenshots.Toggled += on => EngineHost.Command("set", new { key = "screenshotsToPC", value = on });
+        recentPhotos.Toggled += on => EngineHost.Command("set", new { key = "recentPhotos", value = on });
+        screenshotsToPhone.Toggled += on => EngineHost.Command("set", new { key = "screenshotsToPhone", value = on });
         startup.Toggled += on => Startup.IsOn = on;
         toast.Toggled += on => EngineHost.Command("setClipboardToastHidden", new { hidden = on });
         battery.Toggled += on => EngineHost.Command("set", new { key = "lowBatteryAlert", value = on });
@@ -84,7 +96,9 @@ public sealed class SettingsWindow : Window
         page.Children.Add(Header("Notifications"));
         page.Children.Add(mirror);
         page.Children.Add(Header("Photos"));
+        page.Children.Add(recentPhotos);
         page.Children.Add(screenshots);
+        page.Children.Add(screenshotsToPhone);
         page.Children.Add(Header("Clipboard"));
         page.Children.Add(Row("Keep in history", "Older items are removed as new ones arrive.", historyLimit));
         page.Children.Add(toast);
@@ -119,6 +133,8 @@ public sealed class SettingsWindow : Window
     {
         mirror.IsOn = s.Settings.MirrorNotifications;
         screenshots.IsOn = s.Settings.ScreenshotsToPC;
+        recentPhotos.IsOn = s.Settings.RecentPhotos;
+        screenshotsToPhone.IsOn = s.Settings.ScreenshotsToPhone;
         battery.IsOn = s.Settings.LowBatteryAlert;
         startup.IsOn = Startup.IsOn;
         var limit = Array.IndexOf(Limits, s.Settings.HistoryLimit);

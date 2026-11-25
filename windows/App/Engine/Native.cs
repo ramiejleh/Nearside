@@ -55,6 +55,10 @@ internal static unsafe partial class Native
     [LibraryImport(Dll, EntryPoint = "nearside_session_frame")]
     public static partial void SessionFrame(long id, uint gen, long pts, long received, int black);
 
+    /// A recent photo's thumbnail (JPEG bytes, free with Free), or null.
+    [LibraryImport(Dll, EntryPoint = "nearside_photo_thumbnail")]
+    public static partial byte* PhotoThumbnail(long id, out int length);
+
     [LibraryImport(Dll, EntryPoint = "nearside_debug")]
     public static partial byte* Debug();
 

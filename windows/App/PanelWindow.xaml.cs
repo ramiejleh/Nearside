@@ -61,6 +61,10 @@ public sealed partial class PanelWindow : Window
         };
         clock.Tick += (_, _) => Render(EngineHost.Current);
         EngineHost.Changed += Render;
+        EngineHost.Event += (name, e) =>
+        {
+            if (name == "photoFetched") PhotoFetched(e);
+        };
         Render(EngineHost.Current);
     }
 
@@ -80,6 +84,7 @@ public sealed partial class PanelWindow : Window
         highlighted = [.. EngineHost.Current.Unseen];
         EngineHost.Command("markAllSeen");
         Render(EngineHost.Current);
+        EngineHost.Command("panelOpen", new { open = true }); // the phone's recent photos, while it's open
         AppWindow.Show();
         Activate();
         Win32.SetForegroundWindow(hwnd);
@@ -89,6 +94,7 @@ public sealed partial class PanelWindow : Window
 
     public void HidePanel()
     {
+        if (IsShown) EngineHost.Command("panelOpen", new { open = false });
         AppWindow.Hide();
         IsShown = false;
         clock.Stop();
@@ -136,6 +142,8 @@ public sealed partial class PanelWindow : Window
         Sync(transfers, s.Transfers.Select(t => new TransferRow(t, phone)).ToList());
         TransferList.Visibility = transfers.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
 
+        RenderPhotos(s);
+
         var query = SearchBox.Text.Trim();
         var shown = s.History.Where(c => FilterBox.SelectedIndex switch
             {
@@ -156,6 +164,99 @@ public sealed partial class PanelWindow : Window
         FooterText.Text = count == 0 ? "" : $"{Items(count)}  ·  Click to copy to both devices";
         ClearButton.IsEnabled = count > 0;
         ClearQuestion.Text = $"Delete all {Items(count)}?";
+    }
+
+    // MARK: Photos
+
+    private readonly Dictionary<long, BitmapImage> thumbnails = [];
+    private List<long> shownPhotos = [];
+    private static readonly HashSet<string> ImageTypes = [".jpg", ".jpeg", ".png", ".gif", ".webp", ".heic", ".heif", ".bmp", ".avif", ".tif", ".tiff"];
+
+    /// The phone's recent photos and screenshots (newest first): click one to open it here.
+    private void RenderPhotos(Snapshot s)
+    {
+        var items = s.Connected ? s.Photos?.Items ?? [] : [];
+        PhotoScroller.Visibility = items.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+        var ids = items.Select(p => p.Id).ToList();
+        var missing = items.Where(p => p.Thumbnail && !thumbnails.ContainsKey(p.Id)).ToList();
+        foreach (var photo in missing) LoadThumbnail(photo.Id);
+        foreach (var gone in thumbnails.Keys.Except(ids).ToList()) thumbnails.Remove(gone);
+        if (ids.SequenceEqual(shownPhotos) && missing.Count == 0) return;
+        shownPhotos = ids;
+        PhotoStrip.Children.Clear();
+        foreach (var photo in items) PhotoStrip.Children.Add(PhotoTile(photo));
+    }
+
+    private unsafe void LoadThumbnail(long id)
+    {
+        var p = Native.PhotoThumbnail(id, out var length);
+        if (p == null) return;
+        byte[] jpeg;
+        try
+        {
+            jpeg = new ReadOnlySpan<byte>(p, length).ToArray();
+        }
+        finally
+        {
+            Native.Free(p);
+        }
+        var image = new BitmapImage { DecodePixelHeight = 128 };
+        thumbnails[id] = image;
+        _ = SetSourceAsync(image, jpeg);
+    }
+
+    private static async Task SetSourceAsync(BitmapImage image, byte[] jpeg)
+    {
+        using var stream = new Windows.Storage.Streams.InMemoryRandomAccessStream();
+        await stream.WriteAsync(System.Runtime.InteropServices.WindowsRuntime.WindowsRuntimeBufferExtensions.AsBuffer(jpeg));
+        stream.Seek(0);
+        await image.SetSourceAsync(stream);
+    }
+
+    private UIElement PhotoTile(PhonePhoto photo)
+    {
+        var tile = new Button
+        {
+            Width = 64, Height = 64, Padding = new Thickness(0), CornerRadius = new CornerRadius(8),
+            Background = thumbnails.TryGetValue(photo.Id, out var image)
+                ? new ImageBrush { ImageSource = image, Stretch = Stretch.UniformToFill }
+                : (Brush)Application.Current.Resources["SubtleFillColorSecondaryBrush"],
+        };
+        ToolTipService.SetToolTip(tile, $"{(photo.IsScreenshot ? "Screenshot" : "Photo")}, {DateTimeOffset.FromUnixTimeMilliseconds(photo.Date).LocalDateTime:g}");
+        tile.Click += (_, _) => EngineHost.Command("photoFetch", new { id = photo.Id, @for = "open" });
+        var save = new MenuFlyoutItem { Text = "Save to Downloads", Icon = new FontIcon { Glyph = "\uE896" } };
+        save.Click += (_, _) => EngineHost.Command("photoFetch", new { id = photo.Id, @for = "save" });
+        var open = new MenuFlyoutItem { Text = "Open", Icon = new FontIcon { Glyph = "\uE8A7" } };
+        open.Click += (_, _) => EngineHost.Command("photoFetch", new { id = photo.Id, @for = "open" });
+        tile.ContextFlyout = new MenuFlyout { Items = { open, save } };
+        return tile;
+    }
+
+    /// A photo pulled from the phone (marked as downloaded): opened in its app, or kept in Downloads.
+    private void PhotoFetched(System.Text.Json.JsonElement e)
+    {
+        if (!e.TryGetProperty("path", out var p) || p.GetString() is not { } path || !File.Exists(path)) return;
+        var explorer = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "explorer.exe");
+        if (e.GetProperty("for").GetString() == "save")
+        {
+            var downloads = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Downloads");
+            var target = Path.Combine(downloads, Path.GetFileName(path));
+            for (var n = 2; File.Exists(target); n++)
+            {
+                target = Path.Combine(downloads, $"{Path.GetFileNameWithoutExtension(path)} ({n}){Path.GetExtension(path)}");
+            }
+            File.Copy(path, target); // with its Mark of the Web
+            Process.Start(explorer, $"/select,\"{target}\"");
+        }
+        else if (ImageTypes.Contains(Path.GetExtension(path).ToLowerInvariant()))
+        {
+            // Only pictures open directly (the name comes from the phone): anything else is shown in its folder.
+            Process.Start(new ProcessStartInfo(path) { UseShellExecute = true });
+        }
+        else
+        {
+            Process.Start(explorer, $"/select,\"{path}\"");
+        }
     }
 
     private static string Items(int count) => count == 1 ? "1 item" : $"{count} items";

@@ -112,14 +112,18 @@ enum Sessions {
             case .opening: emit("state", ["state": "opening"])
             case .showing: emit("state", ["state": "showing"])
             case .reconnecting: emit("state", ["state": "reconnecting"])
-            case .gone(let reason): emit("state", ["state": reason == .movedToPhone ? "movedToPhone" : "exited"])
-            case .failed(let message): emit("state", ["state": "failed", "message": message])
-            case .busy: emit("state", ["state": "busy"])
-            case .closed:
-                emit("state", ["state": "closed"])
-                all[id] = nil
+            case .gone(let reason):
+                packages[id] = nil // its app isn't in the window any more
+                emit("state", ["state": reason == .movedToPhone ? "movedToPhone" : "exited"])
+            case .failed(let message):
                 packages[id] = nil
-                Media.lock.withLock { Media.decoders[id] = nil }
+                emit("state", ["state": "failed", "message": message])
+            case .busy:
+                packages[id] = nil
+                emit("state", ["state": "busy"])
+            case .closed:
+                forget(id)
+                emit("state", ["state": "closed"])
             }
         }
         session.onVideoSize = { size in emit("videoSize", ["width": Int(size.width), "height": Int(size.height)]) }
@@ -128,6 +132,13 @@ enum Sessions {
         session.onThermal = { on in emit("thermal", ["on": on]) }
         session.onTasks = { tasks in emit("tasks", ["tasks": tasks.map { ["id": $0.id, "package": $0.package] }]) }
         session.onSnapshot = { task, png in emit("snapshot", ["task": task, "png": png.base64EncodedString()]) }
+    }
+
+    /// The window is gone: nothing of it stays registered (its app no longer counts as open here).
+    private static func forget(_ id: Int64) {
+        all[id] = nil
+        packages[id] = nil
+        Media.lock.withLock { Media.decoders[id] = nil }
     }
 
     /// {"c": name, ...}: input and window changes. Touch and pointer positions are 0…1 within the
@@ -154,8 +165,16 @@ enum Sessions {
         case "paste": session.paste(c["text"] as? String)
         case "visibility":
             if let v = PhoneAppSession.Visibility(rawValue: UInt8(c["v"] as? Int ?? 0)) { session.setVisibility(v) }
-        case "openOnPhone": session.openOnPhone()
-        case "close": session.close()
+        case "openOnPhone":
+            // Its call goes back to the phone with it (as on the Mac): sound and microphone.
+            if let package = packages[id], let engine = Bridge.engine, engine.calls.ongoing?.package == package {
+                engine.calls.moveAudio(toMac: false)
+            }
+            session.openOnPhone()
+            forget(id)
+        case "close":
+            session.close()
+            forget(id) // closing doesn't report a state
         default: break
         }
     }

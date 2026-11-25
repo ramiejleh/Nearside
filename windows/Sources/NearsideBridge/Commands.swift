@@ -32,6 +32,24 @@ enum Commands {
         case "dismissTransfer":
             if let id = (c["id"] as? String).flatMap(UUID.init(uuidString:)) { engine.dismissTransfer(id) }
         case "listApps": listApps(engine)
+        // The panel and its photo strip.
+        case "panelOpen":
+            let open = c["open"] as? Bool ?? false
+            guard open != Bridge.panelOpen else { break }
+            Bridge.panelOpen = open
+            if open { engine.photos.panelOpened() } else { engine.photos.panelClosed() }
+            Bridge.observe() // the snapshot gains (or loses) the photos
+            Bridge.emit("changed")
+        case "photoFetch":
+            if let id = (c["id"] as? NSNumber)?.int64Value, let photo = engine.photos.items.first(where: { $0.id == id }) {
+                let purpose = c["for"] as? String ?? "open"
+                Task { @MainActor in
+                    let url = await engine.fetchPhoto(photo)
+                    var reply: [String: Any] = ["id": id, "for": purpose]
+                    if let url { reply["path"] = url.path }
+                    Bridge.emit("photoFetched", reply)
+                }
+            }
         // Calls.
         case "callAct":
             if let key = c["key"] as? String, let action = (c["action"] as? String).flatMap(PhoneCall.Action.init(rawValue:)),

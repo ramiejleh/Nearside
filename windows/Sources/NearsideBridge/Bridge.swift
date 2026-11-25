@@ -19,6 +19,8 @@ enum Bridge {
     static var notifications: BridgeNotifications?
     /// The latest snapshot, rebuilt after each change the engine makes.
     static var snapshot = "{}"
+    /// The panel is open: the phone's recent photos are watched and shown in it meanwhile.
+    static var panelOpen = false
 
     static func emit(_ event: String, _ fields: [String: Any] = [:]) {
         guard let onEvent else { return }
@@ -127,6 +129,16 @@ public func nearside_debug() -> UnsafeMutablePointer<CChar>? {
         "mainRunLoopIsCurrent": RunLoop.main === RunLoop.current,
     ]
     return duplicate(MainActor.assumeIsolated { Bridge.json(info) })
+}
+
+/// A recent photo's thumbnail (JPEG), kept in memory only; free it with nearside_free. Null if none.
+@_cdecl("nearside_photo_thumbnail")
+public func nearside_photo_thumbnail(_ id: Int64, _ length: UnsafeMutablePointer<Int32>) -> UnsafeMutableRawPointer? {
+    let data = MainActor.assumeIsolated { Bridge.engine?.photos.thumbnails[id] }
+    guard let data, let copy = malloc(data.count) else { length.pointee = 0; return nil }
+    data.copyBytes(to: copy.assumingMemoryBound(to: UInt8.self), count: data.count)
+    length.pointee = Int32(data.count)
+    return copy
 }
 
 /// What the interface shows, as JSON (free it with nearside_free).

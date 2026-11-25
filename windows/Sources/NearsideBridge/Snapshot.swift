@@ -39,6 +39,16 @@ enum Snapshot {
         }
         if engine.messages.isOpen { s["messages"] = messages(engine.messages) }
         s["calls"] = calls(engine)
+        if Bridge.panelOpen, engine.recentPhotos {
+            let photos = engine.photos
+            s["photos"] = [
+                "denied": photos.denied,
+                "items": photos.items.map { p -> [String: Any] in
+                    ["id": p.id, "name": p.name, "date": millis(p.date), "isScreenshot": p.isScreenshot,
+                     "width": p.width, "height": p.height, "thumbnail": photos.thumbnails[p.id] != nil]
+                },
+            ] as [String: Any]
+        }
         switch engine.phoneAppProblem {
         case nil: break
         case .otherSignature: s["phoneAppProblem"] = ["kind": "otherSignature"]

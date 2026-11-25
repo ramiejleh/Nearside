@@ -85,6 +85,7 @@
                 <RowDefinition Height="Auto" />
                 <RowDefinition Height="Auto" />
                 <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
                 <RowDefinition Height="*" />
                 <RowDefinition Height="Auto" />
             </Grid.RowDefinitions>
@@ -131,7 +132,12 @@
                 </ItemsControl.ItemTemplate>
             </ItemsControl>
 
-            <Grid Grid.Row="2" Padding="12,10,12,6" ColumnSpacing="8">
+            <ScrollViewer x:Name="PhotoScroller" Grid.Row="2" Margin="0,8,0,0" Visibility="Collapsed"
+                          HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled" HorizontalScrollMode="Enabled" VerticalScrollMode="Disabled">
+                <StackPanel x:Name="PhotoStrip" Orientation="Horizontal" Spacing="6" Padding="12,0,12,8" />
+            </ScrollViewer>
+
+            <Grid Grid.Row="3" Padding="12,10,12,6" ColumnSpacing="8">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*" />
                     <ColumnDefinition Width="Auto" />
@@ -144,7 +150,7 @@
                 </ComboBox>
             </Grid>
 
-            <ListView x:Name="HistoryList" Grid.Row="3" SelectionMode="None" IsItemClickEnabled="True"
+            <ListView x:Name="HistoryList" Grid.Row="4" SelectionMode="None" IsItemClickEnabled="True"
                       ItemClick="OnClipClick" Padding="4,0,4,4">
                 <ListView.ItemTemplate>
                     <DataTemplate x:DataType="local:ClipRow">
@@ -183,13 +189,13 @@
                 </ListView.ItemTemplate>
             </ListView>
 
-            <StackPanel x:Name="EmptyHistory" Grid.Row="3" VerticalAlignment="Center" Spacing="6" Padding="32,0">
+            <StackPanel x:Name="EmptyHistory" Grid.Row="4" VerticalAlignment="Center" Spacing="6" Padding="32,0">
                 <TextBlock x:Name="EmptyTitle" FontSize="13" FontWeight="SemiBold" HorizontalAlignment="Center" />
                 <TextBlock x:Name="EmptyText" FontSize="12" TextWrapping="Wrap" TextAlignment="Center"
                            Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
             </StackPanel>
 
-            <Grid Grid.Row="4" Padding="14,6,8,8" BorderThickness="0,1,0,0"
+            <Grid Grid.Row="5" Padding="14,6,8,8" BorderThickness="0,1,0,0"
                   BorderBrush="{ThemeResource DividerStrokeColorDefaultBrush}">
                 <TextBlock x:Name="FooterText" FontSize="11.5" VerticalAlignment="Center"
                            Foreground="{ThemeResource TextFillColorSecondaryBrush}" />

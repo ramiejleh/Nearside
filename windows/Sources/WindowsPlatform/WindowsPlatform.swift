@@ -23,7 +23,7 @@ public final class WindowsPlatform: Platform, @unchecked Sendable {
     public var bundledPhoneAppVersion: Int? { nil } // don't update the phone app from here
     @MainActor public func makeClipboard(onCopy: @escaping @MainActor (String) -> Void) -> any Clipboard { WindowsClipboard(onCopy: onCopy) }
     @MainActor public func makeNotifications() -> any SystemNotifications { notifications?() ?? PrintedNotifications() }
-    @MainActor public func makeScreenshotWatcher() -> any ScreenshotWatcher { NoScreenshots() }
+    @MainActor public func makeScreenshotWatcher() -> any ScreenshotWatcher { WindowsScreenshots() }
     @MainActor public func watchReachability(_ changed: @escaping @MainActor () -> Void) {}
     /// Opens the folder in Explorer with the file selected: only an existing file on a local drive
     /// ("C:\..."), never a network, device or shell path.
@@ -157,9 +157,61 @@ extension WindowsClipboard {
     func removeAll() {}
 }
 
-@MainActor final class NoScreenshots: ScreenshotWatcher {
+/// New screenshots taken on this PC: the Screenshots folder (Win+PrtScn and Snipping Tool save
+/// there, wherever it is, OneDrive included), looked at every 2 s. Only ones taken while it's on
+/// count, and each once, after it has stopped growing.
+@MainActor final class WindowsScreenshots: ScreenshotWatcher {
     var onNew: ((URL) -> Void)?
-    var isOn = false
+    var isOn = false {
+        didSet {
+            guard isOn != oldValue else { return }
+            timer?.invalidate()
+            timer = nil
+            guard isOn, let folder = Self.folder else { return }
+            since = Date()
+            sizes = [:]
+            sent = []
+            timer = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { _ in
+                MainActor.assumeIsolated { self.look(in: folder) }
+            }
+        }
+    }
+    private var timer: Timer?
+    private var since = Date()
+    private var sizes: [String: Int] = [:]
+    private var sent: Set<String> = []
+
+    /// FOLDERID_Screenshots.
+    static var folder: URL? {
+        #if os(Windows)
+        var id = GUID(Data1: 0xB7BE_DE81, Data2: 0xDF94, Data3: 0x4682, Data4: (0xA7, 0xD8, 0x57, 0xA5, 0x26, 0x20, 0xB8, 0x6F))
+        var path: PWSTR?
+        guard SHGetKnownFolderPath(&id, 0, nil, &path) == S_OK, let path else { return nil }
+        defer { CoTaskMemFree(path) }
+        return URL(fileURLWithPath: String(decodingCString: path, as: UTF16.self), isDirectory: true)
+        #else
+        return nil
+        #endif
+    }
+
+    private func look(in folder: URL) {
+        let fm = FileManager.default
+        guard let names = try? fm.contentsOfDirectory(atPath: folder.path) else { return }
+        for name in names where !sent.contains(name) && ["png", "jpg", "jpeg"].contains((name as NSString).pathExtension.lowercased()) {
+            let url = folder.appendingPathComponent(name)
+            guard let attributes = try? fm.attributesOfItem(atPath: url.path),
+                  let created = attributes[.creationDate] as? Date, created >= since,
+                  let size = (attributes[.size] as? NSNumber)?.intValue, size > 0 else { continue }
+            // Written in one go, but check it held still for one look.
+            if sizes[name] == size {
+                sent.insert(name)
+                sizes[name] = nil
+                onNew?(url)
+            } else {
+                sizes[name] = size
+            }
+        }
+    }
 }
 
 

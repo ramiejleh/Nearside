@@ -108,6 +108,7 @@ public static unsafe class MicRouter
             if (kind == 0)
             {
                 // Made on a pool thread: COM wants an apartment, and the engine's threads have none.
+                if (Captures.TryRemove(id, out var previous)) previous.Dispose();
                 var capture = Task.Run(() => new MicCapture(id)).GetAwaiter().GetResult();
                 Captures[id] = capture;
                 Log.Info("microphone: on");
