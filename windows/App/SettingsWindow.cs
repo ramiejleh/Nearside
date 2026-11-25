@@ -32,6 +32,8 @@ public sealed class SettingsWindow : Window
         Text = "Into Pictures/Nearside, where the phone's gallery shows them.",
     };
     private readonly ComboBox historyLimit = new() { MinWidth = 130 };
+    private readonly ComboBox hello = new() { MinWidth = 220 };
+    private static readonly string[] HelloModes = ["Never", "After this PC wakes or unlocks", "Every time an app opens"];
     private readonly Choice startup = new()
     {
         Title = "Start at sign-in",
@@ -75,6 +77,21 @@ public sealed class SettingsWindow : Window
             var limit = Limits[Math.Max(0, historyLimit.SelectedIndex)];
             if (limit != EngineHost.Current.Settings.HistoryLimit) EngineHost.Command("set", new { key = "historyLimit", value = limit });
         };
+        foreach (var mode in HelloModes) hello.Items.Add(mode);
+        hello.SelectedIndex = (int)AuthGate.Current;
+        hello.SelectionChanged += async (_, _) =>
+        {
+            var wanted = (AuthGate.Mode)Math.Max(0, hello.SelectedIndex);
+            if (wanted == AuthGate.Current) return;
+            // Less protection only with Hello's say-so.
+            if (wanted < AuthGate.Current
+                && !await AuthGate.ConfirmAsync(Microsoft.UI.Win32Interop.GetWindowFromWindowId(AppWindow.Id), "Change when Nearside asks for Windows Hello"))
+            {
+                hello.SelectedIndex = (int)AuthGate.Current;
+                return;
+            }
+            AuthGate.Current = wanted;
+        };
         forget.Click += async (_, _) =>
         {
             var dialog = new ContentDialog
@@ -99,6 +116,9 @@ public sealed class SettingsWindow : Window
         page.Children.Add(recentPhotos);
         page.Children.Add(screenshots);
         page.Children.Add(screenshotsToPhone);
+        page.Children.Add(Header("Phone apps"));
+        page.Children.Add(Row("Ask for Windows Hello", "Phone apps work while your phone is locked, so this PC asks before showing them.", hello));
+        page.Children.Add(Row("Open the launcher", "From anywhere: Ctrl+Alt+N.", new TextBlock()));
         page.Children.Add(Header("Clipboard"));
         page.Children.Add(Row("Keep in history", "Older items are removed as new ones arrive.", historyLimit));
         page.Children.Add(toast);

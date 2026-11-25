@@ -164,10 +164,11 @@ final class BridgeMicrophone: Microphone, @unchecked Sendable {
         }
     }
 
+    /// Also withdraws the wish: a start still on its way (after a permission check) then does nothing.
     func stop() {
         control.withLock {
             let was = lock.withLock { () -> Bool in
-                defer { running = false }
+                defer { running = false; wanted = false }
                 return running
             }
             guard was else { return }

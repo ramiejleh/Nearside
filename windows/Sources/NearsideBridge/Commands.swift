@@ -82,6 +82,10 @@ enum Commands {
         // A notification shown by the app: what the user did with it.
         case "notifDismissed": if let key = c["key"] as? String { Bridge.notifications?.onDismiss?(key) }
         case "notifOpened": if let key = c["key"] as? String { Bridge.notifications?.onOpen?(key) }
+        case "notifOpenHere":
+            if let key = c["key"] as? String, let package = c["package"] as? String, let app = c["app"] as? String {
+                Bridge.notifications?.onOpenOnMac?(key, package, app)
+            }
         case "notifAction":
             if let key = c["key"] as? String, let index = c["i"] as? Int {
                 Bridge.notifications?.onAction?(key, index, c["text"] as? String)

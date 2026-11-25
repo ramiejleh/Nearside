@@ -194,12 +194,26 @@ extension WindowsClipboard {
         #endif
     }
 
+    /// Not a file a sync service (OneDrive) brought from another device: those arrive as cloud
+    /// placeholders. One fully downloaded already can't be told apart from a local one.
+    static func madeHere(_ url: URL) -> Bool {
+        #if os(Windows)
+        let attributes = url.path.withCString(encodedAs: UTF16.self) { GetFileAttributesW($0) }
+        guard attributes != INVALID_FILE_ATTRIBUTES else { return false }
+        let remote: DWORD = 0x0040_0000 /* RECALL_ON_DATA_ACCESS */ | 0x0004_0000 /* RECALL_ON_OPEN */
+            | DWORD(FILE_ATTRIBUTE_OFFLINE) | DWORD(FILE_ATTRIBUTE_REPARSE_POINT)
+        return attributes & remote == 0
+        #else
+        return true
+        #endif
+    }
+
     private func look(in folder: URL) {
         let fm = FileManager.default
         guard let names = try? fm.contentsOfDirectory(atPath: folder.path) else { return }
         for name in names where !sent.contains(name) && ["png", "jpg", "jpeg"].contains((name as NSString).pathExtension.lowercased()) {
             let url = folder.appendingPathComponent(name)
-            guard let attributes = try? fm.attributesOfItem(atPath: url.path),
+            guard Self.madeHere(url), let attributes = try? fm.attributesOfItem(atPath: url.path),
                   let created = attributes[.creationDate] as? Date, created >= since,
                   let size = (attributes[.size] as? NSNumber)?.intValue, size > 0 else { continue }
             // Written in one go, but check it held still for one look.

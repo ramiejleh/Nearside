@@ -28,8 +28,17 @@ public sealed class PhoneWindow : Window
     private readonly Dictionary<uint, byte> fingers = [];
 
     /// Opens the phone's home screen (no `app`) or an app; null if the phone isn't connected.
+    /// Opens one after Windows Hello, if asked for (see AuthGate).
+    public static async Task<PhoneWindow?> OpenAsync(string? package = null, string? activity = null, string? label = null, string? notification = null)
+    {
+        var owner = Open.Values.FirstOrDefault();
+        var hwnd = owner != null ? Microsoft.UI.Win32Interop.GetWindowFromWindowId(owner.AppWindow.Id) : 0;
+        if (!await AuthGate.AuthenticateAsync(hwnd, opening: true)) return null;
+        return Show(package, activity, label, notification);
+    }
+
     /// With `notification`, the app opens at that notification (its call, its chat).
-    public static PhoneWindow? Show(string? package = null, string? activity = null, string? label = null, string? notification = null)
+    private static PhoneWindow? Show(string? package = null, string? activity = null, string? label = null, string? notification = null)
     {
         var id = VideoRouter.NextId();
         var window = new PhoneWindow(id, label ?? "Phone");
@@ -111,7 +120,12 @@ public sealed class PhoneWindow : Window
             if (e.Character >= ' ' && e.Character != '\u007f') Command("text", new { text = e.Character.ToString() });
         };
 
-        Activated += (_, e) => Command("visibility", new { v = e.WindowActivationState == WindowActivationState.Deactivated ? 2 : 0 });
+        Activated += (_, e) =>
+        {
+            if (covered && e.WindowActivationState != WindowActivationState.Deactivated) _ = UncoverAsync();
+            if (!covered) Command("visibility", new { v = e.WindowActivationState == WindowActivationState.Deactivated ? 2 : 0 });
+        };
+        AuthGate.Locked += Cover;
         AppWindow.Changed += (_, _) =>
         {
             // Minimised: no video until it's back (activating it again says so).
@@ -130,6 +144,7 @@ public sealed class PhoneWindow : Window
         statsTimer.Start();
         Closed += (_, _) =>
         {
+            AuthGate.Locked -= Cover;
             statsTimer.Stop();
             Command("close"); // always (closing twice is harmless): the bridge forgets the window
             Open.Remove(id);
@@ -158,7 +173,7 @@ public sealed class PhoneWindow : Window
                 Log.Info($"phone window {id}: {state}");
                 switch (state)
                 {
-                    case "showing": overlay.Visibility = Visibility.Collapsed; break;
+                    case "showing": if (!covered) overlay.Visibility = Visibility.Collapsed; break;
                     case "opening": ShowOverlay("Opening…", busy: true); break;
                     case "reconnecting": ShowOverlay("Reconnecting…", busy: true); break;
                     case "exited": ShowOverlay("The app was closed on your phone.", busy: false); break;
@@ -178,6 +193,24 @@ public sealed class PhoneWindow : Window
                 else overlay.Visibility = Visibility.Collapsed;
                 break;
         }
+    }
+
+    private bool covered;
+
+    /// The PC locked: the window shows nothing (and gets no video) until Windows Hello says it's you.
+    private void Cover()
+    {
+        covered = true;
+        Command("visibility", new { v = 1 });
+        ShowOverlay("Locked. Click to show it again.", busy: false);
+    }
+
+    private async Task UncoverAsync()
+    {
+        if (!await AuthGate.AuthenticateAsync(Microsoft.UI.Win32Interop.GetWindowFromWindowId(AppWindow.Id), opening: false)) return;
+        covered = false;
+        overlay.Visibility = Visibility.Collapsed;
+        Command("visibility", new { v = 0 });
     }
 
     private void ShowOverlay(string text, bool busy)
@@ -221,6 +254,11 @@ public sealed class PhoneWindow : Window
 
     private void OnPressed(object sender, PointerRoutedEventArgs e)
     {
+        if (covered)
+        {
+            _ = UncoverAsync();
+            return;
+        }
         var point = Normalised(e);
         if (!Inside(point)) return;
         var properties = e.GetCurrentPoint(panel).Properties;

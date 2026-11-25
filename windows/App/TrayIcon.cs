@@ -16,6 +16,8 @@ internal sealed unsafe class TrayIcon : IDisposable
 
     private static TrayIcon? instance; // the window procedure's way back here (there's one icon)
     private readonly Action onSelect, onSettings, onQuit;
+    /// The launcher's shortcut was pressed.
+    public Action? OnHotKey { get; set; }
     private readonly uint taskbarCreated;
     private nint window, icon;
     private bool connected, added;
@@ -30,6 +32,10 @@ internal sealed unsafe class TrayIcon : IDisposable
         taskbarCreated = Win32.RegisterWindowMessageW("TaskbarCreated");
         window = CreateWindow();
         Show();
+        // Locking or sleeping this PC locks phone apps again (Windows Hello to show them).
+        Win32.WTSRegisterSessionNotification(window, 0);
+        // Ctrl+Alt+N opens the launcher from anywhere.
+        if (!Win32.RegisterHotKey(window, 1, Win32.MOD_CONTROL | Win32.MOD_ALT | Win32.MOD_NOREPEAT, 'N')) Log.Info("Ctrl+Alt+N is taken by another app");
     }
 
     /// The icon's place on screen (physical pixels), to open the panel next to it.
@@ -158,6 +164,9 @@ internal sealed unsafe class TrayIcon : IDisposable
                 return 0;
             }
             if (self != null && message == Win32.WM_SETTINGCHANGE) self.Show(); // maybe the theme
+            if (message == Win32.WM_WTSSESSION_CHANGE && wParam == Win32.WTS_SESSION_LOCK) AuthGate.Lock();
+            if (message == Win32.WM_POWERBROADCAST && wParam == Win32.PBT_APMSUSPEND) AuthGate.Lock();
+            if (self != null && message == Win32.WM_HOTKEY) self.OnHotKey?.Invoke();
         }
         catch (Exception e)
         {

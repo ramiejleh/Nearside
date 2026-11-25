@@ -163,6 +163,13 @@ internal sealed class Notifications
                 builder.AddButton(button);
                 index++;
             }
+            // "Open on PC": the app in a window here, at this notification (room permitting: 5 buttons).
+            var package = e.GetProperty("package").GetString() ?? "";
+            if (index < 5 && package.Length > 0)
+            {
+                builder.AddButton(new AppNotificationButton("Open on PC").AddArgument("key", key).AddArgument("here", "1")
+                    .AddArgument("package", package).AddArgument("app", app));
+            }
             if (quiet) builder.MuteAudio();
             var notification = builder.BuildNotification();
             notification.Tag = Tag(key);
@@ -256,7 +263,11 @@ internal sealed class Notifications
         // The engine treats "file:" keys as files it saved (a click reveals them): only our own
         // notifications may carry one.
         if (key.StartsWith("file:", StringComparison.Ordinal) && !args.ContainsKey("local")) return;
-        if (args.TryGetValue("action", out var action) && int.TryParse(action, out var index))
+        if (args.ContainsKey("here"))
+        {
+            EngineHost.Command("notifOpenHere", new { key, package = args.GetValueOrDefault("package"), app = args.GetValueOrDefault("app") });
+        }
+        else if (args.TryGetValue("action", out var action) && int.TryParse(action, out var index))
         {
             input.TryGetValue("reply", out var text);
             EngineHost.Command("notifAction", new { key, i = index, text });

@@ -31,7 +31,7 @@ public partial class App : Application
         panel.SettingsRequested += OpenSettings;
         panel.PhoneRequested += OpenLauncher;
         panel.MessagesRequested += OpenMessages;
-        tray = new TrayIcon(onSelect: TogglePanel, onSettings: OpenSettings, onQuit: Quit);
+        tray = new TrayIcon(onSelect: TogglePanel, onSettings: OpenSettings, onQuit: Quit) { OnHotKey = OpenLauncher };
         EngineHost.Changed += snapshot => tray.Update(snapshot);
         SingleInstance.OnShowRequested(() => queue.TryEnqueue(() => panel.ShowNearTray(tray)));
         Log.Info("started");
@@ -54,7 +54,7 @@ public partial class App : Application
             if (name == "session") PhoneWindow.Route(e);
             else if (name == "openInWindow")
             {
-                PhoneWindow.Show(e.GetProperty("package").GetString(), null, e.GetProperty("app").GetString(), e.GetProperty("key").GetString());
+                _ = PhoneWindow.OpenAsync(e.GetProperty("package").GetString(), null, e.GetProperty("app").GetString(), e.GetProperty("key").GetString());
             }
         };
         if (EngineHost.Current.NeedsSetup) OpenSetup();
@@ -66,7 +66,7 @@ public partial class App : Application
                 if (!s.Connected || !s.AppLinked) return;
                 EngineHost.Changed -= OpenOnce;
                 if (line.Contains("--launcher")) OpenLauncher();
-                else PhoneWindow.Show();
+                else _ = PhoneWindow.OpenAsync();
             }
             EngineHost.Changed += OpenOnce;
         }

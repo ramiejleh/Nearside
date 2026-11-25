@@ -15,6 +15,9 @@ internal static unsafe partial class Win32
     public const uint MF_STRING = 0, MF_SEPARATOR = 0x800;
     public const uint TPM_RIGHTBUTTON = 0x2, TPM_BOTTOMALIGN = 0x20, TPM_RETURNCMD = 0x100;
     public const uint MONITOR_DEFAULTTONEAREST = 2;
+    public const uint WM_WTSSESSION_CHANGE = 0x02B1, WM_POWERBROADCAST = 0x0218, WM_HOTKEY = 0x0312;
+    public const int WTS_SESSION_LOCK = 7, PBT_APMSUSPEND = 4;
+    public const uint MOD_ALT = 0x1, MOD_CONTROL = 0x2, MOD_NOREPEAT = 0x4000;
 
     [StructLayout(LayoutKind.Sequential)]
     public struct RECT
@@ -133,6 +136,17 @@ internal static unsafe partial class Win32
 
     [LibraryImport("user32.dll")]
     public static partial uint GetDpiForWindow(nint hwnd);
+
+    [LibraryImport("user32.dll")]
+    public static partial nint GetForegroundWindow();
+
+    [LibraryImport("wtsapi32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static partial bool WTSRegisterSessionNotification(nint hwnd, uint flags);
+
+    [LibraryImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static partial bool RegisterHotKey(nint hwnd, int id, uint modifiers, uint key);
 
     [LibraryImport("user32.dll")]
     public static partial nint MonitorFromPoint(long point, uint flags);

@@ -182,6 +182,6 @@ public sealed class LauncherWindow : Window
     private void Launch(AppEntry app)
     {
         Close();
-        PhoneWindow.Show(app.Package, app.Activity, app.Package == null ? null : app.Label);
+        _ = PhoneWindow.OpenAsync(app.Package, app.Activity, app.Package == null ? null : app.Label);
     }
 }
