@@ -34,6 +34,7 @@ public partial class App : Application
         panel.MessagesRequested += OpenMessages;
         tray = new TrayIcon(onSelect: TogglePanel, onSettings: OpenSettings, onQuit: Quit) { OnHotKey = OpenLauncher };
         if (Updates.Available) tray.OnCheckForUpdates = Updates.Check;
+        tray.OnLink = OpenLink;
         EngineHost.Changed += snapshot => tray.Update(snapshot);
         SingleInstance.OnShowRequested(() => queue.TryEnqueue(() => panel.ShowNearTray(tray)));
         Log.Info($"started: version {Updates.Version}, build {(Updates.Build.Length > 0 ? Updates.Build : "dev")}");
@@ -61,11 +62,18 @@ public partial class App : Application
         EngineHost.Event += (name, e) =>
         {
             if (name == "session") PhoneWindow.Route(e);
+            else if (name == "openApp")
+            {
+                Log.Info("link: opening it");
+                _ = PhoneWindow.OpenAsync(e.GetProperty("package").GetString(), e.GetProperty("activity").GetString(), e.GetProperty("label").GetString());
+            }
             else if (name == "openInWindow")
             {
                 _ = PhoneWindow.OpenAsync(e.GetProperty("package").GetString(), null, e.GetProperty("app").GetString(), e.GetProperty("key").GetString());
             }
         };
+        PhoneAppShortcuts.Start();
+        if (LinkArgument() is { } startLink) OpenLink(startLink);
         if (EngineHost.Current.NeedsSetup) OpenSetup();
         // --open-phone: the phone window opens once connected (for testing).
         if (line.Contains("--open-phone"))
@@ -175,6 +183,40 @@ public partial class App : Application
     }
 
     private ArrivalCard? arrival;
+
+    /// The `nearside:` link Nearside was started with (a Start-menu shortcut), if any.
+    public static string? LinkArgument() =>
+        Environment.GetCommandLineArgs().Skip(1).FirstOrDefault(a => a.StartsWith("nearside:", StringComparison.OrdinalIgnoreCase));
+
+    private string? pendingPackage;
+
+    /// nearside://open?package=<package>: that phone app in a window, once connected (the bridge
+    /// opens it only if it's one of the phone's apps).
+    private void OpenLink(string link)
+    {
+        if (PhoneAppShortcuts.PackageFrom(link) is not { } package)
+        {
+            Log.Info("link: not a phone-app link; ignored");
+            return;
+        }
+        Log.Info("link: a phone app"); // which one stays out of the log
+        if (EngineHost.Current.Connected && EngineHost.Current.AppLinked)
+        {
+            EngineHost.Command("openPackage", new { package });
+            return;
+        }
+        var first = pendingPackage == null;
+        pendingPackage = package;
+        if (!first) return;
+        void WhenConnected(Snapshot s)
+        {
+            if (!s.Connected || !s.AppLinked || pendingPackage == null) return;
+            EngineHost.Changed -= WhenConnected;
+            EngineHost.Command("openPackage", new { package = pendingPackage });
+            pendingPackage = null;
+        }
+        EngineHost.Changed += WhenConnected;
+    }
 
     private void TogglePanel()
     {

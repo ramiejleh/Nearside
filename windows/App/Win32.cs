@@ -169,6 +169,24 @@ internal static unsafe partial class Win32
     [return: MarshalAs(UnmanagedType.Bool)]
     public static partial bool GetMonitorInfoW(nint monitor, MONITORINFO* info);
 
+    public const uint WM_COPYDATA = 0x004A;
+    /// WM_COPYDATA's dwData for a `nearside:` link handed over by a second start.
+    public const nint LinkMessage = 0x4E534C4B; // "NSLK"
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct COPYDATASTRUCT
+    {
+        public nint dwData;
+        public uint cbData;
+        public nint lpData;
+    }
+
+    [LibraryImport("user32.dll", StringMarshalling = StringMarshalling.Utf16)]
+    public static partial nint FindWindowW(string? className, string? title);
+
+    [LibraryImport("user32.dll")]
+    public static partial nint SendMessageW(nint hwnd, uint message, nint wParam, nint lParam);
+
     public const uint WM_SIZING = 0x0214, WM_EXITSIZEMOVE = 0x0232;
     public const int WMSZ_LEFT = 1, WMSZ_RIGHT = 2, WMSZ_TOP = 3, WMSZ_TOPLEFT = 4, WMSZ_TOPRIGHT = 5,
         WMSZ_BOTTOM = 6, WMSZ_BOTTOMLEFT = 7, WMSZ_BOTTOMRIGHT = 8;

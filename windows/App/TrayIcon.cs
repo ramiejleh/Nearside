@@ -18,6 +18,8 @@ internal sealed unsafe class TrayIcon : IDisposable
     private readonly Action onSelect, onSettings, onQuit;
     /// The launcher's shortcut was pressed.
     public Action? OnHotKey { get; set; }
+    /// A `nearside:` link handed over by a second start.
+    public Action<string>? OnLink { get; set; }
     /// "Check for updates" in the menu (release builds only).
     public Action? OnCheckForUpdates { get; set; }
     private readonly uint taskbarCreated;
@@ -181,6 +183,16 @@ internal sealed unsafe class TrayIcon : IDisposable
                 if (setting.PowerSetting == Win32.ConsoleDisplayState && setting.Data == 0) AuthGate.Lock();
             }
             if (self != null && message == Win32.WM_HOTKEY) self.OnHotKey?.Invoke();
+            if (self != null && message == Win32.WM_COPYDATA && lParam != 0)
+            {
+                // A second start's `nearside:` link (a few hundred characters at most).
+                var data = *(Win32.COPYDATASTRUCT*)lParam;
+                if (data.dwData == Win32.LinkMessage && data.lpData != 0 && data.cbData is > 0 and <= 2048 && data.cbData % 2 == 0)
+                {
+                    self.OnLink?.Invoke(new string((char*)data.lpData, 0, (int)data.cbData / 2));
+                    return 1;
+                }
+            }
         }
         catch (Exception e)
         {

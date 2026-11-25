@@ -69,6 +69,14 @@ the camera needs a folder only administrators can change), the camera is registe
 Start-menu shortcut is added. Uninstalling removes all of that, and the start-at-sign-in entry of
 whoever uninstalls; settings and history in `%LOCALAPPDATA%\Nearside` stay.
 
+## Phone apps in the Start menu
+
+With **Settings → Phone apps in the Start menu** on, each phone app gets a shortcut in the Start
+menu's "Nearside Phone Apps" folder, with its own icon. Each opens
+`nearside://open?package=<package>` with Nearside, which opens the app in a window (only apps on
+the phone; Windows Hello first if it's asked for). The installer registers `nearside:` links, so
+other launchers can use them too; a second start hands its link to the running Nearside.
+
 ## A USB cable
 
 A phone on a cable is used instead of Wi-Fi as soon as it's plugged in, as on the Mac. No driver

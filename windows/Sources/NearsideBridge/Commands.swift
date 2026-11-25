@@ -32,6 +32,7 @@ enum Commands {
         case "dismissTransfer":
             if let id = (c["id"] as? String).flatMap(UUID.init(uuidString:)) { engine.dismissTransfer(id) }
         case "listApps": listApps(engine)
+        case "openPackage": if let package = c["package"] as? String { openPackage(engine, package) }
         case "cameraStart":
             if let id = (c["id"] as? NSNumber)?.int64Value, id > 0 { Camera.start(id: id, front: c["front"] as? Bool ?? false) }
         case "cameraStop": Camera.stop()
@@ -98,6 +99,17 @@ enum Commands {
     }
 
     /// The phone's apps ("apps"), then their icons as they're cached ("appIcons": id → PNG file).
+    /// A `nearside:` link or a Start-menu shortcut: the app with that package, only if it's one of
+    /// the phone's apps (emits "openApp" with what the window needs; nothing otherwise).
+    private static func openPackage(_ engine: SyncEngine, _ package: String) {
+        guard !package.isEmpty, package.count <= 255,
+              package.allSatisfy({ $0.isASCII && ($0.isLetter || $0.isNumber || $0 == "." || $0 == "_") }) else { return }
+        Task { @MainActor in
+            guard let app = await engine.phoneApps()?.first(where: { $0.package == package }) else { return }
+            Bridge.emit("openApp", ["package": app.package, "activity": app.activity, "label": app.label])
+        }
+    }
+
     private static func listApps(_ engine: SyncEngine) {
         Task { @MainActor in
             guard let apps = await engine.phoneApps() else {

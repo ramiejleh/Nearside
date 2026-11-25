@@ -65,6 +65,17 @@ Source: "{#Source}\NearsideCamera.dll"; DestDir: "{app}"; Flags: ignoreversion r
 [Icons]
 Name: "{autoprograms}\Nearside"; Filename: "{app}\Nearside.exe"
 
+[Registry]
+; nearside://open?package=<package>: a phone app in a window (the Start-menu shortcuts, other launchers).
+Root: HKLM; Subkey: "Software\Classes\nearside"; ValueType: string; ValueData: "URL:Nearside"; Flags: uninsdeletekey
+Root: HKLM; Subkey: "Software\Classes\nearside"; ValueType: string; ValueName: "URL Protocol"; ValueData: ""
+Root: HKLM; Subkey: "Software\Classes\nearside\DefaultIcon"; ValueType: string; ValueData: "{app}\Nearside.exe,0"
+Root: HKLM; Subkey: "Software\Classes\nearside\shell\open\command"; ValueType: string; ValueData: """{app}\Nearside.exe"" ""%1"""
+
+[UninstallDelete]
+; The Start-menu shortcuts to phone apps (Settings), for whoever uninstalls.
+Type: filesandordirs; Name: "{userprograms}\Nearside Phone Apps"
+
 [Run]
 Filename: "{sys}\regsvr32.exe"; Parameters: "/s ""{app}\NearsideCamera.dll"""; Flags: runhidden waituntilterminated; StatusMsg: "Setting up Nearside Camera..."
 Filename: "{app}\Nearside.exe"; Description: "Open Nearside"; Flags: nowait postinstall skipifsilent runasoriginaluser
