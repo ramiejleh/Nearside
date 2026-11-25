@@ -81,13 +81,17 @@ internal static class PhoneAppShortcuts
         Directory.CreateDirectory(Folder);
         var shared = apps.Values.GroupBy(a => FileName(a.Label), StringComparer.OrdinalIgnoreCase)
             .Where(g => g.Count() > 1).Select(g => g.Key).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        // Each file belongs to one package in this pass: a label made to look like another app's
+        // name-plus-package can't share its file (a number is added instead).
         var wanted = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var (package, label) in apps.Values)
+        foreach (var (package, label) in apps.Values.OrderBy(a => a.Package, StringComparer.Ordinal))
         {
             var name = FileName(label);
             if (shared.Contains(name)) name = $"{name} ({package})";
-            wanted.Add($"{name}.lnk");
-            var path = Path.Combine(Folder, $"{name}.lnk");
+            var file = $"{name}.lnk";
+            for (var n = 2; wanted.Contains(file); n++) file = $"{name} {n}.lnk";
+            wanted.Add(file);
+            var path = Path.Combine(Folder, file);
             shortcuts[package] = path;
             var icon = Path.Combine(IconFolder, $"{package}.ico");
             if (ArgumentsOf(path) != Arguments(package)) Write(path, package, label, File.Exists(icon) ? icon : null);

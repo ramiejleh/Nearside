@@ -151,8 +151,10 @@ foreach ($a in $Arch) {
     Step "Building the engine for $a"
     Push-Location $Windows
     try {
-        Run swift @('build', '-c', 'release', '--arch', $triple, '--product', 'NearsideBridge')
-        $bin = (Native 'swift' @('build', '-c', 'release', '--arch', $triple, '--show-bin-path') | Select-Object -Last 1).Trim()
+        # No debug information in the DLL (it would be most of its 35 MB).
+        $swiftArgs = @('build', '-c', 'release', '--arch', $triple, '-Xswiftc', '-gnone', '-Xcc', '-g0')
+        Run swift ($swiftArgs + @('--product', 'NearsideBridge'))
+        $bin = (Native 'swift' ($swiftArgs + @('--show-bin-path')) | Select-Object -Last 1).Trim()
     } finally { Pop-Location }
     if (-not (Test-Path "$bin\NearsideBridge.dll")) { Fail "NearsideBridge.dll isn't in $bin" }
 

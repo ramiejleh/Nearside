@@ -32,7 +32,10 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Microsoft.WindowsAppSDK" Version="2.6.5" />
+    <!-- The Windows App SDK's parts Nearside uses (its AI, ML, Search and Widgets parts would add
+         ~50 MB: onnxruntime, DirectML): WinUI, and Foundation (notifications, app lifecycle). -->
+    <PackageReference Include="Microsoft.WindowsAppSDK.WinUI" Version="2.6.5" />
+    <PackageReference Include="Microsoft.WindowsAppSDK.Foundation" Version="2.6.5" />
     <PackageReference Include="Microsoft.Windows.SDK.BuildTools" Version="10.0.28000.2705" />
     <PackageReference Include="QRCoder" Version="1.8.1" />
     <PackageReference Include="FFmpeg.AutoGen" Version="8.1.0" />
@@ -51,7 +54,8 @@
     <Content Include="Assets\*.ico;Assets\*.png" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="$(SwiftBuildDir)\NearsideBridge.dll" Link="NearsideBridge.dll"
              CopyToOutputDirectory="PreserveNewest" Condition="Exists('$(SwiftBuildDir)\NearsideBridge.dll')" />
-    <Content Include="$(FFmpegDir)\bin\*.dll" CopyToOutputDirectory="PreserveNewest" Visible="false" />
+    <!-- Not avdevice: nothing Nearside uses needs it (avfilter needs avformat, so that stays). -->
+    <Content Include="$(FFmpegDir)\bin\*.dll" Exclude="$(FFmpegDir)\bin\avdevice-*.dll" CopyToOutputDirectory="PreserveNewest" Visible="false" />
     <!-- The virtual camera (windows/Camera/build.cmd); the installer registers it (as an administrator). -->
     <Content Include="..\Camera\build\$(Platform.ToLowerInvariant())\NearsideCamera.dll" Link="NearsideCamera.dll"
              CopyToOutputDirectory="PreserveNewest" Condition="Exists('..\Camera\build\$(Platform.ToLowerInvariant())\NearsideCamera.dll')" />
