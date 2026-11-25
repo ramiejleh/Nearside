@@ -189,7 +189,7 @@ public sealed partial class SetupWindow : Window
         };
         grid.Children.Add(mark);
         var words = new StackPanel { Spacing = 2 };
-        words.Children.Add(new TextBlock { Text = step.Title, FontSize = 13, Foreground = step.Status == "pending" ? Blocks.Secondary : null, TextWrapping = TextWrapping.Wrap });
+        words.Children.Add(new TextBlock { Text = step.Title, FontSize = 13, Foreground = step.Status == "pending" ? Blocks.Secondary : (Brush)Application.Current.Resources["TextFillColorPrimaryBrush"], TextWrapping = TextWrapping.Wrap });
         if (step.Status == "failed" && step.Message != null)
         {
             words.Children.Add(new TextBlock { Text = step.Message, FontSize = 12, Foreground = new SolidColorBrush(Microsoft.UI.Colors.IndianRed), TextWrapping = TextWrapping.Wrap });

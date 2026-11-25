@@ -29,6 +29,7 @@ public partial class App : Application
         panel.SetupRequested += OpenSetup;
         panel.SettingsRequested += OpenSettings;
         panel.PhoneRequested += OpenLauncher;
+        panel.MessagesRequested += OpenMessages;
         tray = new TrayIcon(onSelect: TogglePanel, onSettings: OpenSettings, onQuit: Quit);
         EngineHost.Changed += snapshot => tray.Update(snapshot);
         SingleInstance.OnShowRequested(() => queue.TryEnqueue(() => panel.ShowNearTray(tray)));
@@ -74,7 +75,12 @@ public partial class App : Application
         EngineHost.StartDemo(setup: page != null);
         Task saved = Task.CompletedTask;
         var shot = Value("--shot");
-        if (line.Contains("--settings"))
+        if (line.Contains("--messages"))
+        {
+            OpenMessages();
+            if (shot != null) saved = Shots.SaveAsync(messages!, messages!.Content, shot);
+        }
+        else if (line.Contains("--settings"))
         {
             OpenSettings();
             if (shot != null) saved = Shots.SaveAsync(settings!, settings!.Content, shot);
@@ -105,6 +111,17 @@ public partial class App : Application
     }
 
     private LauncherWindow? launcher;
+    private MessagesWindow? messages;
+
+    private void OpenMessages()
+    {
+        if (messages == null)
+        {
+            messages = new MessagesWindow();
+            messages.Closed += (_, _) => messages = null;
+        }
+        messages.ShowCentered();
+    }
 
     private void OpenLauncher()
     {

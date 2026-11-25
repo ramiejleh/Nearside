@@ -34,3 +34,12 @@ import Testing
         #expect(KeyMap.windowsAction(virtualKey: 0x56, modifiers: [.control, .shift]) == .keys([.init(50, KeyMap.ctrl | KeyMap.shift)]))
     }
 }
+
+@Suite struct IconCacheNameTests {
+    @Test func namesStayInTheirFolder() {
+        #expect(PhoneIconCache.name(id: "com.example/com.example.Main", version: 3, adaptive: true) == "com.example~com.example.Main@3.a.png")
+        #expect(PhoneIconCache.stem("..\\..\\evil") == "..%5C..%5Cevil")
+        #expect(PhoneIconCache.stem("a:b") == "a%3Ab")
+        #expect(!PhoneIconCache.name(id: "../x", version: 1, adaptive: false).contains("/"))
+    }
+}

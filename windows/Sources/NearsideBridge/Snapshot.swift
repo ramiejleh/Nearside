@@ -37,12 +37,39 @@ enum Snapshot {
             if let network = status.network { p["network"] = network }
             s["phoneStatus"] = p
         }
+        if engine.messages.isOpen { s["messages"] = messages(engine.messages) }
         switch engine.phoneAppProblem {
         case nil: break
         case .otherSignature: s["phoneAppProblem"] = ["kind": "otherSignature"]
         case .failed(let message): s["phoneAppProblem"] = ["kind": "failed", "message": message]
         }
         return s
+    }
+
+    /// The Messages window's content (only while it's open): conversations, and the selected one's
+    /// messages with where each sits in a run (for bubble shapes and date headings).
+    static func messages(_ store: MessagesStore) -> [String: Any] {
+        var o: [String: Any] = [
+            "loaded": store.loaded,
+            "threads": store.threads.map { t -> [String: Any] in
+                var thread: [String: Any] = ["id": t.id, "address": t.address, "title": t.title, "snippet": t.snippet,
+                                             "date": millis(t.date), "outgoing": t.outgoing, "unread": t.unread]
+                if let name = t.name { thread["name"] = name }
+                return thread
+            },
+        ]
+        if let problem = store.problem { o["problem"] = problem }
+        if let error = store.sendError { o["sendError"] = error }
+        if let selected = store.selected {
+            o["selected"] = selected
+            let list = store.messages[selected] ?? []
+            let layout = MessagesStore.layout(list)
+            o["conversation"] = zip(list, layout).map { m, l -> [String: Any] in
+                ["id": m.id, "body": m.body, "date": millis(m.date), "outgoing": m.outgoing, "failed": m.failed,
+                 "pending": m.pending, "first": l.first, "last": l.last, "header": l.header]
+            }
+        }
+        return o
     }
 
     static func millis(_ date: Date) -> Int64 { Int64(date.timeIntervalSince1970 * 1000) }

@@ -22,6 +22,8 @@ public sealed record Snapshot
     public List<Transfer> Transfers { get; init; } = [];
     public List<SetupStep> SetupSteps { get; init; } = [];
     public Settings Settings { get; init; } = new();
+    /// Only while the Messages window is open.
+    public MessagesView? Messages { get; init; }
 
     public bool Connected => State == "connected";
     public bool NeedsSetup => State == "needsSetup";
@@ -51,6 +53,26 @@ public sealed record Settings
     public bool RingHere { get; init; }
     public int HistoryLimit { get; init; }
     public bool LowBatteryAlert { get; init; }
+}
+
+public sealed record MessagesView
+{
+    public bool Loaded { get; init; }
+    public List<MessageThread> Threads { get; init; } = [];
+    public string? Problem { get; init; }
+    public string? SendError { get; init; }
+    public long? Selected { get; init; }
+    public List<TextMessage> Conversation { get; init; } = [];
+}
+
+public sealed record MessageThread(long Id, string Address, string Title, string? Name, string Snippet, long Date, bool Outgoing, int Unread)
+{
+    public DateTimeOffset When => DateTimeOffset.FromUnixTimeMilliseconds(Date);
+}
+
+public sealed record TextMessage(long Id, string Body, long Date, bool Outgoing, bool Failed, bool Pending, bool First, bool Last, bool Header)
+{
+    public DateTimeOffset When => DateTimeOffset.FromUnixTimeMilliseconds(Date);
 }
 
 public sealed record PhoneAppProblem(string Kind, string? Message);

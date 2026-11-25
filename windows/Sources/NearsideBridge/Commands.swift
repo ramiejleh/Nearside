@@ -32,6 +32,13 @@ enum Commands {
         case "dismissTransfer":
             if let id = (c["id"] as? String).flatMap(UUID.init(uuidString:)) { engine.dismissTransfer(id) }
         case "listApps": listApps(engine)
+        // The Messages window.
+        case "messagesOpen": engine.messages.isOpen = c["open"] as? Bool ?? false
+        case "messagesActive": engine.messages.isActive = c["active"] as? Bool ?? false
+        case "messagesSelect": engine.messages.selected = (c["thread"] as? NSNumber)?.int64Value
+        case "messagesRefresh": engine.messages.refresh()
+        case "messagesSend":
+            if let text = c["text"] as? String, let address = c["address"] as? String { engine.messages.send(text, to: address) }
         // A notification shown by the app: what the user did with it.
         case "notifDismissed": if let key = c["key"] as? String { Bridge.notifications?.onDismiss?(key) }
         case "notifOpened": if let key = c["key"] as? String { Bridge.notifications?.onOpen?(key) }

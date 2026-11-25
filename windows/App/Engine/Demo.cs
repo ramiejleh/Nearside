@@ -34,7 +34,26 @@ internal static class Demo
             Unseen = ["1"],
             Transfers = [new("t1", "holiday-photos.zip", true, "inProgress", null, null)],
             ClipboardToastHidden = false,
-            Settings = new Settings { MirrorNotifications = true, HistoryLimit = 200, LowBatteryAlert = true },
+            Settings = new Settings { MirrorNotifications = true, TextMessages = true, HistoryLimit = 200, LowBatteryAlert = true },
+            Messages = new MessagesView
+            {
+                Loaded = true,
+                Selected = 1,
+                Threads =
+                [
+                    new(1, "+45 20 30 40 50", "Kim", "Kim", "See you at the station", Ago(2), false, 1),
+                    new(2, "+45 60 70 80 90", "Alex", "Alex", "Thanks, got it", Ago(90), true, 0),
+                    new(3, "1234", "1234", null, "Your parcel is ready for pickup", Ago(1500), false, 0),
+                ],
+                Conversation =
+                [
+                    new(11, "Are we still on for Saturday?", Ago(70), true, false, false, true, false, true),
+                    new(12, "Yes! Train at 10:15", Ago(69), false, false, false, true, true, false),
+                    new(13, "Perfect", Ago(68), true, false, false, true, false, false),
+                    new(14, "I'll bring the map", Ago(67.5), true, false, false, false, true, false),
+                    new(15, "See you at the station", Ago(2), false, false, false, true, true, true),
+                ],
+            },
         };
     }
 }

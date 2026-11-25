@@ -42,7 +42,23 @@ public enum PhoneIconCache {
 
     /// "pkg~activity@version", plus ".a" for adaptive icons.
     static func name(id: String, version: Int64, adaptive: Bool) -> String {
-        "\(id.replacingOccurrences(of: "/", with: "~"))@\(version)\(adaptive ? ".a" : "").png"
+        "\(stem(id))@\(version)\(adaptive ? ".a" : "").png"
+    }
+
+    /// The id as one safe file-name part: "/" becomes "~", letters, digits, "." "_" "$" "-" stay,
+    /// anything else (the phone sent it, so "\\" or ":" too) is "%XX" per UTF-8 byte.
+    static func stem(_ id: String) -> String {
+        var out = ""
+        for byte in id.utf8 {
+            switch byte {
+            case UInt8(ascii: "/"): out += "~"
+            case UInt8(ascii: "a")...UInt8(ascii: "z"), UInt8(ascii: "A")...UInt8(ascii: "Z"), UInt8(ascii: "0")...UInt8(ascii: "9"),
+                 UInt8(ascii: "."), UInt8(ascii: "_"), UInt8(ascii: "$"), UInt8(ascii: "-"):
+                out += String(UnicodeScalar(byte))
+            default: out += String(format: "%%%02X", byte)
+            }
+        }
+        return out
     }
 
     /// The cached icon's file and whether it's adaptive (full-bleed, for masking), if cached.
@@ -66,7 +82,7 @@ public enum PhoneIconCache {
         let fm = FileManager.default
         try? fm.createDirectory(at: directory, withIntermediateDirectories: true)
         // Older versions of this app's icon go.
-        let prefix = id.replacingOccurrences(of: "/", with: "~") + "@"
+        let prefix = stem(id) + "@"
         for old in (try? fm.contentsOfDirectory(atPath: directory.path)) ?? [] where old.hasPrefix(prefix) {
             try? fm.removeItem(at: directory.appendingPathComponent(old))
         }
@@ -139,8 +155,9 @@ extension SyncEngine {
             guard let reply = await displayRequest("display-icons", ["ids": batch.map(\.id)], timeout: .seconds(20)),
                   let list = reply["icons"] as? [[String: Any]] else { return }
             var icons: [String: PhoneAppIcon] = [:]
+            let asked = Set(batch.map(\.id))
             for entry in list {
-                guard let id = entry["id"] as? String, let b64 = entry["png"] as? String,
+                guard let id = entry["id"] as? String, asked.contains(id), let b64 = entry["png"] as? String,
                       let png = Data(base64Encoded: b64) else { continue }
                 let icon = PhoneAppIcon(png: png, adaptive: entry["adaptive"] as? Bool ?? false)
                 PhoneIconCache.store(id: id, version: (entry["ver"] as? NSNumber)?.int64Value ?? 0, icon)
