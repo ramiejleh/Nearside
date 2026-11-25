@@ -49,12 +49,13 @@ jobs:
         with:
           dotnet-version: 10.0.x
       - run: swift --version
+      # The image's Visual Studio 2026 C++ library wants Clang 22; Swift 6.4's is older (but works).
       - name: Test the engine
         working-directory: core
-        run: swift test
+        run: swift test -Xcxx -D_ALLOW_COMPILER_AND_STL_VERSION_MISMATCH -Xcc -D_ALLOW_COMPILER_AND_STL_VERSION_MISMATCH
       - name: Build the engine DLL
         working-directory: windows
-        run: swift build
+        run: swift build -Xcxx -D_ALLOW_COMPILER_AND_STL_VERSION_MISMATCH -Xcc -D_ALLOW_COMPILER_AND_STL_VERSION_MISMATCH
       - name: Build the camera DLL
         shell: cmd
         run: windows\Camera\build.cmd x64
