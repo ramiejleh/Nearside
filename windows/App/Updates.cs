@@ -34,9 +34,14 @@ internal static unsafe partial class Updates
         if (!Available) return;
         queue = uiQueue;
         quit = quitApp;
-        // NEARSIDE_UPDATE_FEED: another feed, for testing an update locally. Safe to allow: an
-        // update is only installed if it's signed with the key above.
+#if NEARSIDE_UPDATE_TEST
+        // Test builds only (release.ps1 -UpdateTest): another feed, to try an update locally. Never
+        // in a real release: the signature covers the installer, not the feed's other fields (the
+        // installer's arguments, the version), and the installer runs as an administrator.
         set_appcast_url(Environment.GetEnvironmentVariable("NEARSIDE_UPDATE_FEED") is { Length: > 0 } test ? test : Feed);
+#else
+        set_appcast_url(Feed);
+#endif
         if (set_eddsa_public_key(PublicKey) != 1)
         {
             Log.Info("updates: the public key isn't valid; not checking");
@@ -59,11 +64,13 @@ internal static unsafe partial class Updates
         if (started) check_update_with_ui();
     }
 
-    /// --install-update (testing): check now and install what's found, without asking.
+#if NEARSIDE_UPDATE_TEST
+    /// --install-update (test builds only): check now and install what's found, without asking.
     public static void CheckAndInstall()
     {
         if (started) check_update_with_ui_and_install();
     }
+#endif
 
     public static void Stop()
     {
@@ -84,7 +91,9 @@ internal static unsafe partial class Updates
     [LibraryImport(Dll, EntryPoint = "win_sparkle_init")] private static partial void init();
     [LibraryImport(Dll, EntryPoint = "win_sparkle_cleanup")] private static partial void cleanup();
     [LibraryImport(Dll, EntryPoint = "win_sparkle_check_update_with_ui")] private static partial void check_update_with_ui();
+#if NEARSIDE_UPDATE_TEST
     [LibraryImport(Dll, EntryPoint = "win_sparkle_check_update_with_ui_and_install")] private static partial void check_update_with_ui_and_install();
+#endif
     [LibraryImport(Dll, EntryPoint = "win_sparkle_set_appcast_url", StringMarshalling = StringMarshalling.Utf8)] private static partial void set_appcast_url(string url);
     [LibraryImport(Dll, EntryPoint = "win_sparkle_set_eddsa_public_key", StringMarshalling = StringMarshalling.Utf8)] private static partial int set_eddsa_public_key(string key);
     [LibraryImport(Dll, EntryPoint = "win_sparkle_set_registry_path", StringMarshalling = StringMarshalling.Utf8)] private static partial void set_registry_path(string path);

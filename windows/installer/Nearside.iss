@@ -98,10 +98,34 @@ begin
   end;
 end;
 
+{ Never older over newer: an update's version and arguments come from the feed, which isn't
+  signed (only the installer is), so an old signed installer mustn't be usable to downgrade. }
+function InitializeSetup: Boolean;
+var
+  Installed: String;
+  Have, Offered: Int64;
+begin
+  Result := True;
+  if RegQueryStringValue(HKLM64, 'Software\Microsoft\Windows\CurrentVersion\Uninstall\{799C5799-6D48-4290-8D27-D73DEC50C003}_is1',
+                         'DisplayVersion', Installed)
+     and StrToVersion(Installed, Have) and StrToVersion('{#Version}', Offered)
+     and (ComparePackedVersion(Have, Offered) > 0) then
+  begin
+    SuppressibleMsgBox('Nearside ' + Installed + ' is installed, which is newer than this one ({#Version}).', mbError, MB_OK, IDOK);
+    Result := False;
+  end;
+end;
+
 function PrepareToInstall(var NeedsRestart: Boolean): String;
 begin
-  ReleaseCamera;
   Result := '';
+  { Only in Program Files, whatever /DIR= says: the camera DLL must be where only administrators can write. }
+  if CompareText(ExpandConstant('{app}'), ExpandConstant('{autopf}\Nearside')) <> 0 then
+  begin
+    Result := 'Nearside installs only in ' + ExpandConstant('{autopf}\Nearside') + '.';
+    exit;
+  end;
+  ReleaseCamera;
 end;
 
 procedure CurUninstallStepChanged(Step: TUninstallStep);

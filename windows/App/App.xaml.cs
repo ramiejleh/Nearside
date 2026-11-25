@@ -54,7 +54,9 @@ public partial class App : Application
         camera = new Video.CameraFeed(queue) { TestPattern = line.Contains("--camera-test") };
         camera.Start();
         Updates.Start(queue, Quit);
+#if NEARSIDE_UPDATE_TEST
         if (line.Contains("--install-update")) Updates.CheckAndInstall();
+#endif
         EngineHost.Event += (name, e) =>
         {
             if (name == "session") PhoneWindow.Route(e);

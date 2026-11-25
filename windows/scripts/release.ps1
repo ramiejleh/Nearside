@@ -24,6 +24,8 @@ One-time setup:
 
 -NoSign builds unsigned (SmartScreen warns about such an installer); -NoFeed leaves the update feed
 and the git checks alone (for trying the script; pass -Build then if this isn't a git checkout).
+-UpdateTest builds in the update test hooks (NEARSIDE_UPDATE_FEED, --install-update) and writes
+the feed entry to windows\build\release\appcast-windows-test.xml instead: never publish such a build.
 #>
 param(
     [Parameter(Mandatory = $true)][string]$Version,
@@ -31,7 +33,8 @@ param(
     [string[]]$Arch = @('x64', 'arm64'),
     [int]$Build = 0,
     [switch]$NoSign,
-    [switch]$NoFeed
+    [switch]$NoFeed,
+    [switch]$UpdateTest
 )
 $ErrorActionPreference = 'Stop'
 function Fail([string]$message) { [Console]::Error.WriteLine("error: $message"); exit 1 }
@@ -71,7 +74,7 @@ if ($Build -le 0) {
 }
 if (-not $NoFeed) {
     if (-not $isCheckout) { Fail "the update feed needs a git checkout (or use -NoFeed)" }
-    if (GitOut @('status', '--porcelain')) { Fail "commit everything first: the build number is the commit count" }
+    if (-not $UpdateTest -and (GitOut @('status', '--porcelain'))) { Fail "commit everything first: the build number is the commit count" }
     $UpdateKey = if ($env:NEARSIDE_UPDATE_KEY) { $env:NEARSIDE_UPDATE_KEY } else { Join-Path $env:USERPROFILE 'nearside-winsparkle.key' }
     if (-not (Test-Path $UpdateKey)) { Fail "no update-signing key at $UpdateKey (see the top of this script)" }
     if ((Get-Content (Join-Path $Windows 'App\Updates.cs') -Raw) -match 'PublicKey = "";') {
@@ -159,7 +162,7 @@ foreach ($a in $Arch) {
     Step "Building the app for $a"
     Run dotnet @('publish', (Join-Path $Windows 'App\Nearside.csproj'), '-c', 'Release', '-r', "win-$a", "-p:Platform=$platform",
         '--self-contained', 'true', "-p:Version=$Version", "-p:NearsideBuild=$Build", "-p:SwiftBuildDir=$bin",
-        "-p:FFmpegDir=$ff", '-o', $stage, '-v', 'quiet', '-nologo')
+        "-p:FFmpegDir=$ff", "-p:NearsideUpdateTest=$(if ($UpdateTest) { 'true' } else { 'false' })", '-o', $stage, '-v', 'quiet', '-nologo')
     foreach ($needed in @('Nearside.exe', 'Nearside.pri', 'PanelWindow.xbf', 'NearsideBridge.dll', 'NearsideCamera.dll', 'WinSparkle.dll', 'avcodec-62.dll')) {
         if (-not (Test-Path "$stage\$needed")) { Fail "$needed is missing from the $a build" }
     }
@@ -194,7 +197,7 @@ if (-not $NoFeed) {
     Step "Adding $Version to the update feed"
     $tool = "$env:USERPROFILE\.nuget\packages\winsparkle\0.9.4\tools\winsparkle-tool.exe"
     $enclosures = foreach ($a in $Installers.Keys | Sort-Object) {
-        $signature = (Native $tool @('sign', '--private-key-file', $UpdateKey, $Installers[$a].Path) | Select-Object -Last 1).Trim() # sparkle:edSignature="…" length="…"
+        $signature = (Native $tool @('sign', '--verbose', '--private-key-file', $UpdateKey, $Installers[$a].Path) | Select-Object -Last 1).Trim() # sparkle:edSignature="…" length="…"
         if ($LASTEXITCODE -ne 0 -or $signature -notmatch 'edSignature') { Fail "signing the $a installer for the feed failed" }
         "      <enclosure url=`"$Release/$(Split-Path -Leaf $Installers[$a].Path)`" sparkle:os=`"windows-$a`" sparkle:installerArguments=`"/SILENT /SP- /NOCANCEL /RELAUNCH`" type=`"application/octet-stream`" $signature/>"
     }
@@ -216,6 +219,11 @@ $($enclosures -join "`n")
     </item>
 "@
     $feed = Join-Path $Repo 'site\appcast-windows.xml'
+    if ($UpdateTest) { # never the real feed
+        $test = Join-Path $Out 'appcast-windows-test.xml'
+        if (-not (Test-Path $test)) { Copy-Item $feed $test }
+        $feed = $test
+    }
     $marker = '<!-- releases: newest first -->'
     $text = [IO.File]::ReadAllText($feed)
     if (-not $text.Contains($marker)) { Fail "the update feed's marker is missing" }
@@ -277,6 +285,7 @@ ManifestVersion: $schema
 Step "Done (build $Build)"
 foreach ($a in $Installers.Keys | Sort-Object) { Write-Host "  $($Installers[$a].Path)  $($Installers[$a].Sha)" }
 if ($NoSign) { Write-Host "  (unsigned: SmartScreen will warn)" }
+if ($UpdateTest) { Write-Host "  (a test build with the update test hooks: don't publish it)"; exit 0 }
 @"
 
 Next:

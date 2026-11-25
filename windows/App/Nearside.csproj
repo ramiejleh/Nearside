@@ -22,6 +22,8 @@
          both; a development build has no build number, so it never looks for updates. -->
     <Version Condition="'$(Version)' == ''">0.0.0</Version>
     <NearsideBuild Condition="'$(NearsideBuild)' == ''"></NearsideBuild>
+    <!-- release.ps1 -UpdateTest only: the update test hooks (Updates.cs). Never in a release. -->
+    <DefineConstants Condition="'$(NearsideUpdateTest)' == 'true'">$(DefineConstants);NEARSIDE_UPDATE_TEST</DefineConstants>
     <!-- The Swift build that has the bridge: debug unless set (release.ps1: its release build). -->
     <SwiftConfiguration Condition="'$(SwiftConfiguration)' == ''">debug</SwiftConfiguration>
     <SwiftBuildDir Condition="'$(SwiftBuildDir)' == ''">..\.build\$(SwiftConfiguration)</SwiftBuildDir>
