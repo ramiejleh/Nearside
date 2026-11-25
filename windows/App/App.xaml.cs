@@ -36,7 +36,7 @@ public partial class App : Application
         if (Updates.Available) tray.OnCheckForUpdates = Updates.Check;
         EngineHost.Changed += snapshot => tray.Update(snapshot);
         SingleInstance.OnShowRequested(() => queue.TryEnqueue(() => panel.ShowNearTray(tray)));
-        Log.Info("started");
+        Log.Info($"started: version {Updates.Version}, build {(Updates.Build.Length > 0 ? Updates.Build : "dev")}");
 
         var line = Environment.GetCommandLineArgs();
         if (line.Contains("--demo"))
@@ -54,6 +54,7 @@ public partial class App : Application
         camera = new Video.CameraFeed(queue) { TestPattern = line.Contains("--camera-test") };
         camera.Start();
         Updates.Start(queue, Quit);
+        if (line.Contains("--install-update")) Updates.CheckAndInstall();
         EngineHost.Event += (name, e) =>
         {
             if (name == "session") PhoneWindow.Route(e);

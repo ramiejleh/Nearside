@@ -85,5 +85,7 @@ PC's key. `nearside-spike usb` (in `Spike/`) lists phones on a cable, and
   `--shot <file.png>` saves the window as drawn, then quits.
 - `--open-phone` opens the phone window once connected (`--launcher`: the launcher instead).
 - `--camera-test` feeds the camera a generated picture instead of the phone's camera.
+- Updates (release builds): `NEARSIDE_UPDATE_FEED=<url>` reads another feed (updates must still
+  be signed with the app's key), and `--install-update` checks and installs at once.
 - The log is `%LOCALAPPDATA%\Nearside\nearside.log` (no phone content goes in it).
 - Settings are Foundation's, in `%LOCALAPPDATA%\Nearside.exe.plist`.

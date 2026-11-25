@@ -124,7 +124,8 @@ function Copy-SwiftRuntime([string]$a, [string]$to) {
     New-Item -ItemType Directory "$work\files" | Out-Null
     Copy-Item $msm "$work\rtl.msm"
     Run $MsiDb.FullName @('-d', "$work\rtl.msm", '-f', $work, '-e', 'File')
-    Run $MsiDb.FullName @('-d', "$work\rtl.msm", '-f', $work, '-x', 'MergeModule.CABinet')
+    Push-Location $work # -x saves the stream in the current folder
+    try { Run $MsiDb.FullName @('-d', "$work\rtl.msm", '-x', 'MergeModule.CABinet') } finally { Pop-Location }
     Run "$env:SystemRoot\System32\expand.exe" @("$work\MergeModule.CABinet", '-F:*', "$work\files")
     foreach ($row in (Get-Content "$work\File.idt" | Select-Object -Skip 3)) {
         $columns = $row -split "`t"
@@ -159,7 +160,7 @@ foreach ($a in $Arch) {
     Run dotnet @('publish', (Join-Path $Windows 'App\Nearside.csproj'), '-c', 'Release', '-r', "win-$a", "-p:Platform=$platform",
         '--self-contained', 'true', "-p:Version=$Version", "-p:NearsideBuild=$Build", "-p:SwiftBuildDir=$bin",
         "-p:FFmpegDir=$ff", '-o', $stage, '-v', 'quiet', '-nologo')
-    foreach ($needed in @('Nearside.exe', 'NearsideBridge.dll', 'NearsideCamera.dll', 'WinSparkle.dll', 'avcodec-62.dll')) {
+    foreach ($needed in @('Nearside.exe', 'Nearside.pri', 'PanelWindow.xbf', 'NearsideBridge.dll', 'NearsideCamera.dll', 'WinSparkle.dll', 'avcodec-62.dll')) {
         if (-not (Test-Path "$stage\$needed")) { Fail "$needed is missing from the $a build" }
     }
 

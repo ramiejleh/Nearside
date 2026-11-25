@@ -85,13 +85,12 @@ begin
     if CompareText(ParamStr(I), '/RELAUNCH') = 0 then Result := True;
 end;
 
-{ An update: the camera service lets go of the old camera DLL when stopped (it starts again
-  when an app next opens a camera). }
-function PrepareToInstall(var NeedsRestart: Boolean): String;
+{ The camera service lets go of the camera DLL when stopped, so an update can replace it and
+  uninstalling can delete it (the service starts again when an app next opens a camera). }
+procedure ReleaseCamera;
 var
   Code: Integer;
 begin
-  Result := '';
   if FileExists(ExpandConstant('{app}\NearsideCamera.dll')) then
   begin
     Exec(ExpandConstant('{sys}\sc.exe'), 'stop FrameServer', '', SW_HIDE, ewWaitUntilTerminated, Code);
@@ -99,9 +98,16 @@ begin
   end;
 end;
 
-{ Start at sign-in (Settings) is per person: this removes it for whoever uninstalls. }
+function PrepareToInstall(var NeedsRestart: Boolean): String;
+begin
+  ReleaseCamera;
+  Result := '';
+end;
+
 procedure CurUninstallStepChanged(Step: TUninstallStep);
 begin
+  if Step = usUninstall then ReleaseCamera;
+  { Start at sign-in (Settings) is per person: this removes it for whoever uninstalls. }
   if Step = usPostUninstall then
     RegDeleteValue(HKCU, 'Software\Microsoft\Windows\CurrentVersion\Run', 'Nearside');
 end;

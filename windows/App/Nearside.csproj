@@ -54,4 +54,12 @@
     <Content Include="..\Camera\build\$(Platform.ToLowerInvariant())\NearsideCamera.dll" Link="NearsideCamera.dll"
              CopyToOutputDirectory="PreserveNewest" Condition="Exists('..\Camera\build\$(Platform.ToLowerInvariant())\NearsideCamera.dll')" />
   </ItemGroup>
+  <!-- dotnet publish leaves out the app's own resource index and compiled XAML, which an
+       unpackaged WinUI app loads from next to it. -->
+  <Target Name="NearsidePublishResources" AfterTargets="Publish">
+    <ItemGroup>
+      <NearsideResources Include="$(OutDir)$(AssemblyName).pri;$(OutDir)*.xbf" />
+    </ItemGroup>
+    <Copy SourceFiles="@(NearsideResources)" DestinationFolder="$(PublishDir)" SkipUnchangedFiles="true" />
+  </Target>
 </Project>
