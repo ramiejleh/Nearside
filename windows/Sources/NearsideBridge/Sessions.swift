@@ -66,6 +66,11 @@ struct BridgeFrame: VideoFrame {
 @MainActor
 enum Sessions {
     static var all: [Int64: PhoneAppSession] = [:]
+    /// The app each window shows (none for the phone window), for the calls: a call's app open in
+    /// a window shows the call itself, and talks through this PC.
+    private static var packages: [Int64: String] = [:] {
+        didSet { Bridge.engine?.calls.windowPackages = Set(packages.values) }
+    }
 
     /// {"id", "size": "phone"|"foldable"|"tablet", "package"?, "activity"?, "label"?, "notification"?}
     /// → {"width", "height", "dpi", "shownWidthDp", "shownHeightDp"}, or nil if it can't open.
@@ -79,8 +84,9 @@ enum Sessions {
         Media.lock.withLock { Media.opening = id }
         defer { Media.lock.withLock { Media.opening = 0 } }
         let session: PhoneAppSession
-        if let package = c["package"] as? String, let activity = c["activity"] as? String {
+        if let package = c["package"] as? String, let activity = c["activity"] as? String ?? (c["notification"] != nil ? "" : nil) {
             let app = PhoneApp(package: package, activity: activity, label: c["label"] as? String ?? package)
+            packages[id] = package
             session = engine.makePhoneAppSession(app, width: display.width, height: display.height, dpi: display.dpi,
                                                  notification: c["notification"] as? String)
         } else {
@@ -112,6 +118,7 @@ enum Sessions {
             case .closed:
                 emit("state", ["state": "closed"])
                 all[id] = nil
+                packages[id] = nil
                 Media.lock.withLock { Media.decoders[id] = nil }
             }
         }

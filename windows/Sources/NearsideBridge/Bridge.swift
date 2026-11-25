@@ -75,9 +75,14 @@ public func nearside_start(_ apkPath: UnsafePointer<CChar>?, _ callback: Nearsid
             AudioMedia.lock.withLock { AudioMedia.outputs[session] = output }
             return output
         }
+        platform.microphone = { BridgeMicrophone() }
         Platforms.current = platform
         let engine = SyncEngine(apkURL: apk)
         engine.onArrival = { item in Bridge.emit("clip", ["id": item.id.uuidString]) }
+        // "Open on PC" in a notification: its app in a window, opening that notification.
+        engine.onOpenNotificationOnMac = { key, package, app in
+            Bridge.emit("openInWindow", ["key": key, "package": package, "app": app])
+        }
         Bridge.engine = engine
         engine.start()
         Bridge.observe()

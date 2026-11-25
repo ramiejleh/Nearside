@@ -29,12 +29,13 @@ public sealed class PhoneWindow : Window
     private bool closing;
 
     /// Opens the phone's home screen (no `app`) or an app; null if the phone isn't connected.
-    public static PhoneWindow? Show(string? package = null, string? activity = null, string? label = null)
+    /// With `notification`, the app opens at that notification (its call, its chat).
+    public static PhoneWindow? Show(string? package = null, string? activity = null, string? label = null, string? notification = null)
     {
         var id = VideoRouter.NextId();
         var window = new PhoneWindow(id, label ?? "Phone");
         VideoRouter.Add(id, new PhoneStream(id, window.view));
-        var request = JsonSerializer.Serialize(new { id, size = "phone", package, activity, label });
+        var request = JsonSerializer.Serialize(new { id, size = "phone", package, activity, label, notification });
         var reply = OpenSession(request);
         if (reply == null)
         {

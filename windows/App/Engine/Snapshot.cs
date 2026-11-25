@@ -22,6 +22,7 @@ public sealed record Snapshot
     public List<Transfer> Transfers { get; init; } = [];
     public List<SetupStep> SetupSteps { get; init; } = [];
     public Settings Settings { get; init; } = new();
+    public CallsView Calls { get; init; } = new();
     /// Only while the Messages window is open.
     public MessagesView? Messages { get; init; }
 
@@ -53,6 +54,32 @@ public sealed record Settings
     public bool RingHere { get; init; }
     public int HistoryLimit { get; init; }
     public bool LowBatteryAlert { get; init; }
+}
+
+public sealed record CallsView
+{
+    public bool Show { get; init; }
+    public bool RingHere { get; init; }
+    public bool Muted { get; init; }
+    public bool AudioHere { get; init; }
+    public List<PhoneCall> List { get; init; } = [];
+    public string? Ringing { get; init; }
+    public string? Pinned { get; init; }
+}
+
+public sealed record PhoneCall
+{
+    public string Key { get; init; } = "";
+    public string Package { get; init; } = "";
+    public string App { get; init; } = "";
+    public string State { get; init; } = "";
+    public string Title { get; init; } = "";
+    public string Kind { get; init; } = "";
+    public List<string> Can { get; init; } = [];
+    public bool IsPhone { get; init; }
+    public long? Since { get; init; }
+    public string? Number { get; init; }
+    public string? Photo { get; init; }
 }
 
 public sealed record MessagesView

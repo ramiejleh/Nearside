@@ -38,6 +38,7 @@ enum Snapshot {
             s["phoneStatus"] = p
         }
         if engine.messages.isOpen { s["messages"] = messages(engine.messages) }
+        s["calls"] = calls(engine)
         switch engine.phoneAppProblem {
         case nil: break
         case .otherSignature: s["phoneAppProblem"] = ["kind": "otherSignature"]
@@ -69,6 +70,30 @@ enum Snapshot {
                  "pending": m.pending, "first": l.first, "last": l.last, "header": l.header]
             }
         }
+        return o
+    }
+
+    /// The phone's calls: the ringing one (a call notification), the one in progress (the in-call
+    /// card, unless its app is open in a window), the mute and where a phone call is talked.
+    static func calls(_ engine: SyncEngine) -> [String: Any] {
+        let calls = engine.calls
+        var o: [String: Any] = [
+            "show": engine.showCalls, "ringHere": engine.ringOnMac, "muted": calls.muted, "audioHere": calls.audioOnMac,
+            "list": calls.calls.map { c -> [String: Any] in
+                var call: [String: Any] = [
+                    "key": c.key, "package": c.package, "app": c.app, "state": c.state.rawValue,
+                    "title": c.name.isEmpty ? (c.number ?? "Unknown caller") : c.name,
+                    "kind": c.number != nil || c.package.hasSuffix(".dialer") ? "Phone call" : "\(c.app) call",
+                    "can": c.can.map(\.rawValue), "isPhone": calls.isPhoneCall(c),
+                ]
+                if let since = c.since { call["since"] = millis(since) }
+                if let number = c.number { call["number"] = number }
+                if let photo = c.photo { call["photo"] = photo.base64EncodedString() }
+                return call
+            },
+        ]
+        if let ringing = calls.ringing { o["ringing"] = ringing.key }
+        if let pinned = calls.pinned { o["pinned"] = pinned.key }
         return o
     }
 

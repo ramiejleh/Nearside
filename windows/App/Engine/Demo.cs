@@ -35,6 +35,14 @@ internal static class Demo
             Transfers = [new("t1", "holiday-photos.zip", true, "inProgress", null, null)],
             ClipboardToastHidden = false,
             Settings = new Settings { MirrorNotifications = true, TextMessages = true, HistoryLimit = 200, LowBatteryAlert = true },
+            Calls = new CallsView
+            {
+                Show = true,
+                AudioHere = true,
+                Pinned = "c1",
+                List = [new PhoneCall { Key = "c1", Package = "com.google.android.dialer", App = "Phone", State = "ongoing", Title = "Kim",
+                    Kind = "Phone call", Can = ["hangup"], IsPhone = true, Number = "+45 20 30 40 50", Since = Ago(3.4) }],
+            },
             Messages = new MessagesView
             {
                 Loaded = true,

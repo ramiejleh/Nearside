@@ -13,6 +13,7 @@ public partial class App : Application
     private SetupWindow? setup;
     private SettingsWindow? settings;
     private Notifications? notifications;
+    private CallCard? calls;
     private DispatcherQueue? queue;
 
     public App()
@@ -42,13 +43,19 @@ public partial class App : Application
             return;
         }
         notifications = new Notifications(queue);
+        calls = new CallCard();
         var apk = Path.Combine(AppContext.BaseDirectory, "phone-app.apk");
         EngineHost.Start(queue, File.Exists(apk) ? apk : null);
         Video.VideoRouter.Install();
         Audio.SoundRouter.Install();
+        Audio.MicRouter.Install();
         EngineHost.Event += (name, e) =>
         {
             if (name == "session") PhoneWindow.Route(e);
+            else if (name == "openInWindow")
+            {
+                PhoneWindow.Show(e.GetProperty("package").GetString(), null, e.GetProperty("app").GetString(), e.GetProperty("key").GetString());
+            }
         };
         if (EngineHost.Current.NeedsSetup) OpenSetup();
         // --open-phone: the phone window opens once connected (for testing).
@@ -75,7 +82,13 @@ public partial class App : Application
         EngineHost.StartDemo(setup: page != null);
         Task saved = Task.CompletedTask;
         var shot = Value("--shot");
-        if (line.Contains("--messages"))
+        if (line.Contains("--call"))
+        {
+            calls = new CallCard();
+            EngineHost.StartDemo(setup: false); // the card shows itself on the snapshot
+            if (shot != null && calls.Window is { } card) saved = Shots.SaveAsync(card, card.Content, shot);
+        }
+        else if (line.Contains("--messages"))
         {
             OpenMessages();
             if (shot != null) saved = Shots.SaveAsync(messages!, messages!.Content, shot);
@@ -156,6 +169,8 @@ public partial class App : Application
     {
         tray?.Dispose();
         notifications?.Unregister();
-        Exit();
+        Log.Info("quit");
+        // The engine's threads (network, sound) don't end by themselves: the process does, now.
+        Environment.Exit(0);
     }
 }

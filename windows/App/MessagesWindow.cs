@@ -27,6 +27,11 @@ public sealed class MessagesWindow : Window
     private List<TextMessage> shownMessages = [];
     private long? selected;
     private bool updatingSelection;
+    /// Unsent text per conversation: the box always belongs to the one shown, so a draft can never
+    /// go to whoever is selected next.
+    private readonly Dictionary<long, string> drafts = [];
+    /// The conversation the text in the box was typed for.
+    private long? composeThread;
 
     public MessagesWindow()
     {
@@ -164,6 +169,7 @@ public sealed class MessagesWindow : Window
         if (view.Selected != selected || !view.Conversation.SequenceEqual(shownMessages))
         {
             var atEnd = scroller.VerticalOffset >= scroller.ScrollableHeight - 24 || view.Selected != selected;
+            if (view.Selected != selected) SwapDraft(view.Selected);
             selected = view.Selected;
             shownMessages = view.Conversation;
             bubbles.Children.Clear();
@@ -174,6 +180,17 @@ public sealed class MessagesWindow : Window
                 scroller.ChangeView(null, scroller.ScrollableHeight, null, disableAnimation: true);
             }
         }
+    }
+
+    private void SwapDraft(long? next)
+    {
+        if (composeThread is { } previous)
+        {
+            if (string.IsNullOrEmpty(compose.Text)) drafts.Remove(previous);
+            else drafts[previous] = compose.Text;
+        }
+        compose.Text = next is { } id && drafts.TryGetValue(id, out var draft) ? draft : "";
+        composeThread = next;
     }
 
     private static UIElement ThreadRow(MessageThread t)
@@ -267,9 +284,11 @@ public sealed class MessagesWindow : Window
     private void Send()
     {
         var thread = shownThreads.FirstOrDefault(t => t.Id == selected);
-        if (thread == null || string.IsNullOrWhiteSpace(compose.Text)) return;
+        // Only to the conversation the text was typed in.
+        if (thread == null || composeThread != thread.Id || string.IsNullOrWhiteSpace(compose.Text)) return;
         EngineHost.Command("messagesSend", new { text = compose.Text, address = thread.Address });
         compose.Text = "";
+        drafts.Remove(thread.Id);
     }
 
     private async Task NewMessageAsync()

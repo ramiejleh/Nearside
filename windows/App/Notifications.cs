@@ -33,6 +33,79 @@ internal sealed class Notifications
         manager.Register();
         _ = manager.RemoveAllAsync(); // from an earlier run: the phone sends what's current
         EngineHost.Event += OnEvent;
+        EngineHost.Changed += ShowRinging;
+    }
+
+    // MARK: Calls
+
+    private const string CallGroup = "call";
+    private static readonly string[] QuickReplies = ["Can't talk now. I'll call you back.", "I'll call you later.", "On my way."];
+    /// The ringing call shown (its key and state), so it's only re-shown when it changes.
+    private (string Key, string State)? ringShown;
+
+    /// A call ringing on the phone: Windows' call notification (it stays up and rings), with
+    /// Answer, Decline and, for a phone call, declining with a text.
+    private void ShowRinging(Snapshot s)
+    {
+        var calls = s.Calls;
+        var call = calls.Show ? calls.List.FirstOrDefault(c => c.Key == calls.Ringing) : null;
+        var now = call == null ? ((string, string)?)null : (call.Key, call.State);
+        if (now == ringShown) return;
+        ringShown = now;
+        _ = AppNotificationManager.Default.RemoveByGroupAsync(CallGroup);
+        if (call == null) return;
+        try
+        {
+            var builder = new AppNotificationBuilder()
+                .SetScenario(AppNotificationScenario.IncomingCall)
+                .AddArgument("call", call.Key)
+                .AddText(Clean(call.Title, 100))
+                .AddText(call.State == "screening" ? $"{call.Kind} · screening" : call.Kind);
+            if (call.Photo != null && SaveIcon("call-" + call.Key, call.Photo) is { } photo)
+            {
+                builder.SetAppLogoOverride(new Uri(photo), AppNotificationImageCrop.Circle);
+            }
+            if (call.Number != null && s.Settings.TextMessages && call.Can.Contains("decline"))
+            {
+                var replies = new AppNotificationComboBox("reply").SetSelectedItem("0");
+                for (var i = 0; i < QuickReplies.Length; i++) replies.AddItem(i.ToString(), QuickReplies[i]);
+                builder.AddComboBox(replies);
+                builder.AddButton(new AppNotificationButton("Text").AddArgument("call", call.Key).AddArgument("do", "text"));
+            }
+            if (call.Can.Contains("decline"))
+            {
+                builder.AddButton(new AppNotificationButton("Decline").AddArgument("call", call.Key).AddArgument("do", "decline")
+                    .SetButtonStyle(AppNotificationButtonStyle.Critical));
+            }
+            if (call.Can.Contains("answer"))
+            {
+                builder.AddButton(new AppNotificationButton("Answer").AddArgument("call", call.Key).AddArgument("do", "answer")
+                    .SetButtonStyle(AppNotificationButtonStyle.Success));
+            }
+            if (calls.RingHere && call.State == "incoming") builder.SetAudioEvent(AppNotificationSoundEvent.Call, AppNotificationAudioLooping.Loop);
+            else builder.MuteAudio();
+            var notification = builder.BuildNotification();
+            notification.Tag = "ringing";
+            notification.Group = CallGroup;
+            AppNotificationManager.Default.Show(notification);
+        }
+        catch (Exception error)
+        {
+            Log.Error($"the call notification couldn't be shown: {error.GetType().Name}");
+        }
+    }
+
+    private static void CallInvoked(string key, Dictionary<string, string> args, Dictionary<string, string> input)
+    {
+        switch (args.GetValueOrDefault("do"))
+        {
+            case "answer": EngineHost.Command("callAct", new { key, action = "answer" }); break;
+            case "decline": EngineHost.Command("callAct", new { key, action = "decline" }); break;
+            case "text":
+                var choice = int.TryParse(input.GetValueOrDefault("reply"), out var i) && i >= 0 && i < QuickReplies.Length ? i : 0;
+                EngineHost.Command("callDeclineText", new { key, text = QuickReplies[choice] });
+                break;
+        }
     }
 
     public void Unregister() => AppNotificationManager.Default.Unregister();
@@ -174,6 +247,11 @@ internal sealed class Notifications
 
     private void Invoked(Dictionary<string, string> args, Dictionary<string, string> input)
     {
+        if (args.TryGetValue("call", out var call))
+        {
+            CallInvoked(call, args, input);
+            return;
+        }
         if (!args.TryGetValue("key", out var key)) return;
         // The engine treats "file:" keys as files it saved (a click reveals them): only our own
         // notifications may carry one.

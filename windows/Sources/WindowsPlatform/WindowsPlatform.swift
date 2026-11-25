@@ -12,6 +12,8 @@ public final class WindowsPlatform: Platform, @unchecked Sendable {
     public var videoDecoder: ((DisplayWire.Codec) -> any VideoDecoding)?
     /// Plays a phone window's sound; none if not set.
     public var audioOutput: (() -> any AudioOutput)?
+    /// This PC's microphone; none if not set.
+    public var microphone: (() -> any Microphone)?
     /// Shows the phone's notifications; printed (app name only) if not set.
     public var notifications: (@MainActor () -> any SystemNotifications)?
     public init() {}
@@ -63,8 +65,9 @@ public final class WindowsPlatform: Platform, @unchecked Sendable {
         return videoDecoder(codec)
     }
     public func makeAudioOutput() -> any AudioOutput { audioOutput?() ?? NoSound() }
-    public func makeMicrophone() -> any Microphone { NoMicrophone() }
-    public func microphoneAllowed() async -> Bool { false }
+    public func makeMicrophone() -> any Microphone { microphone?() ?? NoMicrophone() }
+    /// Windows asks nothing up front: its privacy settings show as the capture failing to start.
+    public func microphoneAllowed() async -> Bool { microphone != nil }
 }
 
 /// Polls the clipboard's sequence number (as the Mac polls its change count).

@@ -35,6 +35,13 @@ internal static unsafe partial class Native
     [LibraryImport(Dll, EntryPoint = "nearside_audio_read")]
     public static partial void AudioRead(long session, float* output, int frames, int channels);
 
+    /// The engine's microphones: (id, kind 0 start / 1 stop) → 1 if it worked.
+    [LibraryImport(Dll, EntryPoint = "nearside_set_mic")]
+    public static partial void SetMic(delegate* unmanaged<long, int, int> mic);
+
+    [LibraryImport(Dll, EntryPoint = "nearside_mic_chunk")]
+    public static partial void MicChunk(long id, short* samples, int count);
+
     [LibraryImport(Dll, EntryPoint = "nearside_session_open", StringMarshalling = StringMarshalling.Utf8)]
     public static partial byte* SessionOpen(string json);
 

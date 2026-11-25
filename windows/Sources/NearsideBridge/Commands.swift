@@ -32,6 +32,28 @@ enum Commands {
         case "dismissTransfer":
             if let id = (c["id"] as? String).flatMap(UUID.init(uuidString:)) { engine.dismissTransfer(id) }
         case "listApps": listApps(engine)
+        // Calls.
+        case "callAct":
+            if let key = c["key"] as? String, let action = (c["action"] as? String).flatMap(PhoneCall.Action.init(rawValue:)),
+               let call = engine.calls.calls.first(where: { $0.key == key }) {
+                engine.calls.act(action, on: call)
+                // An app's call answered here opens in a window, where its sound and this PC's
+                // microphone go (a phone call's sound comes here through the call stream).
+                if action == .answer, !engine.calls.isPhoneCall(call) {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
+                        Bridge.emit("openInWindow", ["key": call.key, "package": call.package, "app": call.app])
+                    }
+                }
+            }
+        case "callDeclineText":
+            if let key = c["key"] as? String, let text = c["text"] as? String,
+               let call = engine.calls.calls.first(where: { $0.key == key }), let number = call.number {
+                engine.messages.send(text, to: number)
+                engine.calls.act(.decline, on: call)
+            }
+        case "callMute": engine.calls.setMuted(c["on"] as? Bool ?? false)
+        case "callAudio": engine.calls.moveAudio(toMac: c["here"] as? Bool ?? false)
+        case "callPlace": if let number = c["number"] as? String { engine.calls.place(number) }
         // The Messages window.
         case "messagesOpen": engine.messages.isOpen = c["open"] as? Bool ?? false
         case "messagesActive": engine.messages.isActive = c["active"] as? Bool ?? false
