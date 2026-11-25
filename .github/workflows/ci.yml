@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, windows]
   pull_request:
 
 permissions:
@@ -26,7 +26,7 @@ jobs:
         run: swift test
 
   core-linux:
-    # Keeps core/ free of Apple-only code until the Windows build exists.
+    # Keeps core/ portable beyond the two apps' systems.
     name: Engine on Linux (portability check)
     runs-on: ubuntu-latest
     container: swift:6.4.3
@@ -35,6 +35,32 @@ jobs:
       - name: Test
         working-directory: core
         run: swift test
+
+  windows:
+    name: Windows (engine tests, bridge, camera, app)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: compnerd/gha-setup-swift@v0.5.1
+        with:
+          swift-version: swift-6.4.3-release
+          swift-build: 6.4.3-RELEASE
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+      - run: swift --version
+      - name: Test the engine
+        working-directory: core
+        run: swift test
+      - name: Build the engine DLL
+        working-directory: windows
+        run: swift build
+      - name: Build the camera DLL
+        shell: cmd
+        run: windows\Camera\build.cmd x64
+      - name: Build the app
+        working-directory: windows/App
+        run: dotnet build -p:Platform=x64 -r win-x64
 
   android:
     name: Phone app (assembleDebug)
