@@ -20,7 +20,8 @@ public sealed unsafe partial class CameraFeed : IDisposable
     public const int Width = 1920, Height = 1080;
     private const int FrameBytes = Width * Height * 3 / 2;
     private const uint Magic = 0x4643534E; // "NSCF"
-    private const string PipeName = "NearsideCamera";
+    /// One per Windows session, so each signed-in person's camera reaches only their own Nearside.
+    private static readonly string PipeName = $"NearsideCamera-{System.Diagnostics.Process.GetCurrentProcess().SessionId}";
     private const string FrontKey = "WebcamFront";
 
     private readonly DispatcherQueue ui;

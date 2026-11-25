@@ -25,15 +25,16 @@
 
 // {6D3A1F52-8B2E-4C67-9A41-5E0B7C2D9F13}
 static const GUID CLSID_NearsideCamera = { 0x6d3a1f52, 0x8b2e, 0x4c67, { 0x9a, 0x41, 0x5e, 0x0b, 0x7c, 0x2d, 0x9f, 0x13 } };
-static const wchar_t* PipeName = L"\\\\.\\pipe\\NearsideCamera";
+/// "\\.\pipe\NearsideCamera-<session>": each signed-in person's Nearside has its own.
+static std::wstring PipeName(DWORD session) { return L"\\\\.\\pipe\\NearsideCamera-" + std::to_wstring(session); }
+/// The camera service tells the activator which process opened the camera (not in the SDK headers).
+static const GUID ClientPid = { 0x5f8d322e, 0x0fe4, 0x43e4, { 0x9e, 0x50, 0xd8, 0x3e, 0xcd, 0x9f, 0xc2, 0xb8 } };
 static const UINT32 Width = 1920, Height = 1080, Fps = 30;
 static const UINT32 FrameBytes = Width * Height * 3 / 2; // NV12
 static const UINT32 Magic = 0x4643534E; // "NSCF"
 
 static HMODULE module;
 
-/// A line in NearsideCamera.log in the running account's temp folder (the camera service's:
-/// C:\Windows\ServiceProfiles\LocalService\AppData\Local\Temp). No picture content.
 static void Trace(const wchar_t* format, ...) {
     wchar_t folder[MAX_PATH];
     if (!GetTempPathW(MAX_PATH, folder)) return;
@@ -79,6 +80,9 @@ struct Feed {
     std::mutex lock;
     std::vector<BYTE> frame; // NV12, Width x Height; empty until the first
     std::atomic<bool> running{false};
+    /// The Windows session of the app using the camera; frames only come from that session's
+    /// Nearside. Unknown (-1): none are taken.
+    std::atomic<long> session{-1};
     std::thread reader;
     HANDLE pipe = INVALID_HANDLE_VALUE;
 
@@ -128,7 +132,9 @@ struct Feed {
 
     /// The pipe's server is the Nearside app installed next to this DLL (a folder only
     /// administrators can write to).
-    static bool TrustedServer(HANDLE p) {
+    static bool TrustedServer(HANDLE p, DWORD session) {
+        ULONG serverSession = 0;
+        if (!GetNamedPipeServerSessionId(p, &serverSession) || serverSession != session) return false;
         ULONG pid = 0;
         if (!GetNamedPipeServerProcessId(p, &pid) || pid == 0) return false;
         std::wstring image = ImageOf(pid), folder = OwnFolder();
@@ -156,7 +162,14 @@ struct Feed {
         Trace(L"feed: started");
         std::vector<BYTE> incoming(FrameBytes);
         while (running) {
-            HANDLE p = CreateFileW(PipeName, GENERIC_READ | GENERIC_WRITE, 0, nullptr, OPEN_EXISTING, SECURITY_SQOS_PRESENT | SECURITY_IDENTIFICATION, nullptr);
+            long s = session;
+            if (s < 0) {
+                if (lastError != 1) Trace(L"feed: the camera's user is unknown; no frames");
+                lastError = 1;
+                Sleep(500);
+                continue;
+            }
+            HANDLE p = CreateFileW(PipeName((DWORD)s).c_str(), GENERIC_READ | GENERIC_WRITE, 0, nullptr, OPEN_EXISTING, SECURITY_SQOS_PRESENT | SECURITY_IDENTIFICATION, nullptr);
             if (p == INVALID_HANDLE_VALUE) {
                 DWORD error = GetLastError();
                 if (error != lastError) Trace(L"pipe: can't open (%lu)", error);
@@ -165,7 +178,7 @@ struct Feed {
                 continue;
             }
             lastError = 0;
-            if (!TrustedServer(p)) {
+            if (!TrustedServer(p, (DWORD)s)) {
                 Trace(L"pipe: server refused (not Nearside.exe next to this DLL)");
                 CloseHandle(p);
                 Sleep(2000);
@@ -206,6 +219,37 @@ struct Feed {
         }
     }
 };
+
+/// A process's Windows session, without opening it (LocalService may not): from the system's
+/// process list. -1 if it isn't running.
+static long SessionOf(ULONG pid) {
+    struct Process { // the start of SYSTEM_PROCESS_INFORMATION
+        ULONG NextEntryOffset, NumberOfThreads;
+        BYTE Reserved1[48];
+        USHORT NameLength, NameMaximumLength;
+        PWSTR Name;
+        LONG BasePriority;
+        HANDLE UniqueProcessId;
+        HANDLE InheritedFromUniqueProcessId;
+        ULONG HandleCount, SessionId;
+    };
+    using Query = LONG(NTAPI*)(ULONG, PVOID, ULONG, PULONG);
+    static auto query = reinterpret_cast<Query>(GetProcAddress(GetModuleHandleW(L"ntdll.dll"), "NtQuerySystemInformation"));
+    if (!query) return -1;
+    std::vector<BYTE> buffer(1 << 20);
+    ULONG needed = 0;
+    LONG status;
+    while ((status = query(5 /* SystemProcessInformation */, buffer.data(), (ULONG)buffer.size(), &needed)) == (LONG)0xC0000004 /* length mismatch */) {
+        buffer.resize(needed + 65536);
+    }
+    if (status < 0) return -1;
+    for (size_t offset = 0;;) {
+        auto process = reinterpret_cast<Process*>(buffer.data() + offset);
+        if ((ULONG)(ULONG_PTR)process->UniqueProcessId == pid) return (long)process->SessionId;
+        if (process->NextEntryOffset == 0) return -1;
+        offset += process->NextEntryOffset;
+    }
+}
 
 // MARK: - IMFAttributes, delegated to an inner store
 
@@ -584,6 +628,13 @@ struct Activator : IMFActivate {
     STDMETHODIMP ActivateObject(REFIID iid, void** out) override {
         if (!out) return E_POINTER;
         *out = nullptr;
+        // Whose camera this is: the session of the process that opened it.
+        UINT32 pid = 0;
+        long session = -1;
+        if (source && source->stream && SUCCEEDED(attributes->GetUINT32(ClientPid, &pid)) && pid && (session = SessionOf(pid)) >= 0) {
+            source->stream->feed.session = session;
+            Trace(L"activate: for session %ld", session);
+        }
         return source ? source->QueryInterface(iid, out) : MF_E_SHUTDOWN;
     }
     STDMETHODIMP ShutdownObject() override { return S_OK; }
