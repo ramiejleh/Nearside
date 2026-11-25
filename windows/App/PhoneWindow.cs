@@ -12,14 +12,27 @@ using Nearside.Video;
 namespace Nearside;
 
 /// A phone window: the phone's home screen, or one app, streamed from the phone. The mouse (or a
-/// finger, or a pen) works as a finger; the wheel scrolls; typing goes to the app.
+/// finger, or a pen) works as a finger; the wheel scrolls; typing goes to the app. As on the Mac:
+/// a size (Phone, Foldable, Tablet) changes the display on the phone, so the app lays itself out
+/// again; dragging the window's edge only zooms the picture (the window keeps the screen's shape),
+/// remembered per size; the home screen has Recents (drawn here from the phone's list) and a dock.
 public sealed class PhoneWindow : Window
 {
     private static readonly Dictionary<long, PhoneWindow> Open = [];
+    private static readonly Dictionary<nint, PhoneWindow> ByHandle = [];
     private const double ToolbarHeight = 40;
+    private static readonly string[] Sizes = ["phone", "foldable", "tablet"];
 
     private readonly long id;
+    /// The app in it; null for the phone window (its home screen).
+    private readonly string? package;
+    private readonly nint hwnd;
     private readonly StackPanel toolbar;
+    private readonly Dictionary<string, Button> sizeButtons = [];
+    private string size;
+    /// The screen shown (the display minus the phone's status bar), in dp.
+    private double shownWidthDp = 400, shownHeightDp = 800;
+    private readonly Recents recents;
     private readonly SwapChainPanel panel = new();
     private readonly VideoView view;
     private readonly Border overlay = new() { Visibility = Visibility.Collapsed };
@@ -33,8 +46,8 @@ public sealed class PhoneWindow : Window
     public static async Task<PhoneWindow?> OpenAsync(string? package = null, string? activity = null, string? label = null, string? notification = null)
     {
         var owner = Open.Values.FirstOrDefault();
-        var hwnd = owner != null ? Microsoft.UI.Win32Interop.GetWindowFromWindowId(owner.AppWindow.Id) : 0;
-        if (!await AuthGate.AuthenticateAsync(hwnd, opening: true)) return null;
+        var ownerHandle = owner != null ? owner.hwnd : 0;
+        if (!await AuthGate.AuthenticateAsync(ownerHandle, opening: true)) return null;
         return Show(package, activity, label, notification);
     }
 
@@ -42,9 +55,9 @@ public sealed class PhoneWindow : Window
     private static PhoneWindow? Show(string? package = null, string? activity = null, string? label = null, string? notification = null)
     {
         var id = VideoRouter.NextId();
-        var window = new PhoneWindow(id, label ?? "Phone");
+        var window = new PhoneWindow(id, label ?? "Phone", package);
         VideoRouter.Add(id, new PhoneStream(id, window.view));
-        var request = JsonSerializer.Serialize(new { id, size = "phone", package, activity, label, notification });
+        var request = JsonSerializer.Serialize(new { id, size = window.size, package, activity, label, notification });
         var reply = OpenSession(request);
         if (reply == null)
         {
@@ -53,7 +66,9 @@ public sealed class PhoneWindow : Window
             return null;
         }
         Open[id] = window;
-        window.Place(reply.Value.GetProperty("shownWidthDp").GetDouble(), reply.Value.GetProperty("shownHeightDp").GetDouble());
+        window.shownWidthDp = reply.Value.GetProperty("shownWidthDp").GetDouble();
+        window.shownHeightDp = reply.Value.GetProperty("shownHeightDp").GetDouble();
+        window.Place(keepTop: false);
         window.Activate();
         return window;
     }
@@ -78,17 +93,30 @@ public sealed class PhoneWindow : Window
         if (Open.TryGetValue(e.GetProperty("id").GetInt64(), out var window)) window.Handle(e);
     }
 
-    private PhoneWindow(long id, string title)
+    private PhoneWindow(long id, string title, string? package)
     {
         this.id = id;
+        this.package = package;
         Title = title;
         AppWindow.SetIcon(Path.Combine(AppContext.BaseDirectory, "Assets", "Nearside.ico"));
+        hwnd = Microsoft.UI.Win32Interop.GetWindowFromWindowId(AppWindow.Id);
         view = new VideoView(panel);
+        size = AppSettings.Get(SizeKey) is { } saved && Sizes.Contains(saved) ? saved : "phone";
 
         toolbar = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4, Padding = new Thickness(6, 4, 6, 4), Height = ToolbarHeight };
-        toolbar.Children.Add(ToolButton("", "Back (Esc)", () => Command("back")));
-        toolbar.Children.Add(ToolButton("", "Home", () => Command("home")));
-        toolbar.Children.Add(ToolButton("", "Open on the phone", () => Command("openOnPhone")));
+        toolbar.Children.Add(ToolButton("\uE72B", "Back (Esc)", GoBack));
+        toolbar.Children.Add(ToolButton("\uE80F", "Home", () => { recents?.Hide(); Command("home"); }));
+        if (package == null) toolbar.Children.Add(ToolButton("\uE7C4", "Recents", ToggleRecents));
+        toolbar.Children.Add(new AppBarSeparator());
+        foreach (var (name, glyph, tip) in new[] { ("phone", "\uE8EA", "Phone size"), ("foldable", "\uE89A", "Foldable size"), ("tablet", "\uE70A", "Tablet size") })
+        {
+            var button = ToolButton(glyph, tip, () => SetSize(name));
+            sizeButtons[name] = button;
+            toolbar.Children.Add(button);
+        }
+        toolbar.Children.Add(new AppBarSeparator());
+        toolbar.Children.Add(ToolButton("\uE8A7", "Open on the phone", () => Command("openOnPhone")));
+        ShowSize();
 
         overlay.Background = (Brush)Application.Current.Resources["SolidBackgroundFillColorBaseBrush"];
         overlay.Child = new StackPanel
@@ -97,7 +125,10 @@ public sealed class PhoneWindow : Window
             Children = { overlayRing, overlayText },
         };
         var stage = new Grid { Background = new SolidColorBrush(Microsoft.UI.Colors.Black) };
+        recents = new Recents(pick: task => { Command("front", new { task }); }, remove: task => Command("removeTask", new { task }),
+                              home: () => Command("home"));
         stage.Children.Add(panel);
+        stage.Children.Add(recents.Root);
         stage.Children.Add(overlay);
         var root = new Grid();
         root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
@@ -118,6 +149,7 @@ public sealed class PhoneWindow : Window
         root.KeyDown += OnKey;
         root.CharacterReceived += (_, e) =>
         {
+            if (recents.Shown) return;
             if (e.Character >= ' ' && e.Character != '\u007f') Command("text", new { text = e.Character.ToString() });
         };
 
@@ -143,8 +175,12 @@ public sealed class PhoneWindow : Window
             }
         };
         statsTimer.Start();
+        ByHandle[hwnd] = this;
+        unsafe { Win32.SetWindowSubclass(hwnd, &SizingProc, 1, 0); }
         Closed += (_, _) =>
         {
+            unsafe { Win32.RemoveWindowSubclass(hwnd, &SizingProc, 1); }
+            ByHandle.Remove(hwnd);
             AuthGate.Locked -= Cover;
             statsTimer.Stop();
             Command("close"); // always (closing twice is harmless): the bridge forgets the window
@@ -154,15 +190,166 @@ public sealed class PhoneWindow : Window
         };
     }
 
-    /// Sized to the phone's shown screen at 1 dp = 1 DIP, or smaller to fit the screen.
-    private void Place(double widthDp, double heightDp)
+    // MARK: Size and zoom
+
+    /// The size is per app (the phone window has its own), as on the Mac; the zoom per size.
+    private string SizeKey => package == null ? "PhoneWindow.size" : $"PhoneApp.size.{package}";
+    private string ZoomKey => $"{(package == null ? "PhoneWindow" : "PhoneApp")}.zoom.{size}";
+
+    private double Scale => Win32.GetDpiForWindow(hwnd) / 96.0;
+
+    /// Window DIPs per dp: as saved for this size, else what fits the screen (at most 1).
+    private double Zoom
     {
+        get
+        {
+            if (double.TryParse(AppSettings.Get(ZoomKey), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var saved)
+                && saved is >= 0.2 and <= 3) return saved;
+            var area = DisplayArea.GetFromWindowId(AppWindow.Id, DisplayAreaFallback.Primary).WorkArea;
+            double screenW = area.Width / Scale, screenH = area.Height / Scale;
+            var fit = Math.Min(1, Math.Min(screenW * 0.92 / shownWidthDp, (screenH * 0.9 - ToolbarHeight) / shownHeightDp));
+            return Math.Max(0.3, Math.Floor(fit * 20) / 20);
+        }
+    }
+
+    /// The window at the zoom; with `keepTop`, where it is (a size change grows it downwards).
+    private void Place(bool keepTop)
+    {
+        var scale = Scale;
+        var zoom = Zoom;
+        var client = new Windows.Graphics.SizeInt32((int)(shownWidthDp * zoom * scale), (int)((shownHeightDp * zoom + ToolbarHeight) * scale));
+        var position = AppWindow.Position;
+        AppWindow.ResizeClient(client);
+        if (!keepTop) return;
+        // Kept on the screen it's on.
         var area = DisplayArea.GetFromWindowId(AppWindow.Id, DisplayAreaFallback.Primary).WorkArea;
-        var scale = Win32.GetDpiForWindow(Microsoft.UI.Win32Interop.GetWindowFromWindowId(AppWindow.Id)) / 96.0;
-        double screenW = area.Width / scale, screenH = area.Height / scale;
-        var zoom = Math.Min(1, Math.Min(screenW * 0.92 / widthDp, (screenH * 0.9 - ToolbarHeight) / heightDp));
-        zoom = Math.Max(0.3, Math.Floor(zoom * 20) / 20);
-        AppWindow.ResizeClient(new Windows.Graphics.SizeInt32((int)(widthDp * zoom * scale), (int)((heightDp * zoom + ToolbarHeight) * scale)));
+        var outer = AppWindow.Size;
+        int x = Math.Clamp(position.X, area.X, Math.Max(area.X, area.X + area.Width - outer.Width));
+        int y = Math.Clamp(position.Y, area.Y, Math.Max(area.Y, area.Y + area.Height - outer.Height));
+        AppWindow.Move(new Windows.Graphics.PointInt32(x, y));
+    }
+
+    private void SetSize(string name)
+    {
+        if (name == size || covered) return;
+        size = name;
+        AppSettings.Set(SizeKey, name);
+        ShowSize();
+        recents.Hide();
+        Command("resize", new { size = name }); // the "size" event fits the window
+    }
+
+    private void ShowSize()
+    {
+        foreach (var (name, button) in sizeButtons)
+        {
+            button.Background = name == size ? (Brush)Application.Current.Resources["SubtleFillColorSecondaryBrush"] : new SolidColorBrush(Microsoft.UI.Colors.Transparent);
+        }
+    }
+
+    /// Dragging an edge: the window keeps the screen's shape (plus the toolbar), and the zoom it
+    /// ends at is remembered for this size.
+    [System.Runtime.InteropServices.UnmanagedCallersOnly]
+    private static unsafe nint SizingProc(nint hwnd, uint message, nint wParam, nint lParam, nuint id, nuint data)
+    {
+        try
+        {
+            if (ByHandle.TryGetValue(hwnd, out var window))
+            {
+                if (message == Win32.WM_SIZING)
+                {
+                    window.KeepShape((int)wParam, (Win32.RECT*)lParam);
+                    return 1;
+                }
+                if (message == Win32.WM_EXITSIZEMOVE) window.SaveZoom();
+            }
+        }
+        catch (Exception e)
+        {
+            Log.Info($"phone window sizing: {e.Message}");
+        }
+        return Win32.DefSubclassProc(hwnd, message, wParam, lParam);
+    }
+
+    private unsafe void KeepShape(int edge, Win32.RECT* rect)
+    {
+        Win32.GetWindowRect(hwnd, out var outer);
+        Win32.GetClientRect(hwnd, out var inner);
+        int chromeW = outer.right - outer.left - inner.right, chromeH = outer.bottom - outer.top - inner.bottom;
+        var toolbar = ToolbarHeight * Scale;
+        double width = rect->right - rect->left - chromeW, height = rect->bottom - rect->top - chromeH;
+        var ratio = shownHeightDp / shownWidthDp;
+        if (edge is Win32.WMSZ_TOP or Win32.WMSZ_BOTTOM)
+        {
+            width = Math.Max(1, height - toolbar) / ratio; // height leads: the width follows, to the right
+            rect->right = rect->left + (int)Math.Round(width) + chromeW;
+            return;
+        }
+        var newHeight = (int)Math.Round(width * ratio + toolbar) + chromeH;
+        if (edge is Win32.WMSZ_TOPLEFT or Win32.WMSZ_TOPRIGHT) rect->top = rect->bottom - newHeight;
+        else rect->bottom = rect->top + newHeight;
+    }
+
+    private void SaveZoom()
+    {
+        Win32.GetClientRect(hwnd, out var inner);
+        var zoom = inner.right / Scale / shownWidthDp;
+        if (zoom is >= 0.2 and <= 3) AppSettings.Set(ZoomKey, zoom.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture));
+    }
+
+    private bool tested;
+    private readonly List<Microsoft.UI.Dispatching.DispatcherQueueTimer> testTimers = []; // kept, or they're collected unfired
+
+    /// Test hook: NEARSIDE_TEST_PHONE=recents (Recents, then how many apps and pictures came) or
+    /// size:<phone|foldable|tablet> (that size, then the window's size), in the log; no pictures.
+    private void TestIfAsked()
+    {
+        var mode = Environment.GetEnvironmentVariable("NEARSIDE_TEST_PHONE");
+        if (mode == null || tested) return;
+        tested = true;
+        void After(double seconds, Action action)
+        {
+            var timer = DispatcherQueue.CreateTimer();
+            timer.Interval = TimeSpan.FromSeconds(seconds);
+            timer.IsRepeating = false;
+            timer.Tick += (_, _) => action();
+            testTimers.Add(timer);
+            timer.Start();
+        }
+        After(6, () =>
+        {
+            if (mode == "recents")
+            {
+                ToggleRecents();
+                After(6, () => Log.Info($"test: recents shown {recents.Shown}, {recents.Counts.Apps} apps, {recents.Counts.Pictures} pictures"));
+            }
+            else if (mode.StartsWith("size:"))
+            {
+                var before = AppWindow.ClientSize;
+                SetSize(mode[5..]);
+                After(4, () => Log.Info($"test: size {size}, shown {shownWidthDp:0}x{shownHeightDp:0} dp, window {before.Width}x{before.Height} -> {AppWindow.ClientSize.Width}x{AppWindow.ClientSize.Height} px"));
+            }
+        });
+    }
+
+    // MARK: Navigation and Recents
+
+    private void GoBack()
+    {
+        if (recents.Shown) recents.Hide();
+        else Command("back");
+    }
+
+    private void ToggleRecents()
+    {
+        if (covered) return;
+        if (recents.Shown)
+        {
+            recents.Hide();
+            return;
+        }
+        recents.Show();
+        Command("recents"); // the "tasks" event lists them, then a "snapshot" each
     }
 
     private void Handle(JsonElement e)
@@ -177,6 +364,7 @@ public sealed class PhoneWindow : Window
                     case "showing":
                         sessionState = null;
                         Overlay();
+                        TestIfAsked();
                         break;
                     case "opening": ShowOverlay("Opening…", busy: true); break;
                     case "reconnecting": ShowOverlay("Reconnecting…", busy: true); break;
@@ -191,6 +379,21 @@ public sealed class PhoneWindow : Window
                 break;
             case "crop":
                 view.Crop = e.GetProperty("rows").GetInt32();
+                break;
+            case "size":
+                shownWidthDp = e.GetProperty("shownWidthDp").GetDouble();
+                shownHeightDp = e.GetProperty("shownHeightDp").GetDouble();
+                Place(keepTop: true);
+                break;
+            case "tasks":
+                Log.Info($"phone window {id}: recents: {e.GetProperty("tasks").GetArrayLength()} apps");
+                recents.SetTasks(e.GetProperty("tasks").EnumerateArray().Select(t => new Recents.Entry(
+                    t.GetProperty("id").GetInt32(), t.GetProperty("package").GetString() ?? "",
+                    t.TryGetProperty("label", out var l) ? l.GetString() : null,
+                    t.TryGetProperty("icon", out var i) ? i.GetString() : null)).ToList());
+                break;
+            case "snapshot":
+                _ = recents.SetSnapshotAsync(e.GetProperty("task").GetInt32(), Convert.FromBase64String(e.GetProperty("png").GetString() ?? ""));
                 break;
             case "secure":
                 secure = e.GetProperty("on").GetBoolean();
@@ -213,6 +416,7 @@ public sealed class PhoneWindow : Window
         foreach (var finger in fingers.Values) Command("touch", new { a = 3, p = finger, x = 0f, y = 0f });
         fingers.Clear();
         covered = true;
+        recents.Hide();
         foreach (var button in toolbar.Children.OfType<Control>()) button.IsEnabled = false;
         Command("visibility", new { v = 1 });
         Overlay();
@@ -368,6 +572,12 @@ public sealed class PhoneWindow : Window
         if (covered)
         {
             e.Handled = true;
+            return;
+        }
+        if (recents.Shown)
+        {
+            if (e.Key == Windows.System.VirtualKey.Escape) recents.Hide();
+            e.Handled = true; // nothing reaches the phone while Recents is up
             return;
         }
         var modifiers = (byte)((Down(Windows.System.VirtualKey.Shift) ? 1 : 0) | (Down(Windows.System.VirtualKey.Control) ? 2 : 0)

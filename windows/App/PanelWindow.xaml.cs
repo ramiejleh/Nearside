@@ -101,6 +101,39 @@ public sealed partial class PanelWindow : Window
         DropOverlay.Visibility = Visibility.Collapsed;
     }
 
+    /// The phone's signal and battery, as its own status bar shows them (red when low and not
+    /// charging, as on the Mac); the pill's tooltip and name say it in words.
+    private void ShowPhoneStatus(PhoneStatus? status, bool overUSB, string phone)
+    {
+        StatusIcons.Visibility = status != null ? Visibility.Visible : Visibility.Collapsed;
+        if (status == null)
+        {
+            ToolTipService.SetToolTip(StatusPill, null);
+            Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(StatusPill, StatusText.Text);
+            return;
+        }
+        UsbIcon.Visibility = overUSB ? Visibility.Visible : Visibility.Collapsed;
+        SignalGroup.Visibility = status.Signal != null ? Visibility.Visible : Visibility.Collapsed;
+        NetworkText.Text = status.Network ?? "";
+        // Segoe Fluent's SignalBars1-5 (no bars to all 4).
+        if (status.Signal is { } bars) SignalIcon.Glyph = ((char)(0xE86C + Math.Clamp(bars, 0, 4))).ToString();
+        // Battery0-9 are E850-E859; Battery10 is E83F.
+        var tenths = (int)Math.Round(Math.Clamp(status.Battery, 0, 100) / 10.0);
+        BatteryIcon.Glyph = (tenths == 10 ? '\uE83F' : (char)(0xE850 + tenths)).ToString();
+        var low = status.Battery <= LowBattery && !status.Charging;
+        BatteryIcon.Foreground = low ? new SolidColorBrush(Colors.Red) : (Brush)Application.Current.Resources["TextFillColorSecondaryBrush"];
+        BoltIcon.Visibility = status.Charging ? Visibility.Visible : Visibility.Collapsed;
+        BatteryText.Text = $"{status.Battery}%";
+        var words = $"{phone}{(overUSB ? ", connected by USB" : "")}. Battery {status.Battery}%{(status.Charging ? ", charging" : "")}."
+            + (status.Signal is { } b ? $" {(status.Network != null ? status.Network + ", " : "")}{b} of 4 bars." : "")
+            + (status.Wifi ? " On Wi-Fi." : "");
+        ToolTipService.SetToolTip(StatusPill, words);
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(StatusPill, words);
+    }
+
+    /// PhoneStatus.LowBatteryAlert.threshold in the engine.
+    private const int LowBattery = 20;
+
     private void Render(Snapshot s)
     {
         var phone = s.PhoneName.Length > 0 ? s.PhoneName : "your phone";
@@ -114,9 +147,8 @@ public sealed partial class PanelWindow : Window
         };
         StatusDot.Fill = new SolidColorBrush(color);
         StatusText.Text = text;
-        var battery = s.Connected ? s.PhoneStatus : null;
-        BatteryText.Visibility = battery != null ? Visibility.Visible : Visibility.Collapsed;
-        if (battery != null) BatteryText.Text = $"{battery.Battery}%{(battery.Charging ? " charging" : "")}";
+        ShowPhoneStatus(s.Connected ? s.PhoneStatus : null, s.OverUSB, phone);
+        if (s.Connected && s.PhoneStatus != null) StatusText.Text = phone; // the icons say USB
         SendFilesButton.IsEnabled = s.Connected;
         PhoneButton.IsEnabled = s.Connected;
         MessagesButton.IsEnabled = !s.NeedsSetup;

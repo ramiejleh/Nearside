@@ -23,13 +23,27 @@
                 </Grid.ColumnDefinitions>
                 <Image x:Name="LogoImage" Width="26" Height="26" />
                 <TextBlock Grid.Column="1" Text="Nearside" FontSize="14" FontWeight="SemiBold" VerticalAlignment="Center" />
-                <Border Grid.Column="2" CornerRadius="11" Padding="9,3,9,4"
+                <Border x:Name="StatusPill" Grid.Column="2" CornerRadius="11" Padding="9,3,9,4"
                         Background="{ThemeResource SubtleFillColorSecondaryBrush}">
                     <StackPanel Orientation="Horizontal" Spacing="6">
                         <Ellipse x:Name="StatusDot" Width="7" Height="7" VerticalAlignment="Center" />
-                        <TextBlock x:Name="StatusText" FontSize="12" MaxWidth="170" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
-                        <TextBlock x:Name="BatteryText" FontSize="12" VerticalAlignment="Center"
-                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}" Visibility="Collapsed" />
+                        <TextBlock x:Name="StatusText" FontSize="12" MaxWidth="150" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+                        <!-- The phone's own status bar, as small: the cable, signal, battery. -->
+                        <StackPanel x:Name="StatusIcons" Orientation="Horizontal" Spacing="5" VerticalAlignment="Center" Visibility="Collapsed"
+                                    AutomationProperties.AccessibilityView="Raw">
+                            <FontIcon x:Name="UsbIcon" Glyph="&#xE88E;" FontSize="11" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                            <StackPanel x:Name="SignalGroup" Orientation="Horizontal" Spacing="2">
+                                <TextBlock x:Name="NetworkText" FontSize="10" FontWeight="SemiBold" VerticalAlignment="Center"
+                                           Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                <FontIcon x:Name="SignalIcon" FontSize="11" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                            </StackPanel>
+                            <StackPanel Orientation="Horizontal" Spacing="2">
+                                <FontIcon x:Name="BatteryIcon" FontSize="13" />
+                                <FontIcon x:Name="BoltIcon" Glyph="&#xE945;" FontSize="9" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                <TextBlock x:Name="BatteryText" FontSize="11" VerticalAlignment="Center"
+                                           Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                            </StackPanel>
+                        </StackPanel>
                     </StackPanel>
                 </Border>
             </Grid>

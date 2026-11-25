@@ -46,6 +46,7 @@ public partial class App : Application
         }
         notifications = new Notifications(queue);
         calls = new CallCard();
+        arrival = new ArrivalCard();
         var apk = Path.Combine(AppContext.BaseDirectory, "phone-app.apk");
         EngineHost.Start(queue, File.Exists(apk) ? apk : null);
         Video.VideoRouter.Install();
@@ -95,6 +96,12 @@ public partial class App : Application
             calls = new CallCard();
             EngineHost.StartDemo(setup: false); // the card shows itself on the snapshot
             if (shot != null && calls.Window is { } card) saved = Shots.SaveAsync(card, card.Content, shot);
+        }
+        else if (line.Contains("--arrival"))
+        {
+            arrival = new ArrivalCard();
+            arrival.Show(EngineHost.Current.History.First(c => c.FromPhone), EngineHost.Current.PhoneName);
+            if (shot != null && arrival.Window is { } card) saved = Shots.SaveAsync(card, card.Content, shot);
         }
         else if (line.Contains("--messages"))
         {
@@ -166,6 +173,8 @@ public partial class App : Application
         }
         settings.ShowCentered();
     }
+
+    private ArrivalCard? arrival;
 
     private void TogglePanel()
     {

@@ -40,6 +40,11 @@ public sealed class SettingsWindow : Window
         Title = "Start at sign-in",
         Text = "Start Nearside when you sign in to Windows, so syncing is always on.",
     };
+    private readonly Choice arrival = new()
+    {
+        Title = "Show a card when a clip arrives",
+        Text = "A small card above the taskbar for a few seconds, with the start of what was copied on your phone.",
+    };
     private readonly Choice toast = new()
     {
         Title = "Hide “pasted from your clipboard” on the phone",
@@ -70,6 +75,8 @@ public sealed class SettingsWindow : Window
         recentPhotos.Toggled += on => EngineHost.Command("set", new { key = "recentPhotos", value = on });
         screenshotsToPhone.Toggled += on => EngineHost.Command("set", new { key = "screenshotsToPhone", value = on });
         startup.Toggled += on => Startup.IsOn = on;
+        arrival.IsOn = ArrivalCard.On;
+        arrival.Toggled += on => ArrivalCard.On = on;
         toast.Toggled += on => EngineHost.Command("setClipboardToastHidden", new { hidden = on });
         battery.Toggled += on => EngineHost.Command("set", new { key = "lowBatteryAlert", value = on });
         foreach (var limit in Limits) historyLimit.Items.Add($"{limit} items");
@@ -126,6 +133,7 @@ public sealed class SettingsWindow : Window
         page.Children.Add(Row("Camera", "Apps on this PC can use your phone as a webcam: choose \u201CNearside Camera\u201D. The back camera is the better one; this takes effect the next time an app starts it.", cameraSide));
         page.Children.Add(Header("Clipboard"));
         page.Children.Add(Row("Keep in history", "Older items are removed as new ones arrive.", historyLimit));
+        page.Children.Add(arrival);
         page.Children.Add(toast);
         page.Children.Add(Header("Phone"));
         page.Children.Add(Row("Paired with", null, pairedWith));

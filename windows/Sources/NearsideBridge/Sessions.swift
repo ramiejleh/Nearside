@@ -91,6 +91,7 @@ enum Sessions {
                                                  notification: c["notification"] as? String)
         } else {
             session = engine.makePhoneWindowSession(width: display.width, height: display.height, dpi: display.dpi)
+            setDock(session, engine)
         }
         observe(session, id)
         all[id] = session
@@ -130,8 +131,34 @@ enum Sessions {
         session.onCrop = { rows in emit("crop", ["rows": rows]) }
         session.onSecure = { on in emit("secure", ["on": on]) }
         session.onThermal = { on in emit("thermal", ["on": on]) }
-        session.onTasks = { tasks in emit("tasks", ["tasks": tasks.map { ["id": $0.id, "package": $0.package] }]) }
+        session.onTasks = { tasks in
+            emit("tasks", ["tasks": tasks.map { task -> [String: Any] in
+                var o: [String: Any] = ["id": task.id, "package": task.package]
+                if let app = apps[task.package] {
+                    o["label"] = app.label
+                    if let file = PhoneIconCache.file(app) { o["icon"] = file.url.path }
+                }
+                return o
+            }])
+        }
         session.onSnapshot = { task, png in emit("snapshot", ["task": task, "png": png.base64EncodedString()]) }
+    }
+
+    /// The phone's apps by package (names and icons for Recents), as last listed.
+    private static var apps: [String: PhoneApp] = [:]
+
+    /// The home screen's dock: the five apps used most recently on the phone.
+    private static func setDock(_ session: PhoneAppSession, _ engine: SyncEngine) {
+        Task { @MainActor in
+            guard let list = await engine.phoneApps() else { return }
+            apps = Dictionary(list.map { ($0.package, $0) }, uniquingKeysWith: { a, _ in a })
+            var dock: [String] = []
+            for app in list.filter({ $0.lastUsed != nil }).sorted(by: { $0.lastUsed! > $1.lastUsed! }) where !dock.contains(app.package) {
+                dock.append(app.package)
+                if dock.count == 5 { break }
+            }
+            session.setDock(dock)
+        }
     }
 
     /// The window is gone: nothing of it stays registered (its app no longer counts as open here).
@@ -156,6 +183,15 @@ enum Sessions {
             if let action = DisplayWire.MouseAction(rawValue: UInt8(c["a"] as? Int ?? 0)) {
                 session.mouse(action, x: float("x"), y: float("y"))
             }
+        case "resize":
+            // A size from the toolbar: the display changes on the phone, and the window fits it.
+            let preset = PhoneSize(rawValue: c["size"] as? String ?? "") ?? .phone
+            let dp = preset.dp(phone: PhoneInfo.screenDp)
+            let display = PhoneDisplaySize.forPreset(dp, density: PhoneInfo.densityDpi)
+            session.resize(width: display.width, height: display.height, dpi: display.dpi)
+            let shown = PhoneDisplaySize.shownDp(dp, statusBarDp: PhoneInfo.statusBarDp)
+            Bridge.emit("session", ["id": id, "kind": "size", "size": preset.rawValue,
+                                    "shownWidthDp": Double(shown.width), "shownHeightDp": Double(shown.height)])
         case "back": session.back()
         case "home": session.home()
         case "recents": session.requestRecents()
