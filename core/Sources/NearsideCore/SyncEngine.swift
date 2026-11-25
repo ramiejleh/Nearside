@@ -949,7 +949,7 @@ public final class SyncEngine {
             }) else { return }
 
             guard await run(2, {
-                guard let apkPath else { return "The app bundle is missing nearside.apk." }
+                guard let apkPath else { return "Nearside's copy of the phone app is missing (reinstall Nearside)." }
                 guard Adb.ensureConnected(pinned: phoneSerial) != nil else { return "Lost the connection to the phone." }
                 let r = Adb.install(URL(fileURLWithPath: apkPath))
                 return r.ok ? nil : Self.friendly(r.out)

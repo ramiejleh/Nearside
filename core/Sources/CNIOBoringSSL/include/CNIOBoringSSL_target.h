@@ -226,6 +226,12 @@
 #define OPENSSL_ASM_INCOMPATIBLE
 #endif
 
+// Nearside: BoringSSL's x86-64 Windows assembly is NASM, which isn't packaged here (and SwiftPM
+// can't build it): the C code there instead.
+#if defined(OPENSSL_WINDOWS) && defined(OPENSSL_X86_64)
+#define OPENSSL_ASM_INCOMPATIBLE
+#endif
+
 #if defined(OPENSSL_ASM_INCOMPATIBLE)
 #undef OPENSSL_ASM_INCOMPATIBLE
 #if !defined(OPENSSL_NO_ASM)

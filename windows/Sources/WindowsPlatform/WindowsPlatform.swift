@@ -20,7 +20,21 @@ public final class WindowsPlatform: Platform, @unchecked Sendable {
 
     public var computerName: String { ProcessInfo.processInfo.hostName }
     public var osName: String? { "windows" }
-    public var bundledPhoneAppVersion: Int? { nil } // don't update the phone app from here
+    /// The phone app's versionCode, from phone-app.version next to the app (release.ps1 writes it
+    /// beside phone-app.apk): an older phone app is updated to it. None in development builds.
+    public var bundledPhoneAppVersion: Int? {
+        #if os(Windows)
+        var path = [WCHAR](repeating: 0, count: 32768)
+        let n = Int(GetModuleFileNameW(nil, &path, DWORD(path.count)))
+        guard n > 0, n < path.count else { return nil }
+        let exe = URL(fileURLWithPath: String(decoding: path[..<n], as: UTF16.self))
+        guard let text = try? String(contentsOf: exe.deletingLastPathComponent().appendingPathComponent("phone-app.version"), encoding: .utf8),
+              let version = Int(text.trimmingCharacters(in: .whitespacesAndNewlines)), version > 0 else { return nil }
+        return version
+        #else
+        return nil
+        #endif
+    }
     @MainActor public func makeClipboard(onCopy: @escaping @MainActor (String) -> Void) -> any Clipboard { WindowsClipboard(onCopy: onCopy) }
     @MainActor public func makeNotifications() -> any SystemNotifications { notifications?() ?? PrintedNotifications() }
     @MainActor public func makeScreenshotWatcher() -> any ScreenshotWatcher { WindowsScreenshots() }

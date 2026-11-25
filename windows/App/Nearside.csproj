@@ -18,8 +18,13 @@
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
-    <!-- The Swift build that has the bridge: debug unless set. -->
+    <!-- The version, and the build number updates compare (the commit count): release.ps1 sets
+         both; a development build has no build number, so it never looks for updates. -->
+    <Version Condition="'$(Version)' == ''">0.0.0</Version>
+    <NearsideBuild Condition="'$(NearsideBuild)' == ''"></NearsideBuild>
+    <!-- The Swift build that has the bridge: debug unless set (release.ps1: its release build). -->
     <SwiftConfiguration Condition="'$(SwiftConfiguration)' == ''">debug</SwiftConfiguration>
+    <SwiftBuildDir Condition="'$(SwiftBuildDir)' == ''">..\.build\$(SwiftConfiguration)</SwiftBuildDir>
     <!-- FFmpeg's shared build (LGPL) for this architecture: its bin folder's DLLs go next to the app. -->
     <FFmpegDir Condition="'$(FFmpegDir)' == ''">$(USERPROFILE)\deps\ffmpeg-n8.1-latest-winarm64-lgpl-shared-8.1</FFmpegDir>
   </PropertyGroup>
@@ -32,12 +37,18 @@
     <PackageReference Include="NAudio.Wasapi" Version="2.2.1" />
     <PackageReference Include="Vortice.Direct3D11" Version="3.8.3" />
     <PackageReference Include="Vortice.DXGI" Version="3.8.3" />
+    <!-- Updates (Updates.cs): WinSparkle.dll for this architecture comes with it. -->
+    <PackageReference Include="WinSparkle" Version="0.9.4" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(NearsideBuild)' != ''">
+    <AssemblyMetadata Include="NearsideBuild" Value="$(NearsideBuild)" />
   </ItemGroup>
 
   <ItemGroup>
     <Content Include="Assets\*.ico;Assets\*.png" CopyToOutputDirectory="PreserveNewest" />
-    <Content Include="..\.build\$(SwiftConfiguration)\NearsideBridge.dll" Link="NearsideBridge.dll"
-             CopyToOutputDirectory="PreserveNewest" Condition="Exists('..\.build\$(SwiftConfiguration)\NearsideBridge.dll')" />
+    <Content Include="$(SwiftBuildDir)\NearsideBridge.dll" Link="NearsideBridge.dll"
+             CopyToOutputDirectory="PreserveNewest" Condition="Exists('$(SwiftBuildDir)\NearsideBridge.dll')" />
     <Content Include="$(FFmpegDir)\bin\*.dll" CopyToOutputDirectory="PreserveNewest" Visible="false" />
     <!-- The virtual camera (windows/Camera/build.cmd); the installer registers it (as an administrator). -->
     <Content Include="..\Camera\build\$(Platform.ToLowerInvariant())\NearsideCamera.dll" Link="NearsideCamera.dll"

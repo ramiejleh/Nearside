@@ -14,6 +14,7 @@ in [docs/architecture.md](../docs/architecture.md).
   Hello before phone apps show.
 - `Camera/`: `NearsideCamera.dll`, the virtual camera (a Media Foundation media source that
   Windows' camera service loads). Build it with `Camera\build.cmd`.
+- `installer/Nearside.iss`: the installer (Inno Setup 7), made by `scripts/release.ps1`.
 - `Spike/`: the Phase 3 test tools (not shipped).
 - `scripts/make-icons.swift`: draws the app and tray icons (run on a Mac).
 
@@ -30,7 +31,7 @@ dotnet build -p:Platform=ARM64 -r win-arm64   (or x64 / win-x64)
 
 The build copies `NearsideBridge.dll`, FFmpeg's DLLs (`-p:FFmpegDir=` its shared LGPL build) and
 `NearsideCamera.dll` (if built) next to `Nearside.exe`. The Swift runtime DLLs come from the
-toolchain on `PATH` for now; the installer will bundle them.
+toolchain on `PATH` in a development build; a release bundles them.
 
 ## How the app runs the engine
 
@@ -42,17 +43,31 @@ snapshot of everything the interface shows, and sends commands as JSON. See
 
 ## The camera
 
-Windows' camera service only loads a camera registered machine-wide, so it needs installing
-(the installer will do this):
+Windows' camera service only loads a camera registered machine-wide, so it needs installing.
+By hand (a development build):
 
 ```
 copy the app's output folder to C:\Program Files\Nearside
 regsvr32 "C:\Program Files\Nearside\NearsideCamera.dll"      (as an administrator)
 ```
 
-The DLL only takes pictures from `Nearside.exe` in its own folder, and the app only sends them to
-the camera service (LocalService). The DLL writes a short log (no pictures) to
+The installer does this. The DLL only takes pictures from `Nearside.exe` in its own folder, and
+the app only sends them to the camera service (LocalService). The DLL writes a short log (no pictures) to
 `C:\Windows\ServiceProfiles\LocalService\AppData\Local\Temp\NearsideCamera.log`.
+
+## Releasing
+
+`scripts\release.ps1 -Version <x.y.z> -Apk <the release APK>` builds the installers for x64 and
+ARM64 (on either kind of PC), signs them, adds the release to `site/appcast-windows.xml` (the
+update feed WinSparkle reads) and writes the winget manifests. The top of the script lists what
+it needs: Inno Setup 7, FFmpeg's shared LGPL builds for both architectures, the code-signing
+certificate (`NEARSIDE_SIGN_CERT`) and the update-signing key (`NEARSIDE_UPDATE_KEY`, whose public
+half goes in `App/Updates.cs`). `-NoSign -NoFeed -Build <n>` tries it without any of those.
+
+What an installer does: everything goes in `C:\Program Files\Nearside` (for everyone on the PC;
+the camera needs a folder only administrators can change), the camera is registered, and a
+Start-menu shortcut is added. Uninstalling removes all of that, and the start-at-sign-in entry of
+whoever uninstalls; settings and history in `%LOCALAPPDATA%\Nearside` stay.
 
 ## A USB cable
 

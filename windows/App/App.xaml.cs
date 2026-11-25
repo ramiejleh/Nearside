@@ -33,6 +33,7 @@ public partial class App : Application
         panel.PhoneRequested += OpenLauncher;
         panel.MessagesRequested += OpenMessages;
         tray = new TrayIcon(onSelect: TogglePanel, onSettings: OpenSettings, onQuit: Quit) { OnHotKey = OpenLauncher };
+        if (Updates.Available) tray.OnCheckForUpdates = Updates.Check;
         EngineHost.Changed += snapshot => tray.Update(snapshot);
         SingleInstance.OnShowRequested(() => queue.TryEnqueue(() => panel.ShowNearTray(tray)));
         Log.Info("started");
@@ -52,6 +53,7 @@ public partial class App : Application
         Audio.MicRouter.Install();
         camera = new Video.CameraFeed(queue) { TestPattern = line.Contains("--camera-test") };
         camera.Start();
+        Updates.Start(queue, Quit);
         EngineHost.Event += (name, e) =>
         {
             if (name == "session") PhoneWindow.Route(e);
@@ -173,6 +175,7 @@ public partial class App : Application
         tray?.Dispose();
         notifications?.Unregister();
         camera?.Dispose(); // the camera goes with the app
+        Updates.Stop();
         Log.Info("quit");
         // The engine's threads (network, sound) don't end by themselves: the process does, now.
         Environment.Exit(0);

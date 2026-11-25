@@ -173,6 +173,7 @@ The [architecture notes](docs/architecture.md) go deeper.
 | | |
 |---|---|
 | **Mac** | macOS 14 Sonoma or later |
+| **PC** | Windows 11 (x64 or Arm) |
 | **Phone** | Android 11 or later, on the same Wi-Fi network (or plugged in by USB once paired) |
 
 ### What's tested, and where
@@ -183,21 +184,24 @@ tested yet: other phones, Android 11 to 16, macOS 14 to 26 and Intel Macs may wo
 [Reports](https://github.com/ramiejleh/Nearside/issues/new/choose) from other setups are very
 welcome.
 
-| Feature | Pixel 9 Pro, Android 17 + macOS 27 | Notes |
-|---|---|---|
-| Clipboard, both ways, with history | Tested | |
-| Notifications, with buttons and replies | Tested | |
-| Text messages (SMS) | Tested | RCS stays in Google Messages |
-| Files, both ways | Tested | |
-| Phone apps in Mac windows, with sound | Tested | Uses Android's virtual devices |
-| The Mac's microphone in app windows | Tested | WhatsApp and Messenger calls |
-| Phone status (battery, signal, network) | Tested | |
-| Photos and screenshots | Tested | |
-| Incoming calls: answer, decline, reply | Tested | Phone, WhatsApp and Messenger calls |
-| Phone calls through the Mac (sound and microphone) | Tested | Uses the in-call audio paths Pixel's Call Screen uses |
-| Phone camera as a webcam, back and front | Tested | Release builds only (needs Apple signing) |
-| USB cable | Tested | |
-| Wi-Fi (wireless debugging) | Tested | |
+The Windows app is new and **not tested on a real PC yet**: so far only in a Windows 11 Arm
+virtual machine.
+
+| Feature | Pixel 9 Pro, Android 17 + macOS 27 | Windows 11 | Notes |
+|---|---|---|---|
+| Clipboard, both ways, with history | Tested | Not yet | |
+| Notifications, with buttons and replies | Tested | Not yet | |
+| Text messages (SMS) | Tested | Not yet | RCS stays in Google Messages |
+| Files, both ways | Tested | Not yet | |
+| Phone apps in computer windows, with sound | Tested | Not yet | Uses Android's virtual devices |
+| The computer's microphone in app windows | Tested | Not yet | WhatsApp and Messenger calls |
+| Phone status (battery, signal, network) | Tested | Not yet | |
+| Photos and screenshots | Tested | Not yet | |
+| Incoming calls: answer, decline, reply | Tested | Not yet | Phone, WhatsApp and Messenger calls |
+| Phone calls through the computer (sound and microphone) | Tested | Not yet | Uses the in-call audio paths Pixel's Call Screen uses |
+| Phone camera as a webcam, back and front | Tested | Not yet | Mac: release builds only (needs Apple signing) |
+| USB cable | Tested | Not yet | |
+| Wi-Fi (wireless debugging) | Tested | Not yet | |
 
 ### Install
 
@@ -211,6 +215,16 @@ brew install --cask ramiejleh/tap/nearside
 Releases are signed and notarised by Apple. Nearside checks for updates by itself, and
 **Settings → General → Check for Updates…** checks now. When the Mac app updates, it updates
 the phone app too.
+
+On Windows, download `Nearside-<version>-x64.exe` (or `-arm64.exe` for Arm PCs) from the same
+release and run it, or use winget:
+
+```
+winget install Nearside.Nearside
+```
+
+It installs for everyone on the PC (it asks for an administrator once, for the webcam). Nearside
+checks for updates by itself; **Check for updates** in its notification-area menu checks now.
 
 ### Build it yourself
 
@@ -277,7 +291,7 @@ Bug reports from phones other than the Pixel 9 Pro help just as much. See
 ## Project layout
 
 ```
-core/                    Swift package: the engine, shared with the coming Windows app
+core/                    Swift package: the engine, shared by the Mac and Windows apps
   Sources/NearsideCore/    sync engine, protocols, display, call and camera streams
   Sources/NativeAdb/       adb client: TLS, pairing, USB, streams, file sync
 mac/                     Swift package: the Mac app
@@ -285,6 +299,8 @@ mac/                     Swift package: the Mac app
   Sources/NearsideMac/     the engine's Mac parts: video decoding, audio, microphone,
                            pasteboard, notifications, screenshots
   Sources/NearsideCamera/  the camera extension (the phone as a webcam)
+windows/                 the Windows app: the engine as a DLL, the WinUI 3 app (C#), the
+                         webcam's media source (C++) and the installer (see windows/README.md)
 android/                 Kotlin: the phone app and the shell-user helper
 docs/                    architecture, security design, protocol, development
 site/                    the project website (GitHub Pages)

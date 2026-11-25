@@ -58,6 +58,28 @@ This product depends on, and the Mac app statically links, the following.
     lists, applies: https://github.com/sparkle-project/Sparkle/blob/2.x/LICENSE
 
 -------------------------------------------------------------------------------
+The Windows app also includes the following (as separate files next to it).
+
+  The Swift runtime and Foundation (Copyright Apple Inc. and the Swift project authors,
+    Apache License 2.0 with Runtime Library Exception, https://swift.org)
+  FFmpeg (video and sound decoding; https://ffmpeg.org), licensed under the GNU Lesser
+    General Public License 2.1 or later: the unmodified shared libraries (avcodec, avutil,
+    swscale, ...) from https://github.com/BtbN/FFmpeg-Builds; FFmpeg-LICENSE.txt is next to
+    them, and the source is at https://ffmpeg.org/download.html
+  WinSparkle (updates; Copyright Vaclav Slavik, MIT License, https://winsparkle.org;
+    WinSparkle-COPYING.txt is next to it)
+  The Windows App SDK and .NET (Copyright Microsoft Corporation, MIT License,
+    https://github.com/microsoft/WindowsAppSDK, https://github.com/dotnet/runtime)
+  The Microsoft Visual C++ runtime (redistributed under its licence terms)
+  Vortice.Windows (Copyright Amer Koleci and contributors, MIT License,
+    https://github.com/amerkoleci/Vortice.Windows)
+  NAudio (Copyright Mark Heath and contributors, MIT License, https://github.com/naudio/NAudio)
+  FFmpeg.AutoGen (Copyright Ruslan Balanukhin, MIT License,
+    https://github.com/Ruslan-B/FFmpeg.AutoGen)
+  QRCoder (Copyright Raffael Herrmann and contributors, MIT License,
+    https://github.com/codebude/QRCoder)
+
+-------------------------------------------------------------------------------
 Techniques (no code copied)
 
   Shizuku (Copyright RikkaApps, Apache License 2.0, https://github.com/RikkaApps/Shizuku)

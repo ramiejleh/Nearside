@@ -12,12 +12,14 @@ internal sealed unsafe class TrayIcon : IDisposable
 {
     private const uint CallbackMessage = Win32.WM_APP + 1;
     private const uint IconId = 1;
-    private const int MenuOpen = 1, MenuQuit = 2, MenuSettings = 3;
+    private const int MenuOpen = 1, MenuQuit = 2, MenuSettings = 3, MenuUpdates = 4;
 
     private static TrayIcon? instance; // the window procedure's way back here (there's one icon)
     private readonly Action onSelect, onSettings, onQuit;
     /// The launcher's shortcut was pressed.
     public Action? OnHotKey { get; set; }
+    /// "Check for updates" in the menu (release builds only).
+    public Action? OnCheckForUpdates { get; set; }
     private readonly uint taskbarCreated;
     private nint window, icon;
     private bool connected, added;
@@ -113,6 +115,7 @@ internal sealed unsafe class TrayIcon : IDisposable
         var menu = Win32.CreatePopupMenu();
         Win32.AppendMenuW(menu, Win32.MF_STRING, MenuOpen, "Open Nearside");
         Win32.AppendMenuW(menu, Win32.MF_STRING, MenuSettings, "Settings");
+        if (OnCheckForUpdates != null) Win32.AppendMenuW(menu, Win32.MF_STRING, MenuUpdates, "Check for updates");
         Win32.AppendMenuW(menu, Win32.MF_SEPARATOR, 0, null);
         Win32.AppendMenuW(menu, Win32.MF_STRING, MenuQuit, "Quit Nearside");
         Win32.SetForegroundWindow(window); // or the menu won't close when clicking elsewhere
@@ -120,6 +123,7 @@ internal sealed unsafe class TrayIcon : IDisposable
         Win32.DestroyMenu(menu);
         if (chosen == MenuOpen) onSelect();
         else if (chosen == MenuSettings) onSettings();
+        else if (chosen == MenuUpdates) OnCheckForUpdates?.Invoke();
         else if (chosen == MenuQuit) onQuit();
     }
 
