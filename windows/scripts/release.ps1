@@ -188,7 +188,7 @@ foreach ($a in $Arch) {
     Run $Iscc ($isccArgs + (Join-Path $Windows 'installer\Nearside.iss'))
     $installer = Join-Path $Out "Nearside-$Version-$a.exe"
     $sha = (Get-FileHash $installer -Algorithm SHA256).Hash.ToLowerInvariant()
-    Set-Content "$installer.sha256" "$sha  $(Split-Path -Leaf $installer)" -Encoding ascii
+    Write-Text "$installer.sha256" "$sha  $(Split-Path -Leaf $installer)`n" # LF: shasum -c reads it
     $Installers[$a] = @{ Path = $installer; Sha = $sha }
 }
 
