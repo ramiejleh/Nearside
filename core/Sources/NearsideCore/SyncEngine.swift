@@ -159,7 +159,7 @@ public final class SyncEngine {
     public func unmuteNotifications() {
         defaults.removeObject(forKey: "notificationsMutedUntil")
         let waiting = snooze.end(current: phoneNotifications)
-        guard mirrorNotifications, !demoNotifications else { return }
+        guard state == .connected, mirrorNotifications, !demoNotifications else { return }
         for (note, quiet) in waiting.reversed() { // oldest first, so the newest ends on top
             notifications.show(key: note.key, package: note.package, app: note.app, title: note.title, text: note.text,
                                iconPNG: nil, actions: note.actions, quiet: quiet)
@@ -559,6 +559,9 @@ public final class SyncEngine {
             phoneNotifications.append(note)
             phoneNotifications.sort { $0.posted > $1.posted }
             if snooze.isOn() {
+                // An update to one shown before the mute: take the old copy down (its buttons
+                // may no longer match the phone's); it's shown again when the mute ends.
+                notifications.remove(key: key)
                 snooze.hold(key, quiet: message["quiet"] as? Bool ?? false)
                 return
             }
@@ -887,6 +890,9 @@ public final class SyncEngine {
         link.disconnect()
         Task.detached { Native.disconnect() }
         setupSteps = []
+        // The old phone's notifications go with it (the disconnect's cleanup only runs while connected).
+        notifications.removeAll(); phoneNotifications = []
+        snooze.forgetHeld()
         state = .needsSetup
     }
 
