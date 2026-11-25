@@ -8,7 +8,12 @@ in [docs/architecture.md](../docs/architecture.md).
     hooks for notifications and video.
   - `NearsideBridge`: the engine (`core/`) as a DLL with a small C API, for the app.
 - `App/`: the app, in C# with WinUI 3 (Windows App SDK, unpackaged). It lives in the
-  notification area; its panel shows the phone, transfers and the clipboard history.
+  notification area. Its panel has the phone, transfers, recent photos and the clipboard
+  history; it also has setup, settings, notifications, Messages, calls, phone and app windows
+  (FFmpeg and Direct3D 11, WASAPI sound and microphone), the launcher (Ctrl+Alt+N) and Windows
+  Hello before phone apps show.
+- `Camera/`: `NearsideCamera.dll`, the virtual camera (a Media Foundation media source that
+  Windows' camera service loads). Build it with `Camera\build.cmd`.
 - `Spike/`: the Phase 3 test tools (not shipped).
 - `scripts/make-icons.swift`: draws the app and tray icons (run on a Mac).
 
@@ -23,7 +28,8 @@ cd App
 dotnet build -p:Platform=ARM64 -r win-arm64   (or x64 / win-x64)
 ```
 
-The build copies `NearsideBridge.dll` next to `Nearside.exe`. The Swift runtime DLLs come from the
+The build copies `NearsideBridge.dll`, FFmpeg's DLLs (`-p:FFmpegDir=` its shared LGPL build) and
+`NearsideCamera.dll` (if built) next to `Nearside.exe`. The Swift runtime DLLs come from the
 toolchain on `PATH` for now; the installer will bundle them.
 
 ## How the app runs the engine
@@ -34,9 +40,26 @@ main actor. The app pumps it (`nearside_pump`) when the engine's wake handle is 
 snapshot of everything the interface shows, and sends commands as JSON. See
 `Sources/NearsideBridge/Bridge.swift`.
 
+## The camera
+
+Windows' camera service only loads a camera registered machine-wide, so it needs installing
+(the installer will do this):
+
+```
+copy the app's output folder to C:\Program Files\Nearside
+regsvr32 "C:\Program Files\Nearside\NearsideCamera.dll"      (as an administrator)
+```
+
+The DLL only takes pictures from `Nearside.exe` in its own folder, and the app only sends them to
+the camera service (LocalService). The DLL writes a short log (no pictures) to
+`C:\Windows\ServiceProfiles\LocalService\AppData\Local\Temp\NearsideCamera.log`.
+
 ## Testing
 
-- `Nearside.exe --demo` shows made-up content instead of connecting (for screenshots), and
-  `--demo --shot <file.png>` saves the panel as drawn, then quits.
+- `Nearside.exe --demo` shows made-up content instead of connecting (for screenshots);
+  `--setup <page>`, `--settings`, `--messages` or `--call` show those instead of the panel, and
+  `--shot <file.png>` saves the window as drawn, then quits.
+- `--open-phone` opens the phone window once connected (`--launcher`: the launcher instead).
+- `--camera-test` feeds the camera a generated picture instead of the phone's camera.
 - The log is `%LOCALAPPDATA%\Nearside\nearside.log` (no phone content goes in it).
 - Settings are Foundation's, in `%LOCALAPPDATA%\Nearside.exe.plist`.
