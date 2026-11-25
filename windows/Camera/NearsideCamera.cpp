@@ -628,7 +628,8 @@ struct Activator : IMFActivate {
     STDMETHODIMP ActivateObject(REFIID iid, void** out) override {
         if (!out) return E_POINTER;
         *out = nullptr;
-        // Whose camera this is: the session of the process that opened it.
+        // Whose camera this is: the session of the process that opened it. The camera service
+        // writes this PID itself: tested, a creator's or an opener's own value for it is replaced.
         UINT32 pid = 0;
         long session = -1;
         if (source && source->stream && SUCCEEDED(attributes->GetUINT32(ClientPid, &pid)) && pid && (session = SessionOf(pid)) >= 0) {
