@@ -110,8 +110,11 @@ enum Native {
     /// Whether the live connection is the cable.
     static var isOverUSB: Bool { current()?.overUSB == true }
 
-    /// The pinned phone's adb interface, if it's plugged in.
-    static func pluggedIn(_ serial: String) -> USB.Device? { USB.devices().first { $0.serial == serial } }
+    /// The pinned phone's adb interface, if it's plugged in. Ignoring case: Windows may report a
+    /// serial in capitals (`connectUSB` checks the phone's exact one).
+    static func pluggedIn(_ serial: String) -> USB.Device? {
+        USB.devices().first { $0.serial.caseInsensitiveCompare(serial) == .orderedSame }
+    }
 
     /// Plug-ins that didn't work (another program holds the interface, the phone isn't proven):
     /// not tried again until plugged in again.

@@ -32,8 +32,33 @@ if args.first == "find" {
     for s in found { print("  \(s.name) at \(s.host):\(s.port)") }
     exit(0)
 }
+// nearside-spike usb [<serial> <command>]   phones on a USB cable; or run a command on one (the
+// phone asks to allow this PC's key the first time: tap Allow within 30 s)
+if args.first == "usb" {
+    let devices = USB.devices()
+    guard args.count >= 3 else {
+        print("\(devices.count) plugged in")
+        for d in devices { print("  \(d.serial)") }
+        exit(0)
+    }
+    guard let device = devices.first(where: { $0.serial.caseInsensitiveCompare(args[1]) == .orderedSame }) else { fail("\(args[1]) isn't plugged in") }
+    do {
+        let key = try key()
+        let started = Date()
+        let adb = try AdbConnection.connectUSB(device, key: key, publicKey: try key.androidPublicKey(comment: "nearside-spike@windows"),
+                                               waitForApproval: 30)
+        defer { adb.close() }
+        print("connected over USB in \(Int(Date().timeIntervalSince(started) * 1000)) ms: \(adb.banner)")
+        let r = try adb.shell(args[2...].joined(separator: " "))
+        print(String(decoding: r.stdout, as: UTF8.self), terminator: "")
+        if r.exitCode != 0 { print("exit \(r.exitCode)") }
+    } catch {
+        fail("\(error)")
+    }
+    exit(0)
+}
 guard args.count >= 3, let port = UInt16(args[2]) else {
-    fail("usage: nearside-spike pair <ip> <pairing port> <code> <debugging port> | shell <ip> <port> <command>")
+    fail("usage: nearside-spike pair <ip> <pairing port> <code> <debugging port> | shell <ip> <port> <command> | find | usb [<serial> <command>]")
 }
 let host = args[1]
 

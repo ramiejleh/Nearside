@@ -54,6 +54,15 @@ The DLL only takes pictures from `Nearside.exe` in its own folder, and the app o
 the camera service (LocalService). The DLL writes a short log (no pictures) to
 `C:\Windows\ServiceProfiles\LocalService\AppData\Local\Temp\NearsideCamera.log`.
 
+## A USB cable
+
+A phone on a cable is used instead of Wi-Fi as soon as it's plugged in, as on the Mac. No driver
+is needed: the phone's adb tells Windows to use WinUSB for it (phones with their maker's adb
+driver installed work too). Only one program can have the phone's USB connection at a time, so
+quit Android Studio or run `adb kill-server` first. The first time, the phone asks to allow this
+PC's key. `nearside-spike usb` (in `Spike/`) lists phones on a cable, and
+`nearside-spike usb <serial> <command>` runs a command on one.
+
 ## Testing
 
 - `Nearside.exe --demo` shows made-up content instead of connecting (for screenshots);

@@ -1,5 +1,6 @@
-// Placeholders where this system's sockets, mDNS and USB aren't written yet (Windows still needs
-// WinUSB; its sockets and mDNS are in TCPSocket+Windows.swift and Discovery+Windows.swift). Same API as the Mac's; everything fails or finds nothing.
+// Placeholders where this system's sockets, mDNS and USB aren't written (Windows has its own in
+// TCPSocket+Windows.swift, Discovery+Windows.swift and USB+Windows.swift). Same API as the Mac's;
+// everything fails or finds nothing.
 #if !canImport(Darwin)
 import Foundation
 
@@ -31,6 +32,7 @@ public enum Discovery {
 }
 #endif
 
+#if !os(Windows) // Windows: USB+Windows.swift
 public enum USB {
     public struct Device: Sendable, Equatable {
         public let serial: String
@@ -39,4 +41,5 @@ public enum USB {
     public static func devices() -> [Device] { [] }
     static func open(_ device: Device) throws -> any Channel { throw AdbError.connect("not on this system yet") }
 }
+#endif
 #endif

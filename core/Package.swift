@@ -37,10 +37,16 @@ let package = Package(
                 .define("NOCRYPT", .when(platforms: [.windows])),
             ]
         ),
+        // Windows' device list (cfgmgr32.h), for finding a plugged-in phone. Empty elsewhere.
+        .target(name: "CWinDevices"),
         // A native adb client: wireless-debugging TLS, the adb wire protocol, shell, streams.
-        .target(name: "NativeAdb", dependencies: ["CNIOBoringSSL"], linkerSettings: [
+        .target(name: "NativeAdb", dependencies: [
+            "CNIOBoringSSL",
+            .target(name: "CWinDevices", condition: .when(platforms: [.windows])),
+        ], linkerSettings: [
             .linkedLibrary("ws2_32", .when(platforms: [.windows])), // Winsock
             .linkedLibrary("dnsapi", .when(platforms: [.windows])), // mDNS (DnsServiceBrowse)
+            .linkedLibrary("cfgmgr32", .when(platforms: [.windows])), // the device list (USB)
         ]),
         // Logic with no UI: adb, the helper tunnel, clipboard history, sync state, display streams.
         .target(name: "NearsideCore", dependencies: [
