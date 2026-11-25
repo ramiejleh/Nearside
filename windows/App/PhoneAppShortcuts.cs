@@ -81,8 +81,8 @@ internal static class PhoneAppShortcuts
         Directory.CreateDirectory(Folder);
         var shared = apps.Values.GroupBy(a => FileName(a.Label), StringComparer.OrdinalIgnoreCase)
             .Where(g => g.Count() > 1).Select(g => g.Key).ToHashSet(StringComparer.OrdinalIgnoreCase);
-        // Each file belongs to one package in this pass: a label made to look like another app's
-        // name-plus-package can't share its file (a number is added instead).
+        // Each file belongs to one package in this pass (FileName keeps labels from looking like a
+        // name-plus-package, or a short name; the number is a last resort).
         var wanted = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var (package, label) in apps.Values.OrderBy(a => a.Package, StringComparer.Ordinal))
         {
@@ -222,10 +222,19 @@ internal static class PhoneAppShortcuts
         return query["package"] is { } package && SafePackage(package) ? package : null;
     }
 
-    /// A label as a file name: no characters Windows forbids, not empty, not too long.
+    /// A label as a file name: no characters Windows forbids, not empty, not too long. Its own
+    /// parentheses become brackets, so a "(package)" suffix only ever comes from Sync; and no "~",
+    /// so it can't spell another file's 8.3 short name (FOOBAR~1) and write over that one.
     private static string FileName(string label)
     {
-        var name = new string(label.Select(c => Path.GetInvalidFileNameChars().Contains(c) ? '-' : c).ToArray()).Trim().TrimEnd('.');
+        var name = new string(label.Select(c => c switch
+        {
+            '(' => '[',
+            ')' => ']',
+            '~' => '-',
+            _ when Path.GetInvalidFileNameChars().Contains(c) => '-',
+            _ => c,
+        }).ToArray()).Trim().TrimEnd('.');
         if (name.Length == 0) name = "App";
         return name.Length > 80 ? name[..80] : name;
     }
