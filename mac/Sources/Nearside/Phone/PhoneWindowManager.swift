@@ -41,6 +41,16 @@ final class PhoneWindowManager {
         Self.shared = self
         library.onChange = { [weak self] _ in self?.indexApps() }
         indexApps() // the saved list: launchers and Spotlight are there before the phone answers
+        // The phone gone a while: its apps leave Spotlight and Applications until it's back.
+        engine.onPhoneAway = { [weak self] away in
+            if away {
+                PhoneSpotlight.remove()
+                PhoneAppLaunchers.removeAll()
+                NSLog("Nearside: phone away; its apps removed from Spotlight and Applications")
+            } else {
+                self?.indexApps()
+            }
+        }
         launcher.isLocked = { [weak self] in self?.auth.isLocked ?? true }
         auth.onLock = { [weak self] in
             self?.windows.forEach { $0.setLocked(true) }
@@ -180,6 +190,7 @@ final class PhoneWindowManager {
     /// Spotlight's entries and the launchers, from the app list as it is (a setting changed, or
     /// the list did).
     func indexApps() {
+        guard !engine.phoneAway else { return }
         PhoneSpotlight.index(library.apps, icon: { [library] in library.iconPNG($0) })
         PhoneAppLaunchers.sync(library.apps, icon: { [library] in library.iconPNG($0) })
     }

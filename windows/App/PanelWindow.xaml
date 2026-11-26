@@ -73,31 +73,39 @@
                     <ColumnDefinition Width="*" />
                 </Grid.ColumnDefinitions>
                 <Button x:Name="PhoneButton" HorizontalAlignment="Stretch" Click="OnPhone"
-                        ToolTipService.ToolTip="Open a phone app on this PC" Padding="4,5">
+                        ToolTipService.ToolTip="Open a phone app on this PC" Padding="6,7">
+                    <Viewbox StretchDirection="DownOnly">
                     <StackPanel Orientation="Horizontal" Spacing="6">
                         <FontIcon Glyph="&#xED35;" FontSize="13" />
                         <TextBlock Text="Apps" FontSize="12" />
                     </StackPanel>
+                    </Viewbox>
                 </Button>
                 <Button x:Name="MessagesButton" Grid.Column="1" HorizontalAlignment="Stretch" Click="OnMessages"
-                        ToolTipService.ToolTip="Text messages" Padding="4,5">
+                        ToolTipService.ToolTip="Text messages" Padding="6,7">
+                    <Viewbox StretchDirection="DownOnly">
                     <StackPanel Orientation="Horizontal" Spacing="5">
                         <FontIcon Glyph="&#xE8BD;" FontSize="13" />
                         <TextBlock Text="Messages" FontSize="12" />
                     </StackPanel>
+                    </Viewbox>
                 </Button>
                 <Button x:Name="SendFilesButton" Grid.Column="2" HorizontalAlignment="Stretch" Click="OnSendFiles"
-                        ToolTipService.ToolTip="Send files to your phone (or drop them here)" Padding="4,5">
+                        ToolTipService.ToolTip="Send files to your phone (or drop them here)" Padding="6,7">
+                    <Viewbox StretchDirection="DownOnly">
                     <StackPanel Orientation="Horizontal" Spacing="5">
                         <FontIcon Glyph="&#xE724;" FontSize="13" />
                         <TextBlock Text="Send" FontSize="12" />
                     </StackPanel>
+                    </Viewbox>
                 </Button>
-                <Button Grid.Column="3" HorizontalAlignment="Stretch" Click="OnSettings" Padding="4,5">
+                <Button x:Name="SettingsButton" Grid.Column="3" HorizontalAlignment="Stretch" Click="OnSettings" Padding="6,7">
+                    <Viewbox StretchDirection="DownOnly">
                     <StackPanel Orientation="Horizontal" Spacing="6">
                         <FontIcon Glyph="&#xE713;" FontSize="13" />
                         <TextBlock Text="Settings" FontSize="12" />
                     </StackPanel>
+                    </Viewbox>
                 </Button>
             </Grid>
         </StackPanel>
@@ -111,9 +119,20 @@
             <Button Content="Set up Nearside" Style="{ThemeResource AccentButtonStyle}" HorizontalAlignment="Center" Click="OnSetUp" />
         </StackPanel>
 
-        <!-- Set up: banners, transfers, then the history. -->
+        <!-- Set up, but the phone isn't connected: nothing of it shows, only how to get it back. -->
+        <StackPanel x:Name="AwayView" Grid.Row="1" Spacing="10" VerticalAlignment="Center" Padding="36,0" Visibility="Collapsed">
+            <FontIcon x:Name="AwayIcon" Glyph="&#xE8EA;" FontSize="34" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+            <TextBlock x:Name="AwayTitle" FontSize="15" FontWeight="SemiBold" TextWrapping="Wrap" TextAlignment="Center" HorizontalAlignment="Center" />
+            <TextBlock x:Name="AwayText" FontSize="12.5" TextWrapping="Wrap" TextAlignment="Center"
+                       Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+            <Button x:Name="ConnectButton" Content="Connect" Style="{ThemeResource AccentButtonStyle}" HorizontalAlignment="Center"
+                    Margin="0,4,0,0" Click="OnUseHere" />
+        </StackPanel>
+
+        <!-- Connected: banners, transfers, photos, then notifications or the clipboard history. -->
         <Grid x:Name="Main" Grid.Row="1">
             <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
                 <RowDefinition Height="Auto" />
                 <RowDefinition Height="Auto" />
                 <RowDefinition Height="Auto" />
@@ -123,11 +142,6 @@
             </Grid.RowDefinitions>
 
             <StackPanel Padding="10,10,10,0" Spacing="8">
-                <InfoBar x:Name="InUseBar" Severity="Informational" IsClosable="False">
-                    <InfoBar.ActionButton>
-                        <Button Content="Use on this PC" Click="OnUseHere" />
-                    </InfoBar.ActionButton>
-                </InfoBar>
                 <InfoBar x:Name="MutedBar" Severity="Informational" IsClosable="False" Title="Notifications muted">
                     <InfoBar.ActionButton>
                         <Button Content="Turn on" Click="OnUnmute" />
@@ -174,7 +188,14 @@
                 <StackPanel x:Name="PhotoStrip" Orientation="Horizontal" Spacing="6" Padding="12,0,12,8" />
             </ScrollViewer>
 
-            <Grid Grid.Row="3" Padding="12,10,12,6" ColumnSpacing="8">
+            <SelectorBar x:Name="Tabs" Grid.Row="3" Margin="8,4,8,0" SelectionChanged="OnTab">
+                <SelectorBarItem x:Name="NotificationsTab" Text="Notifications" Tag="notifications" />
+                <SelectorBarItem x:Name="ClipboardTab" Text="Clipboard" Tag="clipboard" />
+            </SelectorBar>
+
+            <Grid x:Name="NotificationsHost" Grid.Row="4" Grid.RowSpan="3" />
+
+            <Grid x:Name="SearchRow" Grid.Row="4" Padding="12,10,12,6" ColumnSpacing="8">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*" />
                     <ColumnDefinition Width="Auto" />
@@ -187,7 +208,7 @@
                 </ComboBox>
             </Grid>
 
-            <ListView x:Name="HistoryList" Grid.Row="4" SelectionMode="None" IsItemClickEnabled="True"
+            <ListView x:Name="HistoryList" Grid.Row="5" SelectionMode="None" IsItemClickEnabled="True"
                       ItemClick="OnClipClick" Padding="4,0,4,4">
                 <ListView.ItemTemplate>
                     <DataTemplate x:DataType="local:ClipRow">
@@ -226,13 +247,13 @@
                 </ListView.ItemTemplate>
             </ListView>
 
-            <StackPanel x:Name="EmptyHistory" Grid.Row="4" VerticalAlignment="Center" Spacing="6" Padding="32,0">
+            <StackPanel x:Name="EmptyHistory" Grid.Row="5" VerticalAlignment="Center" Spacing="6" Padding="32,0">
                 <TextBlock x:Name="EmptyTitle" FontSize="13" FontWeight="SemiBold" HorizontalAlignment="Center" />
                 <TextBlock x:Name="EmptyText" FontSize="12" TextWrapping="Wrap" TextAlignment="Center"
                            Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
             </StackPanel>
 
-            <Grid Grid.Row="5" Padding="14,6,8,8" BorderThickness="0,1,0,0"
+            <Grid x:Name="HistoryFooter" Grid.Row="6" Padding="14,6,8,8" BorderThickness="0,1,0,0"
                   BorderBrush="{ThemeResource DividerStrokeColorDefaultBrush}">
                 <TextBlock x:Name="FooterText" FontSize="11.5" VerticalAlignment="Center"
                            Foreground="{ThemeResource TextFillColorSecondaryBrush}" />

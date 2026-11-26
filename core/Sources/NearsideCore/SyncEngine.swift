@@ -32,7 +32,29 @@ public final class SyncEngine {
         public var status: Status
     }
 
-    public private(set) var state: State
+    public private(set) var state: State {
+        didSet {
+            guard state != oldValue else { return }
+            if state == .connected { awayCheck?.cancel(); phoneAway = false } else if oldValue == .connected { checkAwaySoon() }
+        }
+    }
+    /// The phone has been out of reach for a minute (or never reached since launch): its apps
+    /// leave this computer's Start menu, Spotlight and launchers until it's back. A brief drop
+    /// (Wi-Fi, sleep) doesn't count, so they aren't removed and rebuilt each time.
+    public private(set) var phoneAway = false {
+        didSet { if phoneAway != oldValue { onPhoneAway?(phoneAway) } }
+    }
+    public var onPhoneAway: ((Bool) -> Void)?
+    @ObservationIgnored private var awayCheck: Task<Void, Never>?
+
+    private func checkAwaySoon() {
+        awayCheck?.cancel()
+        awayCheck = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(60))
+            guard let self, !Task.isCancelled, state != .connected else { return }
+            phoneAway = true
+        }
+    }
     /// Connected over a USB cable (steadier and faster than Wi-Fi) rather than Wi-Fi.
     public private(set) var overUSB = false
     public private(set) var phoneName: String
@@ -252,6 +274,7 @@ public final class SyncEngine {
         started = true
         pasteboard = Platforms.current.makeClipboard { [weak self] text in self?.macCopied(text) }
         pasteboard.start()
+        checkAwaySoon() // not reached within a minute of starting: away
 
         link.onMessage = { [weak self] message in self?.handle(message) }
         messages.transport = { [weak self] message in
@@ -294,6 +317,7 @@ public final class SyncEngine {
             appLinked = false
             phoneStatus = nil // sent again when the phone is back
             phoneNotifications = [] // the phone sends them all again when it's back
+            notifications.removeAll() // from this computer's list too (back, quietly, on reconnect)
             snooze.forgetHeld() // and they're held again
         }
 
@@ -589,6 +613,16 @@ public final class SyncEngine {
 
     // MARK: Notification panel (the phone window)
 
+    /// Opens a phone notification from this computer's list: in a window here, or on the phone.
+    public func openPhoneNotification(_ note: PhoneNotification, here: Bool) {
+        guard state == .connected else { return }
+        if here, !note.package.isEmpty {
+            onOpenNotificationOnMac?(note.key, note.package, note.app)
+        } else {
+            link.send(["t": "notif-open", "key": note.key])
+        }
+    }
+
     /// Dismisses a phone notification, as swiping it away on the phone would.
     public func dismissPhoneNotification(_ key: String) {
         phoneNotifications.removeAll { $0.key == key }
@@ -835,6 +869,8 @@ public final class SyncEngine {
     }
 
     private func macCopied(_ text: String) {
+        // Nothing is kept while the phone isn't connected (the panel shows no history then).
+        guard state == .connected else { return }
         history.add(text, source: .mac)
         persist()
         if state == .connected {
@@ -894,6 +930,8 @@ public final class SyncEngine {
         notifications.removeAll(); phoneNotifications = []
         snooze.forgetHeld()
         state = .needsSetup
+        awayCheck?.cancel()
+        phoneAway = true
     }
 
     private func persist() {

@@ -11,6 +11,7 @@ struct PanelView: View {
     @State private var highlighted: Set<UUID> = []
     @State private var showingSettings = false
     @State private var dropTargeted = false
+    @AppStorage("Panel.tab") private var tab = PanelTab.notifications.rawValue
 
     var body: some View {
         VStack(spacing: 0) {
@@ -25,18 +26,27 @@ struct PanelView: View {
                     case .needsSetup:
                         SetupPrompt(openSetup: openSetup)
                     case .searching, .connected:
-                        if let other = engine.inUseOn, engine.state != .connected { InUseElsewhere(phoneName: engine.phoneName, other: other) { engine.useHere() } }
-                        if let until = engine.notificationsMutedUntil { MutedBanner(until: until) { engine.unmuteNotifications() } }
                         if let problem = engine.phoneAppProblem {
                             PhoneAppProblemBanner(problem: problem, phoneName: engine.phoneName,
                                                   working: engine.reinstallingPhoneApp) { engine.reinstallPhoneApp() }
                         }
-                        if !engine.transfers.isEmpty { TransfersView(engine: engine) }
-                        if engine.state == .connected, engine.recentPhotos, !engine.photos.items.isEmpty {
-                            PhotoStrip(engine: engine)
-                            Divider()
+                        if engine.state == .connected {
+                            if let until = engine.notificationsMutedUntil { MutedBanner(until: until) { engine.unmuteNotifications() } }
+                            if !engine.transfers.isEmpty { TransfersView(engine: engine) }
+                            if engine.recentPhotos, !engine.photos.items.isEmpty {
+                                PhotoStrip(engine: engine)
+                                Divider()
+                            }
+                            PanelTabs(tab: $tab, notifications: engine.phoneNotifications.count, newClips: engine.unseenIDs.count)
+                            if tab == PanelTab.clipboard.rawValue {
+                                HistoryView(engine: engine, highlighted: highlighted)
+                            } else {
+                                PanelNotifications(engine: engine)
+                            }
+                        } else {
+                            // Nothing of the phone's while it's away: only how to get it back.
+                            PhoneAway(engine: engine)
                         }
-                        HistoryView(engine: engine, highlighted: highlighted)
                     }
                 }
                 .transition(.move(edge: .leading).combined(with: .opacity))
@@ -74,12 +84,13 @@ struct PanelView: View {
                     .font(.system(size: 14, weight: .semibold))
                     .fixedSize()
                 Spacer(minLength: 8)
-                if engine.mirrorNotifications { MuteMenu(engine: engine) }
+                if engine.mirrorNotifications, engine.state == .connected { MuteMenu(engine: engine) }
                 StatusPill(state: engine.state, phoneName: engine.phoneName, inUseOn: engine.inUseOn, overUSB: engine.overUSB,
                            status: engine.state == .connected ? engine.phoneStatus : nil)
             }
             HStack(spacing: 6) {
                 let connected = engine.state == .connected
+                if connected {
                 HeaderButton(title: "Apps", symbol: "apps.iphone", enabled: connected && !showingSettings,
                              help: "Open a phone app on your Mac", action: openApps)
                 HeaderButton(title: "Messages", symbol: "message",
@@ -87,6 +98,7 @@ struct PanelView: View {
                              help: "Text messages", action: openMessages)
                 HeaderButton(title: "Send files", symbol: "paperplane", enabled: connected && !showingSettings,
                              help: "Send files to your \(engine.phoneName) (or drop them here)", action: chooseFiles)
+                }
                 HeaderButton(title: "Settings", symbol: showingSettings ? "xmark" : "gearshape", selected: showingSettings,
                              help: showingSettings ? "Close settings" : "Settings") { showingSettings.toggle() }
                     .keyboardShortcut(",", modifiers: .command)
@@ -272,30 +284,113 @@ struct PhoneStatusIcons: View {
     }
 }
 
-/// Another Mac took the phone: this one waits (it checks now and then) or takes it back.
-struct InUseElsewhere: View {
-    let phoneName: String
-    let other: String
-    let useHere: () -> Void
+enum PanelTab: String { case notifications, clipboard }
+
+/// Notifications | Clipboard, under the header.
+private struct PanelTabs: View {
+    @Binding var tab: String
+    let notifications: Int
+    let newClips: Int
 
     var body: some View {
-        HStack(spacing: 10) {
-            Image(systemName: "laptopcomputer.and.arrow.down")
-                .font(.system(size: 18))
-                .foregroundStyle(.secondary)
-            VStack(alignment: .leading, spacing: 2) {
-                Text("\(phoneName) is in use on \(other)").font(.system(size: 12.5, weight: .semibold))
-                Text("This Mac reconnects once it's free.").font(.system(size: 11)).foregroundStyle(.secondary)
-            }
-            Spacer(minLength: 4)
-            Button("Use on this Mac", action: useHere)
-                .controlSize(.small)
+        Picker("Show", selection: $tab) {
+            Text(notifications > 0 ? "Notifications (\(notifications))" : "Notifications").tag(PanelTab.notifications.rawValue)
+            Text(newClips > 0 ? "Clipboard (\(newClips) new)" : "Clipboard").tag(PanelTab.clipboard.rawValue)
         }
+        .pickerStyle(.segmented)
+        .labelsHidden()
         .padding(.horizontal, 14)
-        .padding(.vertical, 10)
-        .background(.quaternary.opacity(0.4))
+        .padding(.vertical, 8)
     }
 }
+
+/// The phone's current notifications: open one, use its buttons, reply, or dismiss it.
+private struct PanelNotifications: View {
+    let engine: SyncEngine
+
+    var body: some View {
+        if !engine.mirrorNotifications {
+            empty("Phone notifications are off", "Turn them on to see your phone's notifications here.") {
+                Button("Turn on") { engine.mirrorNotifications = true }.controlSize(.small)
+            }
+        } else if engine.phoneNotifications.isEmpty {
+            empty("No notifications", "New ones from your \(engine.phoneName) show here.") { EmptyView() }
+        } else {
+            VStack(spacing: 0) {
+                ScrollView {
+                    LazyVStack(spacing: 8) {
+                        ForEach(engine.phoneNotifications) { note in
+                            NotificationCard(note: note, icon: icon(note.package), engine: engine) {
+                                // As a click on the notification does: on the phone, or here (Settings).
+                                let here = UserDefaults.standard.string(forKey: "PhoneApps.notificationClick") == "mac"
+                                engine.openPhoneNotification(note, here: here)
+                            }
+                            .transition(.asymmetric(insertion: .opacity, removal: .move(edge: .trailing).combined(with: .opacity)))
+                        }
+                    }
+                    .padding(12)
+                    .animation(.easeOut(duration: 0.2), value: engine.phoneNotifications.map(\.key))
+                }
+                Divider()
+                HStack {
+                    Text(engine.phoneNotifications.count == 1 ? "1 notification" : "\(engine.phoneNotifications.count) notifications")
+                        .font(.system(size: 11)).foregroundStyle(.secondary)
+                    Spacer()
+                    Button("Clear All") { withAnimation(.easeOut(duration: 0.2)) { engine.clearPhoneNotifications() } }
+                        .buttonStyle(.borderless)
+                        .font(.system(size: 11))
+                }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 8)
+            }
+        }
+    }
+
+    private func empty(_ title: String, _ detail: String, @ViewBuilder action: () -> some View) -> some View {
+        VStack(spacing: 8) {
+            Image(systemName: "bell").font(.system(size: 26, weight: .light)).foregroundStyle(.secondary)
+            Text(title).font(.system(size: 13, weight: .semibold))
+            Text(detail).font(.system(size: 12)).foregroundStyle(.secondary).multilineTextAlignment(.center)
+            action()
+        }
+        .padding(.horizontal, 32)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    /// The app's launcher icon, else the one the phone sent with a notification.
+    private func icon(_ package: String) -> NSImage? {
+        if let library = PhoneWindowManager.shared?.library, let app = library.app(package: package) { return library.icon(app) }
+        return PhoneNotification.iconURL(package: package).flatMap(NSImage.init(contentsOf:))
+    }
+}
+
+/// The phone isn't connected: nothing of it shows, only where it is and how to get it back.
+private struct PhoneAway: View {
+    let engine: SyncEngine
+
+    var body: some View {
+        VStack(spacing: 10) {
+            Image(systemName: engine.inUseOn != nil ? "laptopcomputer.and.arrow.down" : "iphone.slash")
+                .font(.system(size: 30, weight: .light))
+                .foregroundStyle(.secondary)
+            if let other = engine.inUseOn {
+                Text("\(engine.phoneName) is in use on \(other)").font(.system(size: 14, weight: .semibold))
+                    .multilineTextAlignment(.center)
+                Text("Connect to use it on this Mac instead.").font(.system(size: 12)).foregroundStyle(.secondary)
+                Button("Connect") { engine.useHere() }
+                    .buttonStyle(.borderedProminent)
+                    .padding(.top, 4)
+            } else {
+                Text("Looking for \(engine.phoneName)…").font(.system(size: 14, weight: .semibold))
+                Text("Keep it nearby on the same Wi-Fi, or plug it in. It connects on its own.")
+                    .font(.system(size: 12)).foregroundStyle(.secondary).multilineTextAlignment(.center)
+            }
+        }
+        .padding(.horizontal, 36)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+}
+
 
 /// The bell beside the status: mute the phone's notifications for a while, or until turned back on.
 private struct MuteMenu: View {

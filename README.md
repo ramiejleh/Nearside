@@ -116,7 +116,10 @@ Your phone's notifications appear as native macOS notifications, with their butt
 replies. Dismiss one on either device and it's gone on both. **Open on Mac** opens a
 notification's app in a Mac window, right where the notification points. You can choose whether
 clicking a notification opens it on the phone or on the Mac. The bell in the panel mutes them
-for 1 to 24 hours, or until you turn them back on; what's still on the phone then appears.
+for 1 to 24 hours, or until you turn them back on; what's still on the phone then appears. The
+panel's Notifications tab lists what's on the phone now, beside the Clipboard tab. While the phone
+is away, nothing of it shows: no history, no notifications, and after a minute its apps leave
+Spotlight and Applications until it's back.
 
 ### Text messages
 Read and send SMS in a Messages window on the Mac: conversations, threads and new messages.

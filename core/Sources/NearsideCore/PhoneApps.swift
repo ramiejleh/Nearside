@@ -150,21 +150,37 @@ extension SyncEngine {
             if let icon = PhoneIconCache.cached(app) { cached[app.id] = icon } else { missing.append(app) }
         }
         if !cached.isEmpty { onBatch(cached) }
-        for start in stride(from: 0, to: missing.count, by: 12) {
-            let batch = Array(missing[start..<min(start + 12, missing.count)])
-            guard let reply = await displayRequest("display-icons", ["ids": batch.map(\.id)], timeout: .seconds(20)),
-                  let list = reply["icons"] as? [[String: Any]] else { return }
-            var icons: [String: PhoneAppIcon] = [:]
-            let asked = Set(batch.map(\.id))
-            for entry in list {
-                guard let id = entry["id"] as? String, asked.contains(id), let b64 = entry["png"] as? String,
-                      let png = Data(base64Encoded: b64) else { continue }
-                let icon = PhoneAppIcon(png: png, adaptive: entry["adaptive"] as? Bool ?? false)
-                PhoneIconCache.store(id: id, version: (entry["ver"] as? NSNumber)?.int64Value ?? 0, icon)
-                icons[id] = icon
+        // Batches of 12, three at a time (the phone draws each on a thread of its own); one that
+        // fails or times out is skipped, not the end of the rest.
+        let batches = stride(from: 0, to: missing.count, by: 12).map { Array(missing[$0..<min($0 + 12, missing.count)]) }
+        for wave in stride(from: 0, to: batches.count, by: 3) {
+            func batch(_ k: Int) -> [PhoneApp] { wave + k < batches.count ? batches[wave + k] : [] }
+            async let first = fetchIcons(batch(0))
+            async let second = fetchIcons(batch(1))
+            async let third = fetchIcons(batch(2))
+            for icons in await [first, second, third] {
+                if let icons, !icons.isEmpty { onBatch(icons) }
             }
-            onBatch(icons)
         }
+    }
+
+    private func fetchIcons(_ batch: [PhoneApp]) async -> [String: PhoneAppIcon]? {
+        guard !batch.isEmpty else { return nil }
+        guard let reply = await displayRequest("display-icons", ["ids": batch.map(\.id)], timeout: .seconds(20)),
+              let list = reply["icons"] as? [[String: Any]] else {
+            Log("phone-app").info("phone app icons: a batch of \(batch.count) didn't come")
+            return nil
+        }
+        var icons: [String: PhoneAppIcon] = [:]
+        let asked = Set(batch.map(\.id))
+        for entry in list {
+            guard let id = entry["id"] as? String, asked.contains(id), let b64 = entry["png"] as? String,
+                  let png = Data(base64Encoded: b64) else { continue }
+            let icon = PhoneAppIcon(png: png, adaptive: entry["adaptive"] as? Bool ?? false)
+            PhoneIconCache.store(id: id, version: (entry["ver"] as? NSNumber)?.int64Value ?? 0, icon)
+            icons[id] = icon
+        }
+        return icons
     }
 
     /// The phone's camera (start it to turn it on).

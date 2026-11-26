@@ -30,14 +30,38 @@ internal static class PhoneAppShortcuts
             if (name == "apps" && e.TryGetProperty("apps", out var list)) Sync(list);
             else if (name == "appIcons") _ = IconsAsync(e.GetProperty("icons"));
         };
-        // Once connected, the list is asked for once per run (the phone may have new apps).
+        // Once connected, the list is asked for once per run (the phone may have new apps). The
+        // phone away for a minute: its shortcuts go until it's back (then they're listed again).
         EngineHost.Changed += s =>
         {
-            if (!On || listedThisRun || !s.Connected || !s.AppLinked) return;
+            if (!On) return;
+            if (s.PhoneAway)
+            {
+                if (Directory.Exists(Folder)) { RemoveAll(); Log.Info("start menu: phone away; its apps removed"); }
+                listedThisRun = false;
+                return;
+            }
+            if (listedThisRun || !s.Connected || !s.AppLinked) return;
             listedThisRun = true;
             EngineHost.Command("listApps");
         };
     }
+
+    private static void RemoveAll()
+    {
+        try
+        {
+            if (Directory.Exists(Folder)) Directory.Delete(Folder, recursive: true);
+            if (Directory.Exists(IconFolder)) Directory.Delete(IconFolder, recursive: true);
+        }
+        catch (IOException e)
+        {
+            Log.Info($"start menu: couldn't remove the shortcuts ({e.GetType().Name})");
+        }
+    }
+
+    /// A package's icon file (".b": with the Nearside badge; a new name so Windows draws it afresh).
+    private static string IconPath(string package) => Path.Combine(IconFolder, $"{package}.b.ico");
 
     public static void SetOn(bool on)
     {
@@ -49,15 +73,7 @@ internal static class PhoneAppShortcuts
         }
         else
         {
-            try
-            {
-                if (Directory.Exists(Folder)) Directory.Delete(Folder, recursive: true);
-                if (Directory.Exists(IconFolder)) Directory.Delete(IconFolder, recursive: true);
-            }
-            catch (IOException e)
-            {
-                Log.Info($"start menu: couldn't remove the shortcuts ({e.GetType().Name})");
-            }
+            RemoveAll();
         }
     }
 
@@ -70,6 +86,7 @@ internal static class PhoneAppShortcuts
     /// others are removed.
     private static void Sync(JsonElement list)
     {
+        if (EngineHost.Current.PhoneAway) return;
         apps = [];
         shortcuts.Clear();
         foreach (var app in list.EnumerateArray())
@@ -93,7 +110,7 @@ internal static class PhoneAppShortcuts
             wanted.Add(file);
             var path = Path.Combine(Folder, file);
             shortcuts[package] = path;
-            var icon = Path.Combine(IconFolder, $"{package}.ico");
+            var icon = IconPath(package);
             if (ArgumentsOf(path) != Arguments(package)) Write(path, package, label, File.Exists(icon) ? icon : null);
         }
         foreach (var file in Directory.GetFiles(Folder, "*.lnk"))
@@ -111,12 +128,13 @@ internal static class PhoneAppShortcuts
         foreach (var icon in icons.EnumerateObject())
         {
             if (!apps.TryGetValue(icon.Name, out var app)) continue;
-            var ico = Path.Combine(IconFolder, $"{app.Package}.ico");
+            var ico = IconPath(app.Package);
             var had = File.Exists(ico);
+            if (had) continue; // drawn once per app (removed with the shortcuts)
             try
             {
                 var png = await File.ReadAllBytesAsync(icon.Value.GetProperty("path").GetString()!);
-                if (icon.Value.GetProperty("adaptive").GetBoolean()) png = await RoundAsync(png);
+                png = await DrawAsync(png, round: icon.Value.GetProperty("adaptive").GetBoolean());
                 await File.WriteAllBytesAsync(ico, Ico(png));
             }
             catch (Exception e) when (e is IOException or UnauthorizedAccessException or COMException)
@@ -143,28 +161,44 @@ internal static class PhoneAppShortcuts
         return buffer.ToArray();
     }
 
-    /// A full-bleed (adaptive) icon in a rounded square, as Android shows it.
-    private static async Task<byte[]> RoundAsync(byte[] png)
+    /// Nearside's logo, for the badge on each shortcut's icon (tells them from real PC apps).
+    private static readonly string BadgeFile = Path.Combine(AppContext.BaseDirectory, "Assets", "Logo.png");
+
+    /// The phone's icon as the shortcut shows it: full-bleed (adaptive) ones in a rounded square,
+    /// as Android shows them, then Nearside's logo small in the bottom-right corner.
+    private static async Task<byte[]> DrawAsync(byte[] png, bool round)
     {
-        using var input = new InMemoryRandomAccessStream();
-        await input.WriteAsync(System.Runtime.InteropServices.WindowsRuntime.WindowsRuntimeBufferExtensions.AsBuffer(png));
-        input.Seek(0);
-        var decoder = await BitmapDecoder.CreateAsync(input);
-        var pixels = (await decoder.GetPixelDataAsync(BitmapPixelFormat.Bgra8, BitmapAlphaMode.Premultiplied,
-            new BitmapTransform(), ExifOrientationMode.IgnoreExifOrientation, ColorManagementMode.DoNotColorManage)).DetachPixelData();
-        int width = (int)decoder.PixelWidth, height = (int)decoder.PixelHeight;
-        var radius = Math.Min(width, height) * 0.22;
-        for (var y = 0; y < height; y++)
+        var (pixels, width, height) = await DecodeAsync(png, 0);
+        if (round)
         {
-            for (var x = 0; x < width; x++)
+            var radius = Math.Min(width, height) * 0.22;
+            for (var y = 0; y < height; y++)
             {
-                // Distance outside the rounded square's corner arc (0 inside), softened over a pixel.
-                double dx = Math.Max(0, Math.Max(radius - x - 0.5, x + 0.5 - (width - radius)));
-                double dy = Math.Max(0, Math.Max(radius - y - 0.5, y + 0.5 - (height - radius)));
-                var cover = Math.Clamp(radius - Math.Sqrt(dx * dx + dy * dy) + 0.5, 0, 1);
-                if (cover >= 1) continue;
-                var i = (y * width + x) * 4;
-                for (var c = 0; c < 4; c++) pixels[i + c] = (byte)(pixels[i + c] * cover);
+                for (var x = 0; x < width; x++)
+                {
+                    // Distance outside the rounded square's corner arc (0 inside), softened over a pixel.
+                    double dx = Math.Max(0, Math.Max(radius - x - 0.5, x + 0.5 - (width - radius)));
+                    double dy = Math.Max(0, Math.Max(radius - y - 0.5, y + 0.5 - (height - radius)));
+                    var cover = Math.Clamp(radius - Math.Sqrt(dx * dx + dy * dy) + 0.5, 0, 1);
+                    if (cover >= 1) continue;
+                    var i = (y * width + x) * 4;
+                    for (var c = 0; c < 4; c++) pixels[i + c] = (byte)(pixels[i + c] * cover);
+                }
+            }
+        }
+        if (File.Exists(BadgeFile))
+        {
+            var side = (int)(Math.Min(width, height) * 0.42);
+            var (badge, bw, bh) = await DecodeAsync(await File.ReadAllBytesAsync(BadgeFile), side);
+            int left = width - bw, top = height - bh;
+            for (var y = 0; y < bh; y++)
+            {
+                for (var x = 0; x < bw; x++)
+                {
+                    int s = (y * bw + x) * 4, d = ((top + y) * width + left + x) * 4;
+                    var a = badge[s + 3] / 255.0; // premultiplied: source over
+                    for (var c = 0; c < 4; c++) pixels[d + c] = (byte)Math.Min(255, badge[s + c] + pixels[d + c] * (1 - a));
+                }
             }
         }
         using var output = new InMemoryRandomAccessStream();
@@ -175,6 +209,21 @@ internal static class PhoneAppShortcuts
         output.Seek(0);
         await output.ReadAsync(System.Runtime.InteropServices.WindowsRuntime.WindowsRuntimeBufferExtensions.AsBuffer(bytes), (uint)bytes.Length, InputStreamOptions.None);
         return bytes;
+    }
+
+    /// Premultiplied BGRA pixels, scaled to `side` square when it's above 0.
+    private static async Task<(byte[] Pixels, int Width, int Height)> DecodeAsync(byte[] png, int side)
+    {
+        using var input = new InMemoryRandomAccessStream();
+        await input.WriteAsync(System.Runtime.InteropServices.WindowsRuntime.WindowsRuntimeBufferExtensions.AsBuffer(png));
+        input.Seek(0);
+        var decoder = await BitmapDecoder.CreateAsync(input);
+        var transform = side > 0
+            ? new BitmapTransform { ScaledWidth = (uint)side, ScaledHeight = (uint)side, InterpolationMode = BitmapInterpolationMode.Fant }
+            : new BitmapTransform();
+        var pixels = (await decoder.GetPixelDataAsync(BitmapPixelFormat.Bgra8, BitmapAlphaMode.Premultiplied,
+            transform, ExifOrientationMode.IgnoreExifOrientation, ColorManagementMode.DoNotColorManage)).DetachPixelData();
+        return side > 0 ? (pixels, side, side) : (pixels, (int)decoder.PixelWidth, (int)decoder.PixelHeight);
     }
 
     private static void Write(string path, string package, string label, string? icon)

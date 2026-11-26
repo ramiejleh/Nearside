@@ -161,6 +161,12 @@ enum Sessions {
         }
     }
 
+    /// Dropped files `package` couldn't take: said in its window.
+    static func shareFailed(package: String, accepts: Bool) {
+        guard let id = packages.first(where: { $0.value == package })?.key else { return }
+        Bridge.emit("session", ["id": id, "kind": "shareFailed", "accepts": accepts])
+    }
+
     /// The window is gone: nothing of it stays registered (its app no longer counts as open here).
     private static func forget(_ id: Int64) {
         all[id] = nil
@@ -199,6 +205,11 @@ enum Sessions {
         case "removeTask": session.remove(task: Int32(c["task"] as? Int ?? 0))
         case "text": if let text = c["text"] as? String { session.text(text) }
         case "paste": session.paste(c["text"] as? String)
+        case "openNotification": if let key = c["key"] as? String { session.openNotification(key) }
+        case "share":
+            // Files dropped on the window: pushed, then shared with the app on screen.
+            let paths = (c["paths"] as? [String] ?? []).prefix(50)
+            if let engine = Bridge.engine, !paths.isEmpty { engine.shareFiles(paths.map { URL(fileURLWithPath: $0) }, into: session) }
         case "visibility":
             if let v = PhoneAppSession.Visibility(rawValue: UInt8(c["v"] as? Int ?? 0)) { session.setVisibility(v) }
         case "openOnPhone":

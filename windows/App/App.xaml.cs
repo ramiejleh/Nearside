@@ -96,7 +96,7 @@ public partial class App : Application
     {
         string? Value(string flag) => Array.IndexOf(line, flag) is var i and > 0 && i + 1 < line.Length ? line[i + 1] : null;
         var page = Value("--setup");
-        EngineHost.StartDemo(setup: page != null, muted: line.Contains("--muted"));
+        EngineHost.StartDemo(setup: page != null, muted: line.Contains("--muted"), away: line.Contains("--away"));
         Task saved = Task.CompletedTask;
         var shot = Value("--shot");
         if (line.Contains("--call"))

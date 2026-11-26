@@ -17,6 +17,10 @@ public sealed record Snapshot
     public long? MutedUntil { get; init; }
     public bool? MutedIndefinitely { get; init; }
     public bool Muted => MutedIndefinitely != null;
+    /// Out of reach for a minute or more: its apps leave the Start menu until it's back.
+    public bool PhoneAway { get; init; }
+    /// The phone's current notifications, newest first (empty while it isn't connected).
+    public List<PhoneNote> Notifications { get; init; } = [];
     public string? QrPayload { get; init; }
     public bool? ClipboardToastHidden { get; init; }
     public PhoneStatus? PhoneStatus { get; init; }
@@ -118,3 +122,10 @@ public sealed record TextMessage(long Id, string Body, long Date, bool Outgoing,
 }
 
 public sealed record PhoneAppProblem(string Kind, string? Message);
+
+public sealed record PhoneNote(string Key, string Package, string App, string Title, string Text, long Posted, List<NoteAction> Actions)
+{
+    public DateTimeOffset When => DateTimeOffset.FromUnixTimeMilliseconds(Posted);
+}
+
+public sealed record NoteAction(string Title, bool Reply);

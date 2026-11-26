@@ -72,7 +72,9 @@ whoever uninstalls; settings and history in `%LOCALAPPDATA%\Nearside` stay.
 ## Phone apps in the Start menu
 
 With **Settings → Phone apps in the Start menu** on, each phone app gets a shortcut in the Start
-menu's "Nearside Phone Apps" folder, with its own icon. Each opens
+menu's "Nearside Phone Apps" folder, with its own icon and a small Nearside badge (so they
+aren't mistaken for PC apps). They're removed while the phone has been away for a minute or more
+and come back when it reconnects. Each opens
 `nearside://open?package=<package>` with Nearside (as `Nearside.exe --link <link>`, which takes
 no other switches), which opens the app in a window (only apps on
 the phone; Windows Hello first if it's asked for). The installer registers `nearside:` links, so
@@ -94,7 +96,8 @@ PC's key. `nearside-spike usb` (in `Spike/`) lists phones on a cable, and
   `--shot <file.png>` saves the window as drawn, then quits.
 - `--open-phone` opens the phone window once connected (`--launcher`: the launcher instead).
 - `--camera-test` feeds the camera a generated picture instead of the phone's camera.
-- `--demo --arrival` shows the clip-arrival card; `--demo --muted` the panel with notifications muted. `NEARSIDE_TEST_PHONE=recents` or
+- `--demo --arrival` shows the clip-arrival card; `--demo --muted` the panel with notifications
+  muted; `--demo --away` the panel while the phone is in use elsewhere. `NEARSIDE_TEST_PHONE=recents` or
   `size:<phone|foldable|tablet>` (with `--open-phone`) opens Recents or changes the size once the
   window shows, and logs what came back (counts and sizes only).
 - Updates (release builds): `NEARSIDE_UPDATE_FEED=<url>` reads another feed (updates must still

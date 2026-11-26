@@ -96,6 +96,13 @@ enum Commands {
             if let key = c["key"] as? String, let index = c["i"] as? Int {
                 Bridge.notifications?.onAction?(key, index, c["text"] as? String)
             }
+        // The panel's and the phone window's notification lists.
+        case "phoneNotifDismiss": if let key = c["key"] as? String { engine.dismissPhoneNotification(key) }
+        case "phoneNotifClear": engine.clearPhoneNotifications()
+        case "phoneNotifOpen":
+            if let key = c["key"] as? String, let note = engine.phoneNotifications.first(where: { $0.key == key }) {
+                engine.openPhoneNotification(note, here: c["here"] as? Bool ?? false)
+            }
         default: break
         }
     }

@@ -30,6 +30,11 @@ enum Snapshot {
             ] as [String: Any],
         ]
         if let inUseOn = engine.inUseOn { s["inUseOn"] = inUseOn }
+        s["phoneAway"] = engine.phoneAway
+        s["notifications"] = engine.phoneNotifications.map { n -> [String: Any] in
+            ["key": n.key, "package": n.package, "app": n.app, "title": n.title, "text": n.text, "posted": millis(n.posted),
+             "actions": n.actions.map { ["title": $0.title, "reply": $0.isReply] }]
+        }
         if let until = engine.notificationsMutedUntil {
             s["mutedIndefinitely"] = until == .distantFuture
             if until != .distantFuture { s["mutedUntil"] = millis(until) }

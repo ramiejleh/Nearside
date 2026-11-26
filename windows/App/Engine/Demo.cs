@@ -32,6 +32,13 @@ internal static class Demo
                 new("5", "+45 12 34 56 78", true, Ago(1500)),
             ],
             Unseen = ["1"],
+            Notifications =
+            [
+                new("n1", "com.example.chat", "Chat", "Kim", "Running ten minutes late, save me a seat!", Ago(2),
+                    [new("Reply", true), new("Mark as read", false)]),
+                new("n2", "com.example.calendar", "Calendar", "Dentist", "Tomorrow at 09:00", Ago(25), []),
+                new("n3", "com.example.delivery", "Parcels", "Your parcel is on its way", "Arriving today between 14:00 and 16:00", Ago(90), []),
+            ],
             Transfers = [new("t1", "holiday-photos.zip", true, "inProgress", null, null)],
             ClipboardToastHidden = false,
             Settings = new Settings { MirrorNotifications = true, TextMessages = true, HistoryLimit = 200, LowBatteryAlert = true },

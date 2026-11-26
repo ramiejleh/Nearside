@@ -17,7 +17,7 @@ namespace Nearside;
 /// system's own flyouts do.
 public sealed partial class PanelWindow : Window
 {
-    private const int WidthDips = 380, HeightDips = 540;
+    private const int WidthDips = 400, HeightDips = 560;
 
     public event Action? SetupRequested;
     public event Action? SettingsRequested;
@@ -41,6 +41,9 @@ public sealed partial class PanelWindow : Window
         LogoImage.Source = new BitmapImage(new Uri(Path.Combine(AppContext.BaseDirectory, "Assets", "Logo.png")));
         HistoryList.ItemsSource = clips;
         TransferList.ItemsSource = transfers;
+        NotificationsHost.Children.Add(notificationList.Root);
+        tab = AppSettings.Get("Panel.tab") == "clipboard" ? "clipboard" : "notifications";
+        Tabs.SelectedItem = tab == "clipboard" ? ClipboardTab : NotificationsTab;
 
         var presenter = OverlappedPresenter.Create();
         presenter.IsResizable = false;
@@ -149,24 +152,35 @@ public sealed partial class PanelWindow : Window
         StatusText.Text = text;
         ShowPhoneStatus(s.Connected ? s.PhoneStatus : null, s.OverUSB, phone);
         if (s.Connected && s.PhoneStatus != null) StatusText.Text = phone; // the icons say USB
-        SendFilesButton.IsEnabled = s.Connected;
-        PhoneButton.IsEnabled = s.Connected;
-        MessagesButton.IsEnabled = !s.NeedsSetup;
+        // Not connected: only Settings (full width) of the four.
+        var connectedOnly = s.Connected ? Visibility.Visible : Visibility.Collapsed;
+        SendFilesButton.Visibility = PhoneButton.Visibility = MessagesButton.Visibility = connectedOnly;
+        Grid.SetColumn(SettingsButton, s.Connected ? 3 : 0);
+        Grid.SetColumnSpan(SettingsButton, s.Connected ? 1 : 4);
 
         SetupPrompt.Visibility = s.NeedsSetup ? Visibility.Visible : Visibility.Collapsed;
         Main.Visibility = s.NeedsSetup ? Visibility.Collapsed : Visibility.Visible;
+        AwayView.Visibility = !s.NeedsSetup && !s.Connected ? Visibility.Visible : Visibility.Collapsed;
         if (s.NeedsSetup) return;
 
-        InUseBar.IsOpen = s.InUseOn != null && !s.Connected;
-        InUseBar.Title = $"{phone} is in use on {s.InUseOn}";
-        InUseBar.Message = "This PC reconnects once it's free.";
-        MuteButton.Visibility = s.Settings.MirrorNotifications ? Visibility.Visible : Visibility.Collapsed;
+        // Away: where the phone is, and Connect when another computer has it.
+        AwayIcon.Glyph = s.InUseOn != null ? "\uE7F4" : "\uE8EA";
+        AwayTitle.Text = s.InUseOn != null ? $"{phone} is in use on {s.InUseOn}" : $"Looking for {phone}…";
+        AwayText.Text = s.InUseOn != null ? "Connect to use it on this PC instead."
+            : "Keep it nearby on the same Wi-Fi, or plug it in. It connects on its own.";
+        ConnectButton.Visibility = s.InUseOn != null ? Visibility.Visible : Visibility.Collapsed;
+        foreach (var part in new FrameworkElement[] { TransferList, PhotoScroller, Tabs, NotificationsHost, SearchRow, HistoryList, EmptyHistory, HistoryFooter })
+        {
+            if (!s.Connected) part.Visibility = Visibility.Collapsed;
+        }
+
+        MuteButton.Visibility = s.Settings.MirrorNotifications && s.Connected ? Visibility.Visible : Visibility.Collapsed;
         MuteIcon.Glyph = s.Muted ? "\uE708" : "\uEA8F"; // the moon, as Windows' do not disturb; else a bell
         var muteWords = s.Muted ? "Notifications from your phone are muted" : "Mute notifications from your phone";
         ToolTipService.SetToolTip(MuteButton, muteWords);
         Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(MuteButton, muteWords);
         UnmuteItem.Visibility = UnmuteSeparator.Visibility = s.Muted ? Visibility.Visible : Visibility.Collapsed;
-        MutedBar.IsOpen = s.Muted;
+        MutedBar.IsOpen = s.Muted && s.Connected;
         MutedBar.Message = MutedWords(s);
         ProblemBar.IsOpen = s.PhoneAppProblem != null;
         if (s.PhoneAppProblem is { } problem)
@@ -179,10 +193,22 @@ public sealed partial class PanelWindow : Window
             ReinstallButton.IsEnabled = !s.ReinstallingPhoneApp;
         }
 
+        if (!s.Connected) return;
         Sync(transfers, s.Transfers.Select(t => new TransferRow(t, phone)).ToList());
         TransferList.Visibility = transfers.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
 
         RenderPhotos(s);
+
+        // Notifications | Clipboard.
+        Tabs.Visibility = Visibility.Visible;
+        NotificationsTab.Text = s.Notifications.Count > 0 ? $"Notifications ({s.Notifications.Count})" : "Notifications";
+        ClipboardTab.Text = s.Unseen.Count > 0 ? $"Clipboard ({s.Unseen.Count} new)" : "Clipboard";
+        var onClipboard = tab == "clipboard";
+        NotificationsHost.Visibility = onClipboard ? Visibility.Collapsed : Visibility.Visible;
+        SearchRow.Visibility = HistoryList.Visibility = HistoryFooter.Visibility = onClipboard ? Visibility.Visible : Visibility.Collapsed;
+        if (!onClipboard) EmptyHistory.Visibility = Visibility.Collapsed;
+        notificationList.Render(s);
+        if (!onClipboard) return;
 
         var query = SearchBox.Text.Trim();
         var shown = s.History.Where(c => FilterBox.SelectedIndex switch
@@ -255,13 +281,25 @@ public sealed partial class PanelWindow : Window
 
     private UIElement PhotoTile(PhonePhoto photo)
     {
-        var tile = new Button
+        // The picture is the content, not the button's background: hovering swaps the background
+        // for the theme's grey. Hover dims it slightly instead.
+        var picture = new Border
         {
-            Width = 64, Height = 64, Padding = new Thickness(0), CornerRadius = new CornerRadius(8),
+            Width = 64, Height = 64, CornerRadius = new CornerRadius(8),
             Background = thumbnails.TryGetValue(photo.Id, out var image)
                 ? new ImageBrush { ImageSource = image, Stretch = Stretch.UniformToFill }
                 : (Brush)Application.Current.Resources["SubtleFillColorSecondaryBrush"],
         };
+        var tile = new Button
+        {
+            Width = 64, Height = 64, Padding = new Thickness(0), CornerRadius = new CornerRadius(8),
+            BorderThickness = new Thickness(0), Content = picture,
+        };
+        var clear = new SolidColorBrush(Microsoft.UI.Colors.Transparent);
+        foreach (var key in new[] { "ButtonBackground", "ButtonBackgroundPointerOver", "ButtonBackgroundPressed" })
+            tile.Resources[key] = clear;
+        tile.PointerEntered += (_, _) => picture.Opacity = 0.85;
+        tile.PointerExited += (_, _) => picture.Opacity = 1;
         ToolTipService.SetToolTip(tile, $"{(photo.IsScreenshot ? "Screenshot" : "Photo")}, {DateTimeOffset.FromUnixTimeMilliseconds(photo.Date).LocalDateTime:g}");
         tile.Click += (_, _) => EngineHost.Command("photoFetch", new { id = photo.Id, @for = "open" });
         var save = new MenuFlyoutItem { Text = "Save to Downloads", Icon = new FontIcon { Glyph = "\uE896" } };
@@ -330,6 +368,17 @@ public sealed partial class PanelWindow : Window
     }
 
     private void OnUseHere(object sender, RoutedEventArgs e) => EngineHost.Command("useHere");
+
+    private readonly NotificationList notificationList = new();
+    private string tab = "notifications";
+
+    private void OnTab(SelectorBar sender, SelectorBarSelectionChangedEventArgs e)
+    {
+        if (sender.SelectedItem?.Tag is not string chosen || chosen == tab) return;
+        tab = chosen;
+        AppSettings.Set("Panel.tab", tab);
+        Render(EngineHost.Current);
+    }
 
     private void OnMute(object sender, RoutedEventArgs e)
     {

@@ -26,7 +26,8 @@ enum PhoneAppLaunchers {
     /// Writes a launcher per app and removes those for apps no longer on the phone.
     static func sync(_ apps: [PhoneApp], icon: (PhoneApp) -> Data?) {
         guard enabled else { return }
-        let signature = apps.map { "\($0.package)|\($0.label)|\($0.version)|\(icon($0) != nil)" }.sorted().joined(separator: "\n")
+        // "badged": icons carry the Nearside badge (launchers from before it are redrawn).
+        let signature = "badged\n" + apps.map { "\($0.package)|\($0.label)|\($0.version)|\(icon($0) != nil)" }.sorted().joined(separator: "\n")
         let hash = SHA256.hash(data: Data(signature.utf8)).map { String(format: "%02x", $0) }.joined()
         guard UserDefaults.standard.string(forKey: signatureKey) != hash || !FileManager.default.fileExists(atPath: folder.path) else { return }
         let fm = FileManager.default
@@ -104,7 +105,13 @@ enum PhoneAppLaunchers {
         LSRegisterURL(bundle as CFURL, true) // Launch Services (and so Raycast, Spotlight) see it now
     }
 
-    /// An .icns with the usual sizes, from the phone's icon.
+    /// Nearside's own icon, small in the corner of each launcher's: tells them from real Mac apps.
+    private static let badge: CGImage? = {
+        var rect = CGRect(x: 0, y: 0, width: 256, height: 256)
+        return NSApp.applicationIconImage?.cgImage(forProposedRect: &rect, context: nil, hints: nil)
+    }()
+
+    /// An .icns with the usual sizes, from the phone's icon, with Nearside's badge.
     private static func icns(fromPNG png: Data) -> Data? {
         guard let source = CGImageSourceCreateWithData(png as CFData, nil),
               let image = CGImageSourceCreateImageAtIndex(source, 0, nil) else { return nil }
@@ -119,6 +126,12 @@ enum PhoneAppLaunchers {
             // A little margin, as Mac app icons have.
             let inset = CGFloat(size) * 0.08
             context.draw(image, in: CGRect(x: inset, y: inset, width: CGFloat(size) - 2 * inset, height: CGFloat(size) - 2 * inset))
+            if let badge, size >= 32 { // bottom right (Core Graphics counts up from the bottom)
+                let side = CGFloat(size) * 0.4
+                context.setShadow(offset: CGSize(width: 0, height: -CGFloat(size) * 0.01), blur: CGFloat(size) * 0.03,
+                                  color: CGColor(gray: 0, alpha: 0.35))
+                context.draw(badge, in: CGRect(x: CGFloat(size) - side, y: 0, width: side, height: side))
+            }
             if let scaled = context.makeImage() { CGImageDestinationAddImage(destination, scaled, nil) }
         }
         return CGImageDestinationFinalize(destination) ? out as Data : nil

@@ -38,6 +38,25 @@ public sealed class PhoneWindow : Window
     private readonly Border overlay = new() { Visibility = Visibility.Collapsed };
     private readonly TextBlock overlayText = new() { TextWrapping = TextWrapping.Wrap, TextAlignment = TextAlignment.Center, MaxWidth = 280 };
     private readonly ProgressRing overlayRing = new() { IsActive = true, Width = 28, Height = 28 };
+    /// A few seconds' message over the picture (dropped files the app couldn't take).
+    private readonly Border notice = new()
+    {
+        Visibility = Visibility.Collapsed, VerticalAlignment = VerticalAlignment.Bottom, HorizontalAlignment = HorizontalAlignment.Center,
+        Margin = new Thickness(16, 0, 16, 24), Padding = new Thickness(14, 8, 14, 9), CornerRadius = new CornerRadius(16),
+        Background = new SolidColorBrush(Windows.UI.Color.FromArgb(0xE6, 0x20, 0x20, 0x24)),
+        Child = new TextBlock { Foreground = new SolidColorBrush(Microsoft.UI.Colors.White), TextWrapping = TextWrapping.Wrap },
+    };
+    private DispatcherTimer? noticeTimer;
+
+    private void ShowNotice(string text)
+    {
+        ((TextBlock)notice.Child).Text = text;
+        notice.Visibility = Visibility.Visible;
+        noticeTimer?.Stop();
+        noticeTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(4) };
+        noticeTimer.Tick += (_, _) => { noticeTimer?.Stop(); notice.Visibility = Visibility.Collapsed; };
+        noticeTimer.Start();
+    }
     /// Pointers down on the picture, as the phone's pointer numbers (0 for the mouse).
     private readonly Dictionary<uint, byte> fingers = [];
 
@@ -107,6 +126,11 @@ public sealed class PhoneWindow : Window
         toolbar.Children.Add(ToolButton("\uE72B", "Back (Esc)", GoBack));
         toolbar.Children.Add(ToolButton("\uE80F", "Home", () => { recents?.Hide(); Command("home"); }));
         if (package == null) toolbar.Children.Add(ToolButton("\uE7C4", "Recents", ToggleRecents));
+        if (package == null)
+        {
+            bellButton = ToolButton("\uEA8F", "Notifications", ToggleNotifications);
+            toolbar.Children.Add(bellButton);
+        }
         toolbar.Children.Add(new AppBarSeparator());
         foreach (var (name, glyph, tip) in new[] { ("phone", "\uE8EA", "Phone size"), ("foldable", "\uE89A", "Foldable size"), ("tablet", "\uE70A", "Tablet size") })
         {
@@ -129,7 +153,37 @@ public sealed class PhoneWindow : Window
                               home: () => Command("home"));
         stage.Children.Add(panel);
         stage.Children.Add(recents.Root);
+        // The phone's notifications over the screen (the phone window's bell), as on the Mac.
+        notes.OpenHere = note => { HideNotifications(); Command("openNotification", new { key = note.Key }); };
+        notesLayer.Children.Add(new Border
+        {
+            HorizontalAlignment = HorizontalAlignment.Stretch, VerticalAlignment = VerticalAlignment.Top,
+            Padding = new Thickness(0, 12, 0, 0), Child = notesHeader,
+        });
+        notesLayer.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        notesLayer.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+        Grid.SetRow(notes.Root, 1);
+        notesLayer.Children.Add(notes.Root);
+        notesLayer.Tapped += (_, e) => { if (e.OriginalSource == notesLayer) HideNotifications(); };
+        stage.Children.Add(notesLayer);
         stage.Children.Add(overlay);
+        stage.Children.Add(notice);
+        // Files dropped on the picture: shared with the app on screen (as on the Mac).
+        stage.AllowDrop = true;
+        stage.DragOver += (_, e) =>
+        {
+            if (covered || !e.DataView.Contains(Windows.ApplicationModel.DataTransfer.StandardDataFormats.StorageItems)) return;
+            e.AcceptedOperation = Windows.ApplicationModel.DataTransfer.DataPackageOperation.Copy;
+            e.DragUIOverride.Caption = package != null ? $"Share with {Title}" : "Share with the app on screen";
+        };
+        stage.Drop += async (_, e) =>
+        {
+            if (covered || !e.DataView.Contains(Windows.ApplicationModel.DataTransfer.StandardDataFormats.StorageItems)) return;
+            var items = await e.DataView.GetStorageItemsAsync();
+            var paths = items.OfType<Windows.Storage.StorageFile>().Select(f => f.Path).Where(p => p.Length > 0).ToList();
+            if (paths.Count < items.Count) ShowNotice("Folders can't be shared yet");
+            if (paths.Count > 0) Command("share", new { paths });
+        };
         var root = new Grid();
         root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
@@ -177,8 +231,11 @@ public sealed class PhoneWindow : Window
         statsTimer.Start();
         ByHandle[hwnd] = this;
         unsafe { Win32.SetWindowSubclass(hwnd, &SizingProc, 1, 0); }
+        EngineHost.Changed += NotificationsChanged;
+        NotificationsChanged(EngineHost.Current);
         Closed += (_, _) =>
         {
+            EngineHost.Changed -= NotificationsChanged;
             unsafe { Win32.RemoveWindowSubclass(hwnd, &SizingProc, 1); }
             ByHandle.Remove(hwnd);
             AuthGate.Locked -= Cover;
@@ -336,8 +393,45 @@ public sealed class PhoneWindow : Window
 
     private void GoBack()
     {
-        if (recents.Shown) recents.Hide();
+        if (notesLayer.Visibility == Visibility.Visible) HideNotifications();
+        else if (recents.Shown) recents.Hide();
         else Command("back");
+    }
+
+    private Button? bellButton;
+    private readonly NotificationList notes = new();
+    private readonly Grid notesLayer = new()
+    {
+        Visibility = Visibility.Collapsed, RequestedTheme = ElementTheme.Dark,
+        Background = new SolidColorBrush(Windows.UI.Color.FromArgb(0xE6, 0x16, 0x16, 0x18)),
+    };
+    private readonly TextBlock notesHeader = new()
+    {
+        Text = "Notifications", FontSize = 15, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, Margin = new Thickness(16, 0, 16, 6),
+        Foreground = new SolidColorBrush(Microsoft.UI.Colors.White),
+    };
+
+    private void ToggleNotifications()
+    {
+        if (covered) return;
+        if (notesLayer.Visibility == Visibility.Visible) { HideNotifications(); return; }
+        recents.Hide();
+        notes.Render(EngineHost.Current);
+        notesLayer.Visibility = Visibility.Visible;
+    }
+
+    private void HideNotifications() => notesLayer.Visibility = Visibility.Collapsed;
+
+    /// The list follows the phone; the bell shows how many there are.
+    private void NotificationsChanged(Snapshot s)
+    {
+        if (bellButton == null) return;
+        var count = s.Connected ? s.Notifications.Count : 0;
+        ToolTipService.SetToolTip(bellButton, count > 0 ? $"Notifications ({count})" : "Notifications");
+        bellButton.Content = count > 0
+            ? new Grid { Children = { new FontIcon { Glyph = "\uEA8F", FontSize = 14 }, new Microsoft.UI.Xaml.Shapes.Ellipse { Width = 7, Height = 7, Fill = (Brush)Application.Current.Resources["AccentFillColorDefaultBrush"], HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Top, Margin = new Thickness(0, -2, -3, 0) } } }
+            : new FontIcon { Glyph = "\uEA8F", FontSize = 14 };
+        if (notesLayer.Visibility == Visibility.Visible) notes.Render(s);
     }
 
     private void ToggleRecents()
@@ -376,6 +470,9 @@ public sealed class PhoneWindow : Window
                         Close();
                         break;
                 }
+                break;
+            case "shareFailed":
+                ShowNotice(e.GetProperty("accepts").GetBoolean() ? $"Couldn't share the files with {Title}" : $"{Title} can't open files like these");
                 break;
             case "crop":
                 view.Crop = e.GetProperty("rows").GetInt32();
@@ -572,6 +669,12 @@ public sealed class PhoneWindow : Window
         if (covered)
         {
             e.Handled = true;
+            return;
+        }
+        if (notesLayer.Visibility == Visibility.Visible)
+        {
+            // Keys go to the list (a reply box), not the phone; Esc closes it.
+            if (e.Key == Windows.System.VirtualKey.Escape) { HideNotifications(); e.Handled = true; }
             return;
         }
         if (recents.Shown)

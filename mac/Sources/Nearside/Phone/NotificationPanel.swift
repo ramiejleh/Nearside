@@ -86,7 +86,8 @@ struct NotificationPanel: View {
     }
 }
 
-private struct NotificationCard: View {
+/// One notification: open, buttons, reply, dismiss. Its colours follow the light or dark around it.
+struct NotificationCard: View {
     let note: PhoneNotification
     let icon: NSImage?
     let engine: SyncEngine
@@ -113,12 +114,12 @@ private struct NotificationCard: View {
                     Spacer(minLength: 0)
                 }
                 .font(.system(size: 11.5))
-                .foregroundStyle(.white.opacity(0.6))
+                .foregroundStyle(Color.primary.opacity(0.6))
                 if !note.title.isEmpty {
-                    Text(note.title).font(.system(size: 13, weight: .semibold)).foregroundStyle(.white).lineLimit(2)
+                    Text(note.title).font(.system(size: 13, weight: .semibold)).foregroundStyle(Color.primary).lineLimit(2)
                 }
                 if !note.text.isEmpty {
-                    Text(note.text).font(.system(size: 12.5)).foregroundStyle(.white.opacity(0.85)).lineLimit(4)
+                    Text(note.text).font(.system(size: 12.5)).foregroundStyle(Color.primary.opacity(0.85)).lineLimit(4)
                 }
             }
             .contentShape(Rectangle())
@@ -131,11 +132,11 @@ private struct NotificationCard: View {
         }
         .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(.white.opacity(hovering ? 0.14 : 0.1), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .background(Color.primary.opacity(hovering ? 0.14 : 0.1), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
         .overlay(alignment: .topTrailing) {
             if hovering {
                 Button { dismiss() } label: {
-                    Image(systemName: "xmark.circle.fill").font(.system(size: 16)).foregroundStyle(.white.opacity(0.7))
+                    Image(systemName: "xmark.circle.fill").font(.system(size: 16)).foregroundStyle(Color.primary.opacity(0.7))
                 }
                 .buttonStyle(.plain)
                 .help("Dismiss")
@@ -169,10 +170,10 @@ private struct NotificationCard: View {
                 }
                 .buttonStyle(.plain)
                 .font(.system(size: 12, weight: .medium))
-                .foregroundStyle(.white)
+                .foregroundStyle(Color.primary)
                 .lineLimit(1)
                 .padding(.horizontal, 10).padding(.vertical, 5)
-                .background(.white.opacity(0.14), in: Capsule())
+                .background(Color.primary.opacity(0.14), in: Capsule())
             }
         }
     }
@@ -182,15 +183,15 @@ private struct NotificationCard: View {
             TextField(note.actions[index].title, text: $reply)
                 .textFieldStyle(.plain)
                 .font(.system(size: 12.5))
-                .foregroundStyle(.white)
+                .foregroundStyle(Color.primary)
                 .padding(.horizontal, 10).padding(.vertical, 6)
-                .background(.white.opacity(0.12), in: Capsule())
+                .background(Color.primary.opacity(0.12), in: Capsule())
                 .focused($replyFocused)
                 .onSubmit(send)
                 .onExitCommand { replying = nil; reply = "" }
             Button(action: send) { Image(systemName: "arrow.up.circle.fill").font(.system(size: 20)) }
                 .buttonStyle(.plain)
-                .foregroundStyle(reply.isEmpty ? .white.opacity(0.3) : .white)
+                .foregroundStyle(reply.isEmpty ? Color.primary.opacity(0.3) : Color.primary)
                 .disabled(reply.isEmpty)
                 .help("Send")
         }

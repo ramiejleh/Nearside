@@ -81,6 +81,7 @@ public func nearside_start(_ apkPath: UnsafePointer<CChar>?, _ callback: Nearsid
         Platforms.current = platform
         let engine = SyncEngine(apkURL: apk)
         engine.onArrival = { item in Bridge.emit("clip", ["id": item.id.uuidString]) }
+        engine.onShareFailed = { package, accepts in Sessions.shareFailed(package: package, accepts: accepts) }
         // "Open on PC" in a notification: its app in a window, opening that notification.
         engine.onOpenNotificationOnMac = { key, package, app in
             Bridge.emit("openInWindow", ["key": key, "package": package, "app": app])

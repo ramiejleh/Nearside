@@ -283,6 +283,13 @@ internal sealed class Notifications
     }
 
     /// A short, stable tag for a key of any length.
+    /// The icon the phone sent with an app's notifications, if one was saved.
+    public static string? IconFile(string package)
+    {
+        var path = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Nearside", "icons", Tag(package) + ".png");
+        return File.Exists(path) ? path : null;
+    }
+
     private static string Tag(string key) => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(key)))[..32];
 
     /// The app's icon as a file (Windows shows images from files): one per app, rewritten as it changes;
