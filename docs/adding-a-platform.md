@@ -5,6 +5,9 @@ Linux as the running example. Most of the work is already shared: the phone app 
 don't change, and the engine (`core/`) already builds and passes its tests on Linux (CI checks
 this). What a new platform adds is the parts that touch the system, and an interface.
 
+A new platform joins the [feature parity](development.md#feature-parity) rule: it ships with
+the same features as the others, or the docs list what it's missing and why.
+
 Read [architecture.md](architecture.md) first, then how the two existing apps do it:
 [development-mac.md](development-mac.md) and [development-windows.md](development-windows.md).
 

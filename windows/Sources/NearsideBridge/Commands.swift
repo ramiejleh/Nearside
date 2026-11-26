@@ -149,6 +149,7 @@ enum Commands {
         if let on = value as? Bool {
             switch key {
             case "mirrorNotifications": engine.mirrorNotifications = on
+            case "clipboardSync": engine.clipboardSync = on
             case "textMessages": engine.textMessages = on
             case "recentPhotos": engine.recentPhotos = on
             case "screenshotsToPC": engine.screenshotsToMac = on

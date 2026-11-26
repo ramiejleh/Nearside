@@ -11,10 +11,31 @@ namespace Nearside;
 /// text messages, photos and phone apps arrive with those features.
 public sealed class SettingsWindow : Window
 {
+    // Features: each one's own switch (what the panel shows and Nearside does).
+    private readonly Choice clipboard = new()
+    {
+        Title = "Clipboard",
+        Text = "Copy on one device, paste on the other, with a history in the panel.",
+    };
     private readonly Choice mirror = new()
     {
-        Title = "Mirror phone notifications",
-        Text = "Your phone's notifications appear on this PC. Clearing one here dismisses it on the phone.",
+        Title = "Notifications",
+        Text = "Your phone's notifications on this PC and in the panel. Clearing one here dismisses it on the phone.",
+    };
+    private readonly Choice texts = new()
+    {
+        Title = "Text messages",
+        Text = "Read and send SMS in the Messages window. RCS chats stay in Google Messages.",
+    };
+    private readonly Choice calls = new()
+    {
+        Title = "Calls",
+        Text = "Answer or decline phone and app calls here.",
+    };
+    private readonly Choice ring = new()
+    {
+        Title = "Ring on this PC",
+        Text = "A soft ring while a call comes in.",
     };
     private readonly Choice screenshots = new()
     {
@@ -23,8 +44,8 @@ public sealed class SettingsWindow : Window
     };
     private readonly Choice recentPhotos = new()
     {
-        Title = "Show the phone's recent photos",
-        Text = "In the panel, while it's open. Click one to open it here.",
+        Title = "Photos",
+        Text = "The phone's newest photos in the panel, while it's open. Click one to open it here.",
     };
     private readonly Choice screenshotsToPhone = new()
     {
@@ -79,6 +100,10 @@ public sealed class SettingsWindow : Window
         if (AppWindow.Presenter is OverlappedPresenter presenter) presenter.IsMaximizable = false;
 
         mirror.Toggled += on => EngineHost.Command("set", new { key = "mirrorNotifications", value = on });
+        clipboard.Toggled += on => EngineHost.Command("set", new { key = "clipboardSync", value = on });
+        texts.Toggled += on => EngineHost.Command("set", new { key = "textMessages", value = on });
+        calls.Toggled += on => EngineHost.Command("set", new { key = "showCalls", value = on });
+        ring.Toggled += on => EngineHost.Command("set", new { key = "ringHere", value = on });
         screenshots.Toggled += on => EngineHost.Command("set", new { key = "screenshotsToPC", value = on });
         recentPhotos.Toggled += on => EngineHost.Command("set", new { key = "recentPhotos", value = on });
         screenshotsToPhone.Toggled += on => EngineHost.Command("set", new { key = "screenshotsToPhone", value = on });
@@ -134,11 +159,22 @@ public sealed class SettingsWindow : Window
 
         var page = new StackPanel { Spacing = 8, Padding = new Thickness(28, 20, 28, 28), MaxWidth = 720 };
         page.Children.Add(new TextBlock { Text = "Settings", FontSize = 28, FontWeight = FontWeights.SemiBold, Margin = new Thickness(0, 0, 0, 8) });
-        page.Children.Add(Header("Notifications"));
+        page.Children.Add(Header("Features"));
+        page.Children.Add(clipboard);
         page.Children.Add(mirror);
-        page.Children.Add(notificationApps.Root);
-        page.Children.Add(Header("Photos"));
         page.Children.Add(recentPhotos);
+        page.Children.Add(texts);
+        page.Children.Add(calls);
+        page.Children.Add(new TextBlock
+        {
+            Text = "Turned off, a feature leaves the panel and nothing of it crosses between your devices.",
+            FontSize = 12, Foreground = Blocks.Secondary, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(2, 2, 0, 0),
+        });
+        page.Children.Add(Header("Notifications"));
+        page.Children.Add(notificationApps.Root);
+        page.Children.Add(Header("Calls"));
+        page.Children.Add(ring);
+        page.Children.Add(Header("Screenshots"));
         page.Children.Add(screenshots);
         page.Children.Add(screenshotsToPhone);
         page.Children.Add(Header("Phone apps"));
@@ -182,6 +218,13 @@ public sealed class SettingsWindow : Window
     private void Render(Snapshot s)
     {
         mirror.IsOn = s.Settings.MirrorNotifications;
+        clipboard.IsOn = s.Settings.ClipboardSync;
+        texts.IsOn = s.Settings.TextMessages;
+        calls.IsOn = s.Settings.ShowCalls;
+        calls.CanChange = s.Settings.MirrorNotifications; // calls come from the phone's call notification
+        ring.IsOn = s.Settings.RingHere;
+        ring.CanChange = s.Settings.MirrorNotifications && s.Settings.ShowCalls;
+        historyLimit.IsEnabled = arrival.CanChange = s.Settings.ClipboardSync;
         notificationApps.Render(s);
         screenshots.IsOn = s.Settings.ScreenshotsToPC;
         recentPhotos.IsOn = s.Settings.RecentPhotos;

@@ -37,11 +37,18 @@ struct PanelView: View {
                                 PhotoStrip(engine: engine)
                                 Divider()
                             }
-                            PanelTabs(tab: $tab, notifications: engine.phoneNotifications.count, newClips: engine.unseenIDs.count)
-                            if tab == PanelTab.clipboard.rawValue {
-                                HistoryView(engine: engine, highlighted: highlighted)
-                            } else {
-                                PanelNotifications(engine: engine)
+                            // Only the features that are on (Settings → Features); tabs when both are.
+                            switch (engine.mirrorNotifications, engine.clipboardSync) {
+                            case (true, true):
+                                PanelTabs(tab: $tab, notifications: engine.phoneNotifications.count, newClips: engine.unseenIDs.count)
+                                if tab == PanelTab.clipboard.rawValue {
+                                    HistoryView(engine: engine, highlighted: highlighted)
+                                } else {
+                                    PanelNotifications(engine: engine)
+                                }
+                            case (true, false): PanelNotifications(engine: engine)
+                            case (false, true): HistoryView(engine: engine, highlighted: highlighted)
+                            case (false, false): AllOff { showingSettings = true }
                             }
                         } else {
                             // Nothing of the phone's while it's away: only how to get it back.
@@ -93,9 +100,10 @@ struct PanelView: View {
                 if connected {
                 HeaderButton(title: "Apps", symbol: "apps.iphone", enabled: connected && !showingSettings,
                              help: "Open a phone app on your Mac", action: openApps)
-                HeaderButton(title: "Messages", symbol: "message",
-                             enabled: (connected || engine.state == .searching) && !showingSettings,
-                             help: "Text messages", action: openMessages)
+                if engine.textMessages {
+                    HeaderButton(title: "Messages", symbol: "message", enabled: !showingSettings,
+                                 help: "Text messages", action: openMessages)
+                }
                 HeaderButton(title: "Send files", symbol: "paperplane", enabled: connected && !showingSettings,
                              help: "Send files to your \(engine.phoneName) (or drop them here)", action: chooseFiles)
                 }
@@ -285,6 +293,22 @@ struct PhoneStatusIcons: View {
 }
 
 enum PanelTab: String { case notifications, clipboard }
+
+/// Notifications and the clipboard both turned off: what's left, and where to turn them on.
+private struct AllOff: View {
+    let openSettings: () -> Void
+
+    var body: some View {
+        VStack(spacing: 8) {
+            Image(systemName: "switch.2").font(.system(size: 26, weight: .light)).foregroundStyle(.secondary)
+            Text("Notifications and the clipboard are off").font(.system(size: 13, weight: .semibold))
+            Text("Turn them on in Settings → Features.").font(.system(size: 12)).foregroundStyle(.secondary)
+            Button("Open Settings", action: openSettings).controlSize(.small).padding(.top, 4)
+        }
+        .padding(.horizontal, 32)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+}
 
 /// Notifications | Clipboard, under the header: an icon and a count on each; the chosen one
 /// raised, like a segmented control.

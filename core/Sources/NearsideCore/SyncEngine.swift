@@ -151,6 +151,12 @@ public final class SyncEngine {
         }
     }
 
+    /// Sync the clipboard both ways and keep its history (the panel's Clipboard tab). Off: nothing
+    /// copied on either device crosses, and nothing is recorded.
+    public var clipboardSync: Bool {
+        didSet { defaults.set(clipboardSync, forKey: "clipboardSync") }
+    }
+
     /// Mirror the phone's notifications to macOS. Turning it off also revokes the phone app's
     /// notification access, so nothing is read on the phone at all.
     public var mirrorNotifications: Bool {
@@ -276,6 +282,7 @@ public final class SyncEngine {
         history = ClipHistory.load(from: Paths.history, limit: limit)
         phoneName = defaults.string(forKey: "phoneName") ?? "Phone"
         mirrorNotifications = defaults.object(forKey: "mirrorNotifications") as? Bool ?? true
+        clipboardSync = defaults.object(forKey: "clipboardSync") as? Bool ?? true
         mutedApps = Set(defaults.stringArray(forKey: "mutedNotificationApps") ?? [])
         notifyingApps = defaults.dictionary(forKey: "notifyingApps") as? [String: String] ?? [:]
         if let until = defaults.object(forKey: "notificationsMutedUntil") as? Double {
@@ -591,7 +598,7 @@ public final class SyncEngine {
         case "share-failed":
             if let pkg = message["pkg"] as? String { onShareFailed?(pkg, message["accepts"] as? Bool ?? false) }
         case "clip":
-            guard state == .connected, let text = message["text"] as? String, !text.isEmpty else { return }
+            guard state == .connected, clipboardSync, let text = message["text"] as? String, !text.isEmpty else { return }
             pasteboard.write(text)
             let item = history.add(text, source: .android)
             unseenIDs.insert(item.id)
@@ -905,8 +912,9 @@ public final class SyncEngine {
     }
 
     private func macCopied(_ text: String) {
-        // Nothing is kept while the phone isn't connected (the panel shows no history then).
-        guard state == .connected else { return }
+        // Nothing is kept while the phone isn't connected (the panel shows no history then), or
+        // while clipboard sync is off.
+        guard state == .connected, clipboardSync else { return }
         history.add(text, source: .mac)
         persist()
         if state == .connected {

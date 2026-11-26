@@ -59,6 +59,7 @@ public sealed record PhoneStatus(int Battery, bool Charging, bool Wifi, int? Sig
 public sealed record Settings
 {
     public bool MirrorNotifications { get; init; }
+    public bool ClipboardSync { get; init; } = true;
     public bool TextMessages { get; init; }
     public bool RecentPhotos { get; init; }
     public bool ScreenshotsToPC { get; init; }

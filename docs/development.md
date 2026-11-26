@@ -15,6 +15,30 @@ This page covers what they share. Each computer has its own page:
 - [Adding a platform](adding-a-platform.md): what a new computer app (Linux, say) needs.
 - [Releasing](releasing.md): making a release for both.
 
+## Feature parity
+
+**The Mac and Windows apps always have the same features.** A feature, setting or fix that
+users can see lands on both in the same change (or the same release), with the same name,
+the same defaults and the same behaviour, adapted only to each system's conventions (the
+menu bar or the notification area, Touch ID or Windows Hello, ⌘ or Ctrl). A new platform joins
+the same rule. When something can't be done on one system, the docs say why, and the other
+doesn't drop it.
+
+In practice:
+
+- Shared behaviour goes in the engine (`core/`), so both get it; each app only draws it.
+- A pull request that adds or changes a feature on one app does the other too, or explains in
+  its description why it can't yet and adds it to the list below.
+- The README's support matrix has a column per platform, and stays honest about each.
+
+Gaps still to close (Windows is missing these from the Mac):
+
+- Settings: what clicking a notification opens, Motion, Quality, where sound plays, using the
+  PC's microphone, the keyboard layout, returning hidden apps to the phone, changing the
+  launcher's shortcut, turning the webcam on and off, automatic update checks.
+- The phone window's keyboard shortcuts (Home, Recents, Notifications, sizes, full screen,
+  statistics) and the drop shelf for files.
+
 ## The phone app
 
 Build it with Android Studio's bundled JDK (a newer system JDK is too new for Gradle):

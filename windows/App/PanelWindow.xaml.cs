@@ -154,7 +154,11 @@ public sealed partial class PanelWindow : Window
         if (s.Connected && s.PhoneStatus != null) StatusText.Text = phone; // the icons say USB
         // Not connected: only Settings (full width) of the four.
         var connectedOnly = s.Connected ? Visibility.Visible : Visibility.Collapsed;
-        SendFilesButton.Visibility = PhoneButton.Visibility = MessagesButton.Visibility = connectedOnly;
+        SendFilesButton.Visibility = PhoneButton.Visibility = connectedOnly;
+        // Messages only while text messages are on (Settings → Features): Send takes its place.
+        MessagesButton.Visibility = s.Connected && s.Settings.TextMessages ? Visibility.Visible : Visibility.Collapsed;
+        Grid.SetColumnSpan(SendFilesButton, s.Settings.TextMessages ? 1 : 2);
+        Grid.SetColumn(SendFilesButton, s.Settings.TextMessages ? 2 : 1);
         Grid.SetColumn(SettingsButton, s.Connected ? 3 : 0);
         Grid.SetColumnSpan(SettingsButton, s.Connected ? 1 : 4);
 
@@ -199,13 +203,21 @@ public sealed partial class PanelWindow : Window
 
         RenderPhotos(s);
 
-        // Notifications | Clipboard.
-        Tabs.Visibility = Visibility.Visible;
+        // Notifications | Clipboard: only the features that are on (Settings → Features), tabs when both are.
+        bool notesOn = s.Settings.MirrorNotifications, clipsOn = s.Settings.ClipboardSync;
+        Tabs.Visibility = notesOn && clipsOn ? Visibility.Visible : Visibility.Collapsed;
         NotificationsTab.Text = s.Notifications.Count > 0 ? $"Notifications ({s.Notifications.Count})" : "Notifications";
         ClipboardTab.Text = s.Unseen.Count > 0 ? $"Clipboard ({s.Unseen.Count} new)" : "Clipboard";
-        var onClipboard = tab == "clipboard";
-        NotificationsHost.Visibility = onClipboard ? Visibility.Collapsed : Visibility.Visible;
+        var onClipboard = clipsOn && (!notesOn || tab == "clipboard");
+        NotificationsHost.Visibility = notesOn && !onClipboard ? Visibility.Visible : Visibility.Collapsed;
         SearchRow.Visibility = HistoryList.Visibility = HistoryFooter.Visibility = onClipboard ? Visibility.Visible : Visibility.Collapsed;
+        if (!notesOn && !clipsOn)
+        {
+            EmptyHistory.Visibility = Visibility.Visible;
+            EmptyTitle.Text = "Notifications and the clipboard are off";
+            EmptyText.Text = "Turn them on in Settings → Features.";
+            return;
+        }
         if (!onClipboard) EmptyHistory.Visibility = Visibility.Collapsed;
         notificationList.Render(s);
         if (!onClipboard) return;

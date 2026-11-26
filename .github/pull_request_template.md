@@ -7,6 +7,7 @@
 - [ ] `swift test` passes in `core/` and `mac/` (Windows changes: `windows/` and its app build)
 - [ ] The Android app builds (`./gradlew assembleDebug` in `android/`)
 - [ ] Tried on a real phone and computer (which ones?)
+- [ ] Feature parity: the change is on both the Mac and Windows apps (or the description says why not)
 - [ ] Touches security (authentication, the helper's rights, what the phone exposes): the threat it handles is described above
 
 ## Agreement

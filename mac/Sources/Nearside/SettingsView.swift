@@ -31,11 +31,40 @@ struct SettingsView: View {
     var body: some View {
         VStack(spacing: 0) {
             Form {
-                Section("Notifications") {
-                    Toggle(isOn: Binding(get: { engine.mirrorNotifications }, set: { engine.mirrorNotifications = $0 })) {
-                        Text("Mirror phone notifications")
-                        Text("Your \(engine.phoneName)'s notifications appear on this Mac. Dismissing one here dismisses it on the phone.")
+                // What the panel shows and Nearside does: each feature's own switch. Their details
+                // are in the sections below.
+                Section {
+                    Toggle(isOn: Binding(get: { engine.clipboardSync }, set: { engine.clipboardSync = $0 })) {
+                        Label("Clipboard", systemImage: "doc.on.clipboard")
+                        Text("Copy on one device, paste on the other, with a history in the panel.")
                     }
+                    Toggle(isOn: Binding(get: { engine.mirrorNotifications }, set: { engine.mirrorNotifications = $0 })) {
+                        Label("Notifications", systemImage: "bell")
+                        Text("Your \(engine.phoneName)'s notifications on this Mac and in the panel. Dismissing one here dismisses it on the phone.")
+                    }
+                    Toggle(isOn: Binding(get: { engine.recentPhotos }, set: { engine.recentPhotos = $0 })) {
+                        Label("Photos", systemImage: "photo.on.rectangle")
+                        Text("The phone's newest photos in the panel, while it's open. Drag one out to keep it.")
+                    }
+                    Toggle(isOn: Binding(get: { engine.textMessages }, set: { engine.textMessages = $0 })) {
+                        Label("Text messages", systemImage: "message")
+                        Text("Read and send SMS in the Messages window. RCS chats stay in Google Messages.")
+                    }
+                    Toggle(isOn: Binding(get: { engine.showCalls }, set: { engine.showCalls = $0 })) {
+                        Label("Calls", systemImage: "phone")
+                        Text(engine.mirrorNotifications
+                             ? "Answer or decline phone and app calls here."
+                             : "Needs Notifications on: calls come from the phone's call notification.")
+                    }
+                    .disabled(!engine.mirrorNotifications)
+                } header: {
+                    Text("Features")
+                } footer: {
+                    Text("Turned off, a feature leaves the panel and nothing of it crosses between your devices.")
+                        .font(.system(size: 11)).foregroundStyle(.secondary)
+                }
+
+                Section("Notifications") {
                     NotificationApps(engine: engine)
                     Picker(selection: $notificationClick) {
                         Text("On your phone").tag("phone")
@@ -44,32 +73,15 @@ struct SettingsView: View {
                         Text("Clicking a notification opens it")
                         Text("Either way, “Open on Mac” in a notification’s options opens it in a window here.")
                     }
-                    Toggle(isOn: $showArrivalToast) {
-                        Text("Pop-up when a clip arrives")
-                        Text("A card slides in at the top right when you copy on your \(engine.phoneName).")
-                    }
                 }
+                .disabled(!engine.mirrorNotifications)
 
                 Section("Calls") {
-                    Toggle(isOn: Binding(get: { engine.showCalls }, set: { engine.showCalls = $0 })) {
-                        Text("Show incoming calls")
-                        Text(engine.mirrorNotifications
-                             ? "Answer or decline phone and app calls here. You talk on your \(engine.phoneName)."
-                             : "Needs “Mirror phone notifications” on: calls come from the phone's call notification.")
-                    }
-                    .disabled(!engine.mirrorNotifications)
                     Toggle(isOn: Binding(get: { engine.ringOnMac }, set: { engine.ringOnMac = $0 })) {
                         Text("Ring on this Mac")
                         Text("A soft ring while a call comes in.")
                     }
                     .disabled(!engine.mirrorNotifications || !engine.showCalls)
-                }
-
-                Section("Text messages") {
-                    Toggle(isOn: Binding(get: { engine.textMessages }, set: { engine.textMessages = $0 })) {
-                        Text("Read and send SMS")
-                        Text("In the Messages window (the bubble in the header). RCS chats stay in Google Messages.")
-                    }
                 }
 
                 Section("Phone apps") {
@@ -192,11 +204,7 @@ struct SettingsView: View {
                     }
                 }
 
-                Section("Photos") {
-                    Toggle(isOn: Binding(get: { engine.recentPhotos }, set: { engine.recentPhotos = $0 })) {
-                        Text("Show the phone's recent photos")
-                        Text("In this panel, while it's open. Drag one out to keep it.")
-                    }
+                Section("Screenshots") {
                     Toggle(isOn: Binding(get: { engine.screenshotsToMac }, set: { engine.screenshotsToMac = $0 })) {
                         Text("New phone screenshots go to this Mac")
                         Text("Each one lands in Downloads.")
@@ -207,14 +215,19 @@ struct SettingsView: View {
                     }
                 }
 
-                Section("History") {
-                    Picker("Keep", selection: Binding(get: { engine.historyLimit }, set: { engine.historyLimit = $0 })) {
+                Section("Clipboard") {
+                    Toggle(isOn: $showArrivalToast) {
+                        Text("Pop-up when a clip arrives")
+                        Text("A card slides in at the top right when you copy on your \(engine.phoneName).")
+                    }
+                    Picker("Keep in history", selection: Binding(get: { engine.historyLimit }, set: { engine.historyLimit = $0 })) {
                         Text("50 items").tag(50)
                         Text("200 items").tag(200)
                         Text("500 items").tag(500)
                     }
                     LabeledContent("Saved items", value: engine.history.items.count.formatted())
                 }
+                .disabled(!engine.clipboardSync)
 
                 Section("General") {
                     Toggle("Open at login", isOn: $launchAtLogin)
@@ -233,7 +246,7 @@ struct SettingsView: View {
                 }
 
                 if engine.state == .connected, engine.clipboardToastHidden != nil {
-                    Section("Clipboard") {
+                    Section("On the phone") {
                         Toggle(isOn: Binding(get: { engine.clipboardToastHidden ?? false },
                                              set: { engine.setClipboardToastHidden($0) })) {
                             Text("Hide \u{201C}pasted from your clipboard\u{201D} on the phone")

@@ -18,6 +18,7 @@ enum Snapshot {
             "setupSteps": engine.setupSteps.map(step),
             "settings": [
                 "mirrorNotifications": engine.mirrorNotifications,
+                "clipboardSync": engine.clipboardSync,
                 "textMessages": engine.textMessages,
                 "recentPhotos": engine.recentPhotos,
                 "screenshotsToPC": engine.screenshotsToMac,

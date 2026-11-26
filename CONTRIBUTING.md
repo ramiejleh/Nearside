@@ -34,6 +34,12 @@ The Mac app has test hooks driven by environment variables (`NEARSIDE_OPEN_APP`,
 they're in each platform's development page. Bringing Nearside to another system, such as
 Linux? Start with [docs/adding-a-platform.md](docs/adding-a-platform.md).
 
+## Feature parity
+
+The Mac and Windows apps always have the same features. A change that adds or changes
+something users see does it on both, or says in its description why one has to wait (see
+[Feature parity](docs/development.md#feature-parity)).
+
 ## Pull requests
 
 - Keep changes focused: one fix or feature per pull request.
