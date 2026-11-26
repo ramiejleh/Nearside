@@ -26,6 +26,7 @@ enum Snapshot {
                 "ringHere": engine.ringOnMac,
                 "historyLimit": engine.historyLimit,
                 "lowBatteryAlert": engine.lowBatteryAlert,
+                "frameRate": PhoneFrameRate.current,
             ] as [String: Any],
         ]
         if let inUseOn = engine.inUseOn { s["inUseOn"] = inUseOn }

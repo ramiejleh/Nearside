@@ -201,15 +201,17 @@ public enum PhoneQuality: String, CaseIterable, Sendable {
     public static let key = "PhoneApps.quality"
     public static var current: PhoneQuality { PhoneQuality(rawValue: UserDefaults.standard.string(forKey: key) ?? "") ?? .auto }
 
-    /// Frames per second for the window in use.
-    public var fps: Int { self == .sharper ? 30 : 60 }
-    /// Bitrate for a phone-sized picture (the phone scales it with the window's pixels).
+    /// Frames per second for the window in use: Sharper halves the frame-rate setting.
+    public var fps: Int { self == .sharper ? PhoneFrameRate.current / 2 : PhoneFrameRate.current }
+    /// Bitrate for a phone-sized picture (the phone scales it with the window's pixels), and
+    /// with the frame rate, so each frame keeps its detail.
     public var kbps: Int {
-        switch self {
+        let base = switch self {
         case .auto: 12_000
         case .sharper: 20_000 // half the frames, nearly twice the data: about 3× the detail per frame
         case .smoother: 8_000 // less to send: fewer stalls on busy Wi-Fi
         }
+        return base * PhoneFrameRate.current / 60
     }
 
     public var title: String {
@@ -222,10 +224,21 @@ public enum PhoneQuality: String, CaseIterable, Sendable {
 
     public var detail: String {
         switch self {
-        case .auto: "60 frames a second; detail follows your Wi-Fi."
-        case .sharper: "More detail, 30 frames a second. For reading and photos."
-        case .smoother: "60 frames a second with less detail. Best on busy Wi-Fi."
+        case .auto: "Detail follows your Wi-Fi."
+        case .sharper: "More detail at half the frame rate. For reading and photos."
+        case .smoother: "Less detail, so fewer stalls. Best on busy Wi-Fi."
         }
+    }
+}
+
+/// Settings → Phone apps → Frame rate: how many frames a second the window in use aims for.
+/// Above 60 the phone draws its windows faster too (Android 14 and later); it needs good Wi-Fi.
+public enum PhoneFrameRate {
+    public static let key = "PhoneApps.fps"
+    public static let choices = [60, 90, 120]
+    public static var current: Int {
+        let stored = UserDefaults.standard.integer(forKey: key)
+        return choices.contains(stored) ? stored : 60
     }
 }
 

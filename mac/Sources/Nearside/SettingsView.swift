@@ -16,6 +16,7 @@ struct SettingsView: View {
     @AppStorage("PhoneApps.motion") private var phoneAppsMotion = "smooth"
     @AppStorage("PhoneApps.notificationClick") private var notificationClick = "phone"
     @AppStorage(PhoneQuality.key) private var phoneQuality = PhoneQuality.auto.rawValue
+    @AppStorage(PhoneFrameRate.key) private var phoneFrameRate = 60
     @AppStorage(PhoneSound.key) private var phoneSound = "mac"
     @AppStorage(PhoneSound.microphoneKey) private var phoneMicrophone = true
     @AppStorage(Webcam.frontKey) private var webcamFront = false
@@ -110,6 +111,14 @@ struct SettingsView: View {
                     } label: {
                         Text("Quality")
                         Text((PhoneQuality(rawValue: phoneQuality) ?? .auto).detail + " For windows opened from now on.")
+                    }
+                    Picker(selection: $phoneFrameRate) {
+                        ForEach(PhoneFrameRate.choices, id: \.self) { Text("\($0) fps").tag($0) }
+                    } label: {
+                        Text("Frame rate")
+                        Text(phoneFrameRate > 60
+                             ? "Smoother scrolling on a fast screen; needs good Wi-Fi and Android 14 or later. For windows opened from now on."
+                             : "For windows opened from now on.")
                     }
                     Picker(selection: $phoneSound) {
                         Text("On this Mac").tag("mac")

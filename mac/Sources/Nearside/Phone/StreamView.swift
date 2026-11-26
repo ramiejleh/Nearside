@@ -319,8 +319,9 @@ final class StreamView: NSView {
         renderer.stopTicking()
         guard window != nil else { return }
         let link = displayLink(target: self, selector: #selector(refresh(_:)))
-        // The stream's rate: a ProMotion screen needn't run at 120 Hz for it.
-        link.preferredFrameRateRange = CAFrameRateRange(minimum: 30, maximum: 60, preferred: 60)
+        // The stream's rate (the frame-rate setting): a ProMotion screen needn't run faster for it.
+        let rate = Float(PhoneFrameRate.current)
+        link.preferredFrameRateRange = CAFrameRateRange(minimum: 30, maximum: rate, preferred: rate)
         link.add(to: .main, forMode: .common)
         displayLink = link
         renderer.onWantsTicks = { [weak self] in

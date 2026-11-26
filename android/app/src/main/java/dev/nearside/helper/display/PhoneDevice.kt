@@ -106,8 +106,11 @@ class PhoneDevice private constructor(private val device: Any, val deviceId: Int
         Log.d("virtual device $deviceId closed")
     }
 
-    fun createDisplay(name: String, w: Int, h: Int, dpi: Int, surface: Surface, flags: Int): VirtualDisplay? = runCatching {
-        val config = VirtualDisplayConfig.Builder(name, w, h, dpi).setSurface(surface).setFlags(flags).build()
+    /** [refreshRate]: asked for only above 60 (Android 14+); null leaves the display's default. */
+    fun createDisplay(name: String, w: Int, h: Int, dpi: Int, surface: Surface, flags: Int, refreshRate: Float? = null): VirtualDisplay? = runCatching {
+        val builder = VirtualDisplayConfig.Builder(name, w, h, dpi).setSurface(surface).setFlags(flags)
+        if (refreshRate != null && android.os.Build.VERSION.SDK_INT >= 34) builder.setRequestedRefreshRate(refreshRate)
+        val config = builder.build()
         call(device, "createVirtualDisplay", config, executor, null) as VirtualDisplay
     }.onFailure { Log.d("virtual device display failed: ${it.cause ?: it}") }.getOrNull()
 

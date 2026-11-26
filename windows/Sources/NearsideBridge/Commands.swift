@@ -151,6 +151,8 @@ enum Commands {
             }
         } else if key == "historyLimit", let limit = value as? Int, limit > 0 {
             engine.historyLimit = limit
+        } else if key == "frameRate", let fps = value as? Int, PhoneFrameRate.choices.contains(fps) {
+            UserDefaults.standard.set(fps, forKey: PhoneFrameRate.key) // windows opened from now on
         }
     }
 }

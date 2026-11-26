@@ -8,6 +8,8 @@ import android.app.ActivityOptions
 import android.content.ComponentName
 import android.content.Intent
 import android.hardware.display.VirtualDisplay
+import android.hardware.display.VirtualDisplayConfig
+import android.os.Build
 import android.media.MediaCodec
 import android.media.MediaCodecInfo
 import android.media.MediaFormat
@@ -98,11 +100,20 @@ class DisplaySession(
         device = PhoneDevice.create("Nearside ${id.take(8)}")
         // No requested refresh rate: with one, Android's frame-rate heuristics treat the display
         // like a phone screen and drop it to ~25 fps whenever nobody touches it (video stuttered
-        // unless you scrolled); without, it composes every frame the app draws.
-        display = device?.createDisplay("nearside-$id", w, h, dpi, surface, FLAGS)
+        // unless you scrolled); without, it composes every frame the app draws. Only above 60 fps
+        // (the desktop's frame-rate setting) is one asked for: else apps draw at 60 (Android 14+).
+        val rate = if (fps > 60 && Build.VERSION.SDK_INT >= 34) fps.toFloat() else null
+        display = device?.createDisplay("nearside-$id", w, h, dpi, surface, FLAGS, rate)
             ?: run { device?.close(); device = null; null }
-            ?: Hidden.displayManager.createVirtualDisplay("nearside-$id", w, h, dpi, surface, FLAGS)
-        Log.d("display session $id: display $displayId ${w}x$h@$dpi for $target${device?.let { " (virtual device ${it.deviceId})" } ?: ""}")
+            ?: if (rate != null && Build.VERSION.SDK_INT >= 34) {
+                Hidden.displayManager.createVirtualDisplay(
+                    VirtualDisplayConfig.Builder("nearside-$id", w, h, dpi).setSurface(surface).setFlags(FLAGS)
+                        .setRequestedRefreshRate(rate).build(), null, null)
+            } else {
+                Hidden.displayManager.createVirtualDisplay("nearside-$id", w, h, dpi, surface, FLAGS)
+            }
+        Log.d("display session $id: display $displayId ${w}x$h@$dpi for $target${device?.let { " (virtual device ${it.deviceId})" } ?: ""}" +
+            (rate?.let { ", asked for $it Hz, has ${display?.display?.refreshRate} Hz" } ?: ""))
         displays.add(displayId)
         awake = Hidden.keepAwake(displayId, "Nearside:display-$id")
         // Before the launch, so the app lays out with them from the start.

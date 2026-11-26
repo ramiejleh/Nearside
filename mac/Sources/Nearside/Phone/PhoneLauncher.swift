@@ -79,6 +79,7 @@ final class PhoneLauncher: NSObject, NSWindowDelegate {
             PhoneWindowManager.shared?.openPhoneWindow()
         }).tint(Theme.accent))
         host.translatesAutoresizingMaskIntoConstraints = false
+        host.safeAreaRegions = [] // the hidden title bar's room isn't kept above the search field
         effect.addSubview(host)
         NSLayoutConstraint.activate([
             host.leadingAnchor.constraint(equalTo: effect.leadingAnchor),

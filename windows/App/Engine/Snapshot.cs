@@ -60,6 +60,7 @@ public sealed record Settings
     public bool RingHere { get; init; }
     public int HistoryLimit { get; init; }
     public bool LowBatteryAlert { get; init; }
+    public int FrameRate { get; init; } = 60;
 }
 
 public sealed record PhotosView

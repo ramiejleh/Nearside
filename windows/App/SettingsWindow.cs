@@ -33,6 +33,8 @@ public sealed class SettingsWindow : Window
     };
     private readonly ComboBox historyLimit = new() { MinWidth = 130 };
     private readonly ComboBox hello = new() { MinWidth = 220 };
+    private readonly ComboBox frameRate = new() { MinWidth = 130 };
+    private static readonly int[] FrameRates = [60, 90, 120];
     private readonly ComboBox cameraSide = new() { MinWidth = 130, Items = { "Back", "Front" } };
     private static readonly string[] HelloModes = ["Never", "After this PC wakes or unlocks", "Every time an app opens"];
     private readonly Choice startup = new()
@@ -92,6 +94,10 @@ public sealed class SettingsWindow : Window
             var limit = Limits[Math.Max(0, historyLimit.SelectedIndex)];
             if (limit != EngineHost.Current.Settings.HistoryLimit) EngineHost.Command("set", new { key = "historyLimit", value = limit });
         };
+        foreach (var fps in FrameRates) frameRate.Items.Add($"{fps} fps");
+        frameRate.SelectedIndex = Math.Max(0, Array.IndexOf(FrameRates, EngineHost.Current.Settings.FrameRate));
+        frameRate.SelectionChanged += (_, _) =>
+            EngineHost.Command("set", new { key = "frameRate", value = FrameRates[Math.Max(0, frameRate.SelectedIndex)] });
         cameraSide.SelectedIndex = Video.CameraFeed.Front ? 1 : 0;
         cameraSide.SelectionChanged += (_, _) => Video.CameraFeed.Front = cameraSide.SelectedIndex == 1;
         foreach (var mode in HelloModes) hello.Items.Add(mode);
@@ -137,6 +143,7 @@ public sealed class SettingsWindow : Window
         page.Children.Add(Row("Ask for Windows Hello", "Phone apps work while your phone is locked, so this PC asks before showing them.", hello));
         page.Children.Add(Row("Open the launcher", "From anywhere: Ctrl+Alt+N.", new TextBlock()));
         page.Children.Add(startMenu);
+        page.Children.Add(Row("Frame rate", "Above 60, scrolling is smoother on a fast screen; it needs good Wi-Fi and Android 14 or later. For windows opened from now on.", frameRate));
         page.Children.Add(Header("Phone camera"));
         page.Children.Add(Row("Camera", "Apps on this PC can use your phone as a webcam: choose \u201CNearside Camera\u201D. The back camera is the better one; this takes effect the next time an app starts it.", cameraSide));
         page.Children.Add(Header("Clipboard"));
