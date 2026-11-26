@@ -34,6 +34,7 @@ public sealed class SettingsWindow : Window
     private readonly ComboBox historyLimit = new() { MinWidth = 130 };
     private readonly ComboBox hello = new() { MinWidth = 220 };
     private readonly ComboBox frameRate = new() { MinWidth = 130 };
+    private readonly NotificationApps notificationApps = new();
     private static readonly int[] FrameRates = [60, 90, 120];
     private readonly ComboBox cameraSide = new() { MinWidth = 130, Items = { "Back", "Front" } };
     private static readonly string[] HelloModes = ["Never", "After this PC wakes or unlocks", "Every time an app opens"];
@@ -135,6 +136,7 @@ public sealed class SettingsWindow : Window
         page.Children.Add(new TextBlock { Text = "Settings", FontSize = 28, FontWeight = FontWeights.SemiBold, Margin = new Thickness(0, 0, 0, 8) });
         page.Children.Add(Header("Notifications"));
         page.Children.Add(mirror);
+        page.Children.Add(notificationApps.Root);
         page.Children.Add(Header("Photos"));
         page.Children.Add(recentPhotos);
         page.Children.Add(screenshots);
@@ -162,7 +164,7 @@ public sealed class SettingsWindow : Window
         Content = new ScrollViewer { Content = page };
 
         EngineHost.Changed += Render;
-        Closed += (_, _) => EngineHost.Changed -= Render;
+        Closed += (_, _) => { EngineHost.Changed -= Render; notificationApps.Detach(); };
         Render(EngineHost.Current);
     }
 
@@ -180,6 +182,7 @@ public sealed class SettingsWindow : Window
     private void Render(Snapshot s)
     {
         mirror.IsOn = s.Settings.MirrorNotifications;
+        notificationApps.Render(s);
         screenshots.IsOn = s.Settings.ScreenshotsToPC;
         recentPhotos.IsOn = s.Settings.RecentPhotos;
         screenshotsToPhone.IsOn = s.Settings.ScreenshotsToPhone;

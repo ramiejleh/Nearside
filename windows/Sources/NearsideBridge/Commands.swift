@@ -99,6 +99,8 @@ enum Commands {
         // The panel's and the phone window's notification lists.
         case "phoneNotifDismiss": if let key = c["key"] as? String { engine.dismissPhoneNotification(key) }
         case "phoneNotifClear": engine.clearPhoneNotifications()
+        case "setAppMuted":
+            if let package = c["package"] as? String { engine.setApp(package, muted: c["muted"] as? Bool ?? true) }
         case "phoneNotifOpen":
             if let key = c["key"] as? String, let note = engine.phoneNotifications.first(where: { $0.key == key }) {
                 engine.openPhoneNotification(note, here: c["here"] as? Bool ?? false)

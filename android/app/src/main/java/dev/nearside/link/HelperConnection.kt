@@ -77,6 +77,8 @@ object HelperConnection {
             "desktop" -> context?.let { dev.nearside.Desktop.set(it, msg.optString("kind")) }
             "ping" -> send(JSONObject().put("t", "pong").put("id", msg.opt("id")))
             "notif-dismiss" -> NotificationMirror.instance?.dismiss(msg.optString("key"))
+            "notif-filter" -> NotificationMirror.setMuted(
+                msg.optJSONArray("muted")?.let { a -> (0 until a.length()).map { a.optString(it) }.filter { it.isNotEmpty() }.toSet() }.orEmpty())
             "file-received" -> context?.let { FileNotifications.received(it, msg.optString("name")) }
             "screenshot-received" -> context?.let { FileNotifications.screenshotReceived(it, msg.optString("name")) }
             "screenshot-sent" -> context?.let { FileNotifications.screenshotSent(it, msg.optString("name")) }

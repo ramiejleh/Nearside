@@ -166,6 +166,32 @@ public final class SyncEngine {
         }
     }
 
+    /// Phone apps whose notifications this computer never shows: the phone doesn't send them at
+    /// all (and anything that slips through is dropped here). Calls still ring. Per computer.
+    public private(set) var mutedApps: Set<String>
+    /// Apps that have sent notifications here (package → name), for Settings' list.
+    public private(set) var notifyingApps: [String: String]
+
+    public func setApp(_ package: String, muted: Bool) {
+        guard !package.isEmpty, mutedApps.contains(package) != muted else { return }
+        if muted { mutedApps.insert(package) } else { mutedApps.remove(package) }
+        defaults.set(Array(mutedApps).sorted(), forKey: "mutedNotificationApps")
+        if muted {
+            for note in phoneNotifications where note.package == package {
+                notifications.remove(key: note.key)
+                snooze.drop(note.key)
+            }
+            phoneNotifications.removeAll { $0.package == package }
+        }
+        sendNotificationFilter()
+    }
+
+    /// The muted apps to the phone app (on each link; it keeps the last list it was given).
+    private func sendNotificationFilter() {
+        guard state == .connected else { return }
+        link.send(["t": "notif-filter", "muted": Array(mutedApps).sorted()])
+    }
+
     /// Phone notifications muted (not shown here) until this; `.distantFuture` until turned back on.
     public var notificationsMutedUntil: Date? { snooze.isOn() ? snooze.until : nil }
     private var snooze = NotificationSnooze()
@@ -250,6 +276,8 @@ public final class SyncEngine {
         history = ClipHistory.load(from: Paths.history, limit: limit)
         phoneName = defaults.string(forKey: "phoneName") ?? "Phone"
         mirrorNotifications = defaults.object(forKey: "mirrorNotifications") as? Bool ?? true
+        mutedApps = Set(defaults.stringArray(forKey: "mutedNotificationApps") ?? [])
+        notifyingApps = defaults.dictionary(forKey: "notifyingApps") as? [String: String] ?? [:]
         if let until = defaults.object(forKey: "notificationsMutedUntil") as? Double {
             snooze = NotificationSnooze(until: Date(timeIntervalSince1970: until))
         }
@@ -512,6 +540,7 @@ public final class SyncEngine {
             inUseOn = nil // the phone is ours again
             // On every connection, so a setting changed while the phone was away reaches it.
             applyPhotoAccess()
+            sendNotificationFilter() // this computer's muted apps (the phone keeps the last list)
             guard !grantsApplied else {
                 // Texts may have changed while the phone was away (its observer only reports to a Mac).
                 if textMessages, messages.isOpen { messages.refresh() }
@@ -532,6 +561,7 @@ public final class SyncEngine {
             receiveFile(message)
         case "app":
             appLinked = message["linked"] as? Bool ?? false
+            if appLinked { sendNotificationFilter() }
             // Calls are kept while the app relinks: its catch-up ("notif-active") prunes ended ones.
             if appLinked { photos.linked() } else { phoneStatus = nil; photos.connectionLost() }
         case "photos", "photo-thumb":
@@ -569,6 +599,12 @@ public final class SyncEngine {
             onArrival?(item)
         case "notif":
             guard mirrorNotifications, !demoNotifications, let key = message["key"] as? String else { return }
+            let package = message["pkg"] as? String ?? ""
+            if mutedApps.contains(package) { return }
+            if let app = message["app"] as? String, !package.isEmpty, notifyingApps[package] != app, notifyingApps.count < 500 {
+                notifyingApps[package] = app
+                defaults.set(notifyingApps, forKey: "notifyingApps")
+            }
             let actions: [PhoneNotification.Action] = (message["actions"] as? [[String: Any]] ?? []).compactMap { action in
                 guard let title = action["title"] as? String else { return nil }
                 return .init(title: title, isReply: action["reply"] as? Bool ?? false)

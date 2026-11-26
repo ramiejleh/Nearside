@@ -32,6 +32,8 @@ internal static class Demo
                 new("5", "+45 12 34 56 78", true, Ago(1500)),
             ],
             Unseen = ["1"],
+            NotifyingApps = new() { ["com.example.chat"] = "Chat", ["com.example.calendar"] = "Calendar", ["com.example.delivery"] = "Parcels", ["com.example.news"] = "Daily News" },
+            MutedApps = ["com.example.news"],
             Notifications =
             [
                 new("n1", "com.example.chat", "Chat", "Kim", "Running ten minutes late, save me a seat!", Ago(2),

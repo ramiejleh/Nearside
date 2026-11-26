@@ -87,8 +87,23 @@ internal sealed class NotificationList
         ToolTipService.SetToolTip(dismiss, "Dismiss");
         Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(dismiss, $"Dismiss {note.App} notification");
         dismiss.Click += (_, _) => EngineHost.Command("phoneNotifDismiss", new { key = note.Key });
-        Grid.SetColumn(dismiss, 2);
-        top.Children.Add(dismiss);
+        var buttons = new StackPanel { Orientation = Orientation.Horizontal };
+        if (note.Package.Length > 0)
+        {
+            var mute = new MenuFlyoutItem { Text = $"Mute notifications from {note.App}", Icon = new FontIcon { Glyph = "\uE7ED" } };
+            mute.Click += (_, _) => EngineHost.Command("setAppMuted", new { package = note.Package, muted = true });
+            var more = new Button
+            {
+                Content = new FontIcon { Glyph = "\uE712", FontSize = 11 }, Padding = new Thickness(6), Style = (Style)Application.Current.Resources["SubtleButtonStyle"],
+                Flyout = new MenuFlyout { Items = { mute } },
+            };
+            ToolTipService.SetToolTip(more, "More");
+            Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(more, $"More for {note.App} notification");
+            buttons.Children.Add(more);
+        }
+        buttons.Children.Add(dismiss);
+        Grid.SetColumn(buttons, 2);
+        top.Children.Add(buttons);
         body.Children.Add(top);
 
         // Title and text: click to open it on the phone.

@@ -135,6 +135,9 @@ on PC**) opens a notification's app in a window, right where the notification po
 panel's Notifications tab lists what's on the phone now.
 - **Mute** them from the bell in the panel, for 1 to 24 hours or until you turn them back on.
   When it ends, what's still on the phone appears.
+- **Choose the apps.** Settings → Notifications → Apps has a switch per phone app, or use **Mute
+  notifications from…** on a notification. A muted app's notifications never leave the phone for
+  that computer (each computer has its own list); its calls still ring.
 - **While the phone is away** they're cleared from the computer, and come back when it
   reconnects. After a minute away, its apps also leave Spotlight, Applications or the Start
   menu until it's back.

@@ -135,11 +135,24 @@ struct NotificationCard: View {
         .background(Color.primary.opacity(hovering ? 0.14 : 0.1), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
         .overlay(alignment: .topTrailing) {
             if hovering {
-                Button { dismiss() } label: {
-                    Image(systemName: "xmark.circle.fill").font(.system(size: 16)).foregroundStyle(Color.primary.opacity(0.7))
+                HStack(spacing: 4) {
+                    if !note.package.isEmpty {
+                        Menu {
+                            Button("Mute Notifications from \(note.app)") { mute() }
+                        } label: {
+                            Image(systemName: "ellipsis.circle.fill").font(.system(size: 16)).foregroundStyle(Color.primary.opacity(0.7))
+                        }
+                        .menuStyle(.borderlessButton)
+                        .menuIndicator(.hidden)
+                        .fixedSize()
+                        .help("More")
+                    }
+                    Button { dismiss() } label: {
+                        Image(systemName: "xmark.circle.fill").font(.system(size: 16)).foregroundStyle(Color.primary.opacity(0.7))
+                    }
+                    .buttonStyle(.plain)
+                    .help("Dismiss")
                 }
-                .buttonStyle(.plain)
-                .help("Dismiss")
                 .padding(8)
             }
         }
@@ -151,10 +164,15 @@ struct NotificationCard: View {
             if abs(value.translation.width) > 90 { dismiss() } else { withAnimation(.spring(duration: 0.25)) { offset = 0 } }
         })
         .onHover { hovering = $0 }
+        .contextMenu {
+            if !note.package.isEmpty { Button("Mute Notifications from \(note.app)") { mute() } }
+            Button("Dismiss") { dismiss() }
+        }
         .accessibilityElement(children: .contain)
         .accessibilityLabel("\(note.app): \(note.title). \(note.text)")
         .accessibilityAction(named: "Open") { open() }
         .accessibilityAction(named: "Dismiss") { dismiss() }
+        .accessibilityAction(named: "Mute notifications from \(note.app)") { mute() }
     }
 
     private var actions: some View {
@@ -202,6 +220,11 @@ struct NotificationCard: View {
         engine.runPhoneNotificationAction(note.key, index: replying, text: reply)
         self.replying = nil
         reply = ""
+    }
+
+    /// Never shows this app's notifications on this computer again (Settings turns it back on).
+    private func mute() {
+        withAnimation(.easeOut(duration: 0.2)) { engine.setApp(note.package, muted: true) }
     }
 
     private func dismiss() {

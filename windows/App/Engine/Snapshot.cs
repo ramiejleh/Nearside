@@ -21,6 +21,9 @@ public sealed record Snapshot
     public bool PhoneAway { get; init; }
     /// The phone's current notifications, newest first (empty while it isn't connected).
     public List<PhoneNote> Notifications { get; init; } = [];
+    /// Apps whose notifications this PC never shows (packages), and those that have sent some (package → name).
+    public List<string> MutedApps { get; init; } = [];
+    public Dictionary<string, string> NotifyingApps { get; init; } = [];
     public string? QrPayload { get; init; }
     public bool? ClipboardToastHidden { get; init; }
     public PhoneStatus? PhoneStatus { get; init; }

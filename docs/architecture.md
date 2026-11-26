@@ -89,6 +89,9 @@ On connect the phone catches the Mac up: the newest three as banners, older ones
 The panel's Notifications tab lists the same set. **Muting** (1 to 24 hours, or until turned
 back on) is the computer's alone: notifications still arrive and fill the list, but aren't
 shown; when it ends, the ones still on the phone are shown, the newest three as banners.
+**Muted apps** are per computer: the computer sends its list (`notif-filter`) on each link and
+whenever it changes, and the phone doesn't send those apps' notifications at all (calls still
+come); the computer drops any that arrive anyway.
 
 **While the phone is away** the computer shows nothing of it: the panel offers only Settings
 and Connect (when another computer has the phone), the clipboard history is hidden and copies

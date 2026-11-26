@@ -114,6 +114,7 @@ Out of scope: an attacker who has already unlocked the Mac as you, or who has ro
   only while the Mac asks: the panel is open, or the screenshot hand-off is on. The Mac keeps
   thumbnails in memory only. Full files are pulled when the user takes one, into a cache emptied
   at launch, and only from plain paths under `/sdcard/`.
+- Muted apps' notifications aren't sent to that computer at all: the phone filters them.
 - Phone status (battery, signal bars, network type, Wi-Fi on or off) goes only to the
   connected Mac. `READ_PHONE_STATE` is used for the network type alone. Call state and the
   caller's number are read by the helper only while a Mac is connected, for the call card.

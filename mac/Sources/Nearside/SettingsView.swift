@@ -36,6 +36,7 @@ struct SettingsView: View {
                         Text("Mirror phone notifications")
                         Text("Your \(engine.phoneName)'s notifications appear on this Mac. Dismissing one here dismisses it on the phone.")
                     }
+                    NotificationApps(engine: engine)
                     Picker(selection: $notificationClick) {
                         Text("On your phone").tag("phone")
                         Text("On this Mac").tag("mac")

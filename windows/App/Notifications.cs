@@ -173,6 +173,12 @@ internal sealed class Notifications
                 builder.AddButton(new AppNotificationButton("Open on PC").AddArgument("key", key).AddArgument("here", "1")
                     .AddArgument("package", package).AddArgument("app", app));
             }
+            if (package.Length > 0)
+            {
+                // In the notification's right-click menu, not among its buttons.
+                builder.AddButton(new AppNotificationButton($"Mute notifications from {app}").AddArgument("key", key)
+                    .AddArgument("mute", package).SetContextMenuPlacement());
+            }
             if (quiet) builder.MuteAudio();
             var notification = builder.BuildNotification();
             notification.Tag = Tag(key);
@@ -266,7 +272,11 @@ internal sealed class Notifications
         // The engine treats "file:" keys as files it saved (a click reveals them): only our own
         // notifications may carry one.
         if (key.StartsWith("file:", StringComparison.Ordinal) && !args.ContainsKey("local")) return;
-        if (args.ContainsKey("here"))
+        if (args.TryGetValue("mute", out var mutedPackage))
+        {
+            EngineHost.Command("setAppMuted", new { package = mutedPackage, muted = true });
+        }
+        else if (args.ContainsKey("here"))
         {
             EngineHost.Command("notifOpenHere", new { key, package = args.GetValueOrDefault("package"), app = args.GetValueOrDefault("app") });
         }

@@ -31,6 +31,8 @@ enum Snapshot {
         ]
         if let inUseOn = engine.inUseOn { s["inUseOn"] = inUseOn }
         s["phoneAway"] = engine.phoneAway
+        s["mutedApps"] = Array(engine.mutedApps).sorted()
+        s["notifyingApps"] = engine.notifyingApps
         s["notifications"] = engine.phoneNotifications.map { n -> [String: Any] in
             ["key": n.key, "package": n.package, "app": n.app, "title": n.title, "text": n.text, "posted": millis(n.posted),
              "actions": n.actions.map { ["title": $0.title, "reply": $0.isReply] }]

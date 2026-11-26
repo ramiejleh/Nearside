@@ -25,6 +25,7 @@ import java.io.ByteArrayOutputStream
  *   → {"t":"notif-removed","key"}          dismissed or opened on the phone
  *   → {"t":"notif-active","keys":[…]}      after catch-up: what's still showing
  *   ← {"t":"notif-dismiss","key"}          dismissed on the Mac
+ *   ← {"t":"notif-filter","muted":[pkg…]}  apps the computer doesn't want (never sent to it; calls still are)
  *   ← {"t":"notif-action","key","i","text"?}  button (or reply with text) clicked on the Mac
  *   ← {"t":"notif-open","key"}             notification clicked on the Mac: open it here
  *   ← {"t":"notif-open","key","display"}   … or in a Mac window (that window's display, via the helper)
@@ -49,6 +50,19 @@ class NotificationMirror : NotificationListenerService() {
             "decline" to "android.declineIntent",
             "hangup" to "android.hangUpIntent",
         )
+
+        /**
+         * Apps whose notifications the computer doesn't want: they aren't sent at all (calls still
+         * are). Kept across connections; each computer sends its own list right after connecting.
+         */
+        @Volatile private var muted: Set<String> = emptySet()
+
+        /** A new list from the computer: what's now muted is taken back, what's unmuted is sent. */
+        fun setMuted(packages: Set<String>) {
+            val mirror = instance
+            if (mirror == null) { muted = packages; return }
+            mirror.main.post { mirror.applyMuted(packages) }
+        }
 
         /** Called (on any thread) when the Mac connects: send what it missed. */
         fun macConnected() {
@@ -107,6 +121,7 @@ class NotificationMirror : NotificationListenerService() {
         val n = sbn.notification
         if (sbn.packageName == packageName) return false
         if (isCall(n)) return mirrorCall(sbn)
+        if (sbn.packageName in muted) return false
         // Ongoing (music, navigation, foreground services) and group summaries aren't alerts.
         if (sbn.isOngoing || n.flags and Notification.FLAG_GROUP_SUMMARY != 0) return false
         val extras = n.extras
@@ -163,6 +178,25 @@ class NotificationMirror : NotificationListenerService() {
         }
         val keys = JSONArray().apply { sorted.forEach { put(it.key) } }
         HelperConnection.send(JSONObject().put("t", "notif-active").put("keys", keys))
+    }
+
+    private fun applyMuted(packages: Set<String>) {
+        val before = muted
+        muted = packages
+        if (packages == before) return
+        val showing = runCatching { activeNotifications }.getOrNull().orEmpty()
+        // Newly muted: gone from the computer.
+        for (sbn in showing) {
+            if (sbn.packageName in packages && sbn.packageName !in before && delivered.remove(sbn.key) != null) {
+                HelperConnection.send(JSONObject().put("t", "notif-removed").put("key", sbn.key))
+            }
+        }
+        // Unmuted: what they have showing now goes over, quietly.
+        if (HelperConnection.macConnected) {
+            for (sbn in showing) {
+                if (sbn.packageName in before && sbn.packageName !in packages) mirror(sbn, quiet = true)
+            }
+        }
     }
 
     /** Dismiss on the phone because it was dismissed on the Mac. */
