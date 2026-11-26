@@ -173,7 +173,7 @@ On Windows the phone window's toolbar has Home, Recents, Notifications and the s
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/images/architecture-dark.png">
-  <img src="docs/images/architecture-light.png" alt="How Nearside works: the Mac app with its built-in adb client talks over Wi-Fi with TLS 1.3 or a USB cable to a helper and the Nearside app on the phone. Clipboard, notifications, text messages and files travel both ways; app windows send picture and sound to the Mac and receive touch, trackpad and keys from it.">
+  <img src="docs/images/architecture-light.png" alt="How Nearside works: the Mac or PC app with its built-in adb client talks over Wi-Fi with TLS 1.3 or a USB cable to a helper and the Nearside app on the phone. Clipboard, notifications, text messages and files travel both ways; app windows send picture and sound to the computer and receive touch, mouse and keys from it.">
 </picture>
 
 Android doesn't let ordinary apps read the clipboard in the background, or show other apps'

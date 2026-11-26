@@ -9,7 +9,7 @@ MAC_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 REPO_DIR="$(dirname "$MAC_DIR")"
 APK="${APK:-$REPO_DIR/android/app/build/outputs/apk/debug/app-debug.apk}"
 APP="$MAC_DIR/build/Nearside.app"
-VERSION="${VERSION:-0.1.0}"
+VERSION="${VERSION:-0.3.0}"
 # The build number Sparkle compares: the commit count, as the phone app's versionCode.
 BUILD="$(git -C "$REPO_DIR" rev-list --count HEAD 2>/dev/null || echo 1)"
 
