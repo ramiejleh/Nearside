@@ -188,7 +188,7 @@ struct NotificationCard: View {
                 .foregroundStyle(Color.primary)
                 .lineLimit(1)
                 .padding(.horizontal, 10).padding(.vertical, 5)
-                .background(Color.primary.opacity(0.14), in: Capsule())
+                .background(Color.primary.opacity(0.14), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
             }
         }
     }
@@ -200,7 +200,7 @@ struct NotificationCard: View {
                 .font(.system(size: 12.5))
                 .foregroundStyle(Color.primary)
                 .padding(.horizontal, 10).padding(.vertical, 6)
-                .background(Color.primary.opacity(0.12), in: Capsule())
+                .background(Color.primary.opacity(0.12), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
                 .focused($replyFocused)
                 .onSubmit(send)
                 .onExitCommand { replying = nil; reply = "" }

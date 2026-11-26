@@ -118,7 +118,7 @@ struct PanelView: View {
     }
 }
 
-/// A pill button in the panel's second header row.
+/// A button in the panel's second header row.
 private struct HeaderButton: View {
     let title: String
     let symbol: String
@@ -136,8 +136,9 @@ private struct HeaderButton: View {
             }
             .frame(maxWidth: .infinity)
             .padding(.vertical, 5)
-            .background(Color.primary.opacity(selected ? 0.14 : hovering && enabled ? 0.1 : 0.06), in: Capsule())
-            .contentShape(Capsule())
+            .background(Color.primary.opacity(selected ? 0.14 : hovering && enabled ? 0.1 : 0.06),
+                        in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+            .contentShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
         }
         .buttonStyle(.plain)
         .foregroundStyle(selected ? .primary : .secondary)
@@ -310,64 +311,93 @@ private struct AllOff: View {
     }
 }
 
-/// Notifications | Clipboard, under the header: an icon and a count on each; the chosen one
-/// raised, like a segmented control.
+/// Notifications | Clipboard, under the header: an icon and a count on each.
 private struct PanelTabs: View {
     @Binding var tab: String
     let notifications: Int
     let newClips: Int
-    @Namespace private var selection
-    /// The chosen tab's fill: white on light, a lifted grey on dark (raised, not sunk).
-    private static let raised = Color(nsColor: NSColor(name: nil) { appearance in
-        appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua ? NSColor(white: 1, alpha: 0.16) : .white
-    })
 
     var body: some View {
-        HStack(spacing: 2) {
-            item(.notifications, "Notifications", symbol: "bell", count: notifications, isNew: false)
-            item(.clipboard, "Clipboard", symbol: "doc.on.clipboard", count: newClips, isNew: true)
-        }
-        .padding(3)
-        .background(Color.primary.opacity(0.07), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        SegmentedTabs(selection: $tab, segments: [
+            .init(value: PanelTab.notifications.rawValue, title: "Notifications", symbol: "bell",
+                  badge: notifications > 0 ? "\(notifications)" : nil),
+            .init(value: PanelTab.clipboard.rawValue, title: "Clipboard", symbol: "doc.on.clipboard",
+                  badge: newClips > 0 ? "\(newClips) new" : nil, accentBadge: true),
+        ])
         .padding(.horizontal, 14)
         .padding(.vertical, 8)
     }
+}
 
-    private func item(_ which: PanelTab, _ title: String, symbol: String, count: Int, isNew: Bool) -> some View {
-        let selected = tab == which.rawValue
+/// The panel's segmented control: the chosen segment raised on a sunk track. Used for the
+/// panel's tabs and the clipboard's All | Phone | Mac, so both look the same.
+struct SegmentedTabs<Value: Hashable>: View {
+    struct Segment {
+        let value: Value
+        let title: String
+        var symbol: String? = nil
+        var badge: String? = nil
+        var accentBadge = false
+    }
+
+    @Binding var selection: Value
+    let segments: [Segment]
+    /// Smaller type and padding, for a control beside a search field.
+    var compact = false
+    @Namespace private var namespace
+    /// The chosen segment's fill: white on light, a lifted grey on dark (raised, not sunk).
+    private static var raised: Color {
+        Color(nsColor: NSColor(name: nil) { appearance in
+            appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua ? NSColor(white: 1, alpha: 0.16) : .white
+        })
+    }
+
+    var body: some View {
+        HStack(spacing: 2) {
+            ForEach(segments.indices, id: \.self) { item(segments[$0]) }
+        }
+        .padding(compact ? 2 : 3)
+        .background(Color.primary.opacity(0.07), in: RoundedRectangle(cornerRadius: compact ? 8 : 10, style: .continuous))
+    }
+
+    private func item(_ segment: Segment) -> some View {
+        let selected = selection == segment.value
         return Button {
-            withAnimation(.snappy(duration: 0.22)) { tab = which.rawValue }
+            withAnimation(.snappy(duration: 0.22)) { selection = segment.value }
         } label: {
             HStack(spacing: 6) {
-                Image(systemName: selected ? "\(symbol).fill" : symbol)
-                    .font(.system(size: 12, weight: .medium))
-                    .frame(width: 16)
-                Text(title).font(.system(size: 12.5, weight: selected ? .semibold : .medium))
-                if count > 0 {
-                    Text(isNew ? "\(count) new" : "\(count)")
+                if let symbol = segment.symbol {
+                    Image(systemName: selected ? "\(symbol).fill" : symbol)
+                        .font(.system(size: 12, weight: .medium))
+                        .frame(width: 16)
+                }
+                Text(segment.title).font(.system(size: compact ? 11.5 : 12.5, weight: selected ? .semibold : .medium))
+                if let badge = segment.badge {
+                    Text(badge)
                         .font(.system(size: 10.5, weight: .semibold))
                         .monospacedDigit()
                         .padding(.horizontal, 6)
                         .padding(.vertical, 1.5)
-                        .foregroundStyle(isNew ? Theme.onAccent : Color.secondary)
-                        .background(isNew ? Theme.accent : Color.primary.opacity(0.1), in: Capsule())
+                        .foregroundStyle(segment.accentBadge ? Theme.onAccent : Color.secondary)
+                        .background(segment.accentBadge ? Theme.accent : Color.primary.opacity(0.1), in: Capsule())
                 }
             }
             .foregroundStyle(selected ? Color.primary : Color.secondary)
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 6)
+            .frame(maxWidth: compact ? nil : .infinity)
+            .padding(.horizontal, compact ? 9 : 0)
+            .padding(.vertical, compact ? 4 : 6)
             .background {
                 if selected {
-                    RoundedRectangle(cornerRadius: 7.5, style: .continuous)
+                    RoundedRectangle(cornerRadius: compact ? 6 : 7.5, style: .continuous)
                         .fill(Self.raised)
                         .shadow(color: .black.opacity(0.14), radius: 1.5, y: 0.5)
-                        .matchedGeometryEffect(id: "selected", in: selection)
+                        .matchedGeometryEffect(id: "selected", in: namespace)
                 }
             }
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .accessibilityLabel(count > 0 ? "\(title), \(isNew ? "\(count) new" : "\(count)")" : title)
+        .accessibilityLabel(segment.badge.map { "\(segment.title), \($0)" } ?? segment.title)
         .accessibilityAddTraits(selected ? .isSelected : [])
     }
 }

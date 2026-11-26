@@ -43,12 +43,10 @@ struct HistoryView: View {
                 .padding(.vertical, 6)
                 .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
 
-                Picker("", selection: $filter) {
-                    ForEach(Filter.allCases, id: \.self) { Text($0.rawValue).tag($0) }
-                }
-                .pickerStyle(.segmented)
-                .labelsHidden()
-                .fixedSize()
+                SegmentedTabs(selection: $filter,
+                              segments: Filter.allCases.map { .init(value: $0, title: $0.rawValue) },
+                              compact: true)
+                    .fixedSize()
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 10)
