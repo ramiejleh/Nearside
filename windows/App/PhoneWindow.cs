@@ -20,7 +20,8 @@ public sealed class PhoneWindow : Window
 {
     private static readonly Dictionary<long, PhoneWindow> Open = [];
     private static readonly Dictionary<nint, PhoneWindow> ByHandle = [];
-    private const double ToolbarHeight = 40;
+    /// The toolbar's width: a strip on the window's right, beside the picture (as on the Mac).
+    private const double ToolbarWidth = 44;
     private static readonly string[] Sizes = ["phone", "foldable", "tablet"];
 
     private readonly long id;
@@ -124,7 +125,7 @@ public sealed class PhoneWindow : Window
         view = new VideoView(panel);
         size = AppSettings.Get(SizeKey) is { } saved && Sizes.Contains(saved) ? saved : "phone";
 
-        toolbar = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4, Padding = new Thickness(6, 4, 6, 4), Height = ToolbarHeight };
+        toolbar = new StackPanel { Orientation = Orientation.Vertical, Spacing = 4, Padding = new Thickness(4, 8, 4, 8), Width = ToolbarWidth };
         // The phone window: the phone's own buttons, then sizes. An app's window: sizes and moving
         // it to the phone only (Esc is still Back; Back on an app's first screen would close it).
         if (package == null)
@@ -134,7 +135,7 @@ public sealed class PhoneWindow : Window
             toolbar.Children.Add(ToolButton("\uE7C4", "Recents", ToggleRecents));
             bellButton = ToolButton("\uEA8F", "Notifications", ToggleNotifications);
             toolbar.Children.Add(bellButton);
-            toolbar.Children.Add(new AppBarSeparator());
+            toolbar.Children.Add(Separator());
         }
         foreach (var (name, glyph, tip) in new[] { ("phone", "\uE8EA", "Phone size"), ("foldable", "\uE89A", "Foldable size"), ("tablet", "\uE70A", "Tablet size") })
         {
@@ -144,7 +145,7 @@ public sealed class PhoneWindow : Window
         }
         if (package != null)
         {
-            toolbar.Children.Add(new AppBarSeparator());
+            toolbar.Children.Add(Separator());
             toolbar.Children.Add(ToolButton("\uE8A7", "Open on the phone", () => Command("openOnPhone")));
         }
         ShowSize();
@@ -202,11 +203,11 @@ public sealed class PhoneWindow : Window
             if (paths.Count > 0) Command("share", new { paths });
         };
         var root = new Grid();
-        root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-        root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
-        root.Children.Add(toolbar);
-        Grid.SetRow(stage, 1);
+        root.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        root.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         root.Children.Add(stage);
+        Grid.SetColumn(toolbar, 1);
+        root.Children.Add(toolbar);
         Content = root;
         ShowOverlay("Opening…", busy: true);
 
@@ -281,7 +282,7 @@ public sealed class PhoneWindow : Window
                 && saved is >= 0.2 and <= 3) return saved;
             var area = DisplayArea.GetFromWindowId(AppWindow.Id, DisplayAreaFallback.Primary).WorkArea;
             double screenW = area.Width / Scale, screenH = area.Height / Scale;
-            var fit = Math.Min(1, Math.Min(screenW * 0.92 / shownWidthDp, (screenH * 0.9 - ToolbarHeight) / shownHeightDp));
+            var fit = Math.Min(1, Math.Min((screenW * 0.92 - ToolbarWidth) / shownWidthDp, screenH * 0.9 / shownHeightDp));
             return Math.Max(0.3, Math.Floor(fit * 20) / 20);
         }
     }
@@ -291,7 +292,7 @@ public sealed class PhoneWindow : Window
     {
         var scale = Scale;
         var zoom = Zoom;
-        var client = new Windows.Graphics.SizeInt32((int)(shownWidthDp * zoom * scale), (int)((shownHeightDp * zoom + ToolbarHeight) * scale));
+        var client = new Windows.Graphics.SizeInt32((int)((shownWidthDp * zoom + ToolbarWidth) * scale), (int)(shownHeightDp * zoom * scale));
         var position = AppWindow.Position;
         AppWindow.ResizeClient(client);
         if (!keepTop) return;
@@ -350,16 +351,16 @@ public sealed class PhoneWindow : Window
         Win32.GetWindowRect(hwnd, out var outer);
         Win32.GetClientRect(hwnd, out var inner);
         int chromeW = outer.right - outer.left - inner.right, chromeH = outer.bottom - outer.top - inner.bottom;
-        var toolbar = ToolbarHeight * Scale;
+        var toolbar = ToolbarWidth * Scale;
         double width = rect->right - rect->left - chromeW, height = rect->bottom - rect->top - chromeH;
         var ratio = shownHeightDp / shownWidthDp;
         if (edge is Win32.WMSZ_TOP or Win32.WMSZ_BOTTOM)
         {
-            width = Math.Max(1, height - toolbar) / ratio; // height leads: the width follows, to the right
+            width = height / ratio + toolbar; // height leads: the width follows, to the right
             rect->right = rect->left + (int)Math.Round(width) + chromeW;
             return;
         }
-        var newHeight = (int)Math.Round(width * ratio + toolbar) + chromeH;
+        var newHeight = (int)Math.Round(Math.Max(1, width - toolbar) * ratio) + chromeH;
         if (edge is Win32.WMSZ_TOPLEFT or Win32.WMSZ_TOPRIGHT) rect->top = rect->bottom - newHeight;
         else rect->bottom = rect->top + newHeight;
     }
@@ -367,7 +368,7 @@ public sealed class PhoneWindow : Window
     private void SaveZoom()
     {
         Win32.GetClientRect(hwnd, out var inner);
-        var zoom = inner.right / Scale / shownWidthDp;
+        var zoom = (inner.right / Scale - ToolbarWidth) / shownWidthDp;
         if (zoom is >= 0.2 and <= 3) AppSettings.Set(ZoomKey, zoom.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture));
     }
 
@@ -575,6 +576,13 @@ public sealed class PhoneWindow : Window
         json["c"] = name;
         Native.SessionCommand(id, json.ToJsonString());
     }
+
+    /// A short rule between groups of buttons in the toolbar.
+    private static Border Separator() => new()
+    {
+        Height = 1, Width = 24, Margin = new Thickness(0, 4, 0, 4), HorizontalAlignment = HorizontalAlignment.Center,
+        Background = (Brush)Application.Current.Resources["DividerStrokeColorDefaultBrush"],
+    };
 
     private static Button ToolButton(string glyph, string tip, Action action)
     {

@@ -25,7 +25,10 @@ internal sealed class NotificationApps
     /// The phone's apps (package → name) and icon files (package → path), from "apps" and "appIcons".
     private readonly Dictionary<string, string> phoneApps = [];
     private readonly Dictionary<string, string> idToPackage = [];
-    private readonly Dictionary<string, string> icons = [];
+    private readonly Dictionary<string, (string Path, bool Adaptive)> icons = [];
+    /// The phone's icons have started to come (or waited long enough): rows wait for them, so
+    /// they don't show one kind of icon and then switch to another.
+    private bool iconsReady;
     private bool open;
     private string shown = "";
 
@@ -85,6 +88,19 @@ internal sealed class NotificationApps
     {
         open = true;
         if (phoneApps.Count == 0) EngineHost.Command("listApps");
+        if (!iconsReady)
+        {
+            var wait = Page.DispatcherQueue.CreateTimer();
+            wait.Interval = TimeSpan.FromSeconds(2);
+            wait.IsRepeating = false;
+            wait.Tick += (_, _) =>
+            {
+                if (iconsReady) return;
+                iconsReady = true;
+                if (open) Render(EngineHost.Current, force: true);
+            };
+            wait.Start();
+        }
         show(true);
         Render(EngineHost.Current, force: true);
     }
@@ -114,8 +130,12 @@ internal sealed class NotificationApps
         {
             foreach (var icon in e.GetProperty("icons").EnumerateObject())
             {
-                if (idToPackage.TryGetValue(icon.Name, out var package)) icons.TryAdd(package, icon.Value.GetProperty("path").GetString() ?? "");
+                if (idToPackage.TryGetValue(icon.Name, out var package))
+                {
+                    icons.TryAdd(package, (icon.Value.GetProperty("path").GetString() ?? "", icon.Value.GetProperty("adaptive").GetBoolean()));
+                }
             }
+            iconsReady = true;
             if (open) Render(EngineHost.Current, force: true);
         }
     }
@@ -127,6 +147,14 @@ internal sealed class NotificationApps
             ? "Choose which apps' notifications show on this PC."
             : $"{s.MutedApps.Count} muted on this PC. Their calls still ring.";
         if (!open) return;
+        if (!iconsReady && s.Connected)
+        {
+            empty.Text = "Loading your phone's apps…";
+            empty.Visibility = Visibility.Visible;
+            list.Children.Clear();
+            shown = "";
+            return;
+        }
         var names = new Dictionary<string, string>(phoneApps);
         foreach (var (package, name) in s.NotifyingApps) names[package] = names.GetValueOrDefault(package) ?? name;
         foreach (var package in s.MutedApps) names.TryAdd(package, package);
@@ -158,10 +186,20 @@ internal sealed class NotificationApps
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        var path = icons.GetValueOrDefault(package) is { Length: > 0 } launcher && File.Exists(launcher) ? launcher : Notifications.IconFile(package);
-        UIElement icon = path != null
-            ? new Image { Source = new BitmapImage(new Uri(path)) { DecodePixelWidth = 48 }, Width = 24, Height = 24 }
-            : new Border { Width = 24, Height = 24, CornerRadius = new CornerRadius(6), Background = (Brush)Application.Current.Resources["SubtleFillColorSecondaryBrush"] };
+        // The launcher's icon (adaptive ones in the same rounded shape as the launcher shows them);
+        // the notification's only for an app the launcher doesn't list.
+        var icon = new Border { Width = 24, Height = 24, CornerRadius = new CornerRadius(6), Background = (Brush)Application.Current.Resources["SubtleFillColorSecondaryBrush"] };
+        string? path = null;
+        if (icons.TryGetValue(package, out var launcher) && File.Exists(launcher.Path))
+        {
+            path = launcher.Path;
+            if (!launcher.Adaptive) icon.CornerRadius = new CornerRadius(0);
+        }
+        else if (!phoneApps.ContainsKey(package))
+        {
+            path = Notifications.IconFile(package);
+        }
+        if (path != null) icon.Background = new ImageBrush { ImageSource = new BitmapImage(new Uri(path)) { DecodePixelWidth = 48 }, Stretch = Stretch.UniformToFill };
         grid.Children.Add(icon);
         var label = new TextBlock { Text = name, VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis };
         Grid.SetColumn(label, 1);
