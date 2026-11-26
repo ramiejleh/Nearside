@@ -44,6 +44,7 @@ final class PhoneWindowManager {
         // The phone gone a while: its apps leave Spotlight and Applications until it's back.
         engine.onPhoneAway = { [weak self] away in
             if away {
+                self?.launcher.hide()
                 PhoneSpotlight.remove()
                 PhoneAppLaunchers.removeAll()
                 NSLog("Nearside: phone away; its apps removed from Spotlight and Applications")
@@ -76,9 +77,16 @@ final class PhoneWindowManager {
     /// The keyboard-layout setting changed: every window tells the phone again.
     static let keyboardLayoutSettingChanged = Notification.Name("PhoneKeyboardLayoutSettingChanged")
 
-    func toggleLauncher() { launcher.toggle() }
+    /// The launcher only while the phone is connected (the shortcut does nothing otherwise, as on
+    /// Windows); hiding it always works.
+    func toggleLauncher() {
+        if launcher.isShown { launcher.hide() } else { showLauncher() }
+    }
 
-    func showLauncher() { launcher.show() }
+    func showLauncher() {
+        guard engine.state == .connected else { return }
+        launcher.show()
+    }
 
     func open(_ app: PhoneApp) {
         // One window per app: a second open brings the existing one forward.

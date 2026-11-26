@@ -35,7 +35,11 @@ public partial class App : Application
         tray = new TrayIcon(onSelect: TogglePanel, onSettings: OpenSettings, onQuit: Quit) { OnHotKey = OpenLauncher };
         if (Updates.Available) tray.OnCheckForUpdates = Updates.Check;
         tray.OnLink = OpenLink;
-        EngineHost.Changed += snapshot => tray.Update(snapshot);
+        EngineHost.Changed += snapshot =>
+        {
+            tray.Update(snapshot);
+            if (!snapshot.Connected) launcher?.Close(); // nothing of the phone's while it's out of reach
+        };
         SingleInstance.OnShowRequested(() => queue.TryEnqueue(() => panel.ShowNearTray(tray)));
         Log.Info($"started: version {Updates.Version}, build {(Updates.Build.Length > 0 ? Updates.Build : "dev")}");
 
