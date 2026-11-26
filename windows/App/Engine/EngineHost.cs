@@ -39,6 +39,9 @@ public static unsafe class EngineHost
     {
         queue = uiQueue;
         Native.Start(apkPath, &OnEvent);
+        // The engine's real state now, not the placeholder's "needsSetup": the first "changed"
+        // event arrives later, and launch decides from this whether setup should open.
+        Current = ReadSnapshot();
         var debug = Native.Debug();
         Log.Info($"engine thread: {Marshal.PtrToStringUTF8((nint)debug)}, UI thread {Environment.CurrentManagedThreadId}");
         Native.Free(debug);
