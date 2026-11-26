@@ -13,9 +13,13 @@ Open an issue with:
   the Mac app's (`log show --last 10m --predicate 'process == "Nearside"'`) or the Windows app's
   (`%LOCALAPPDATA%\Nearside\nearside.log`).
 
-Reports from phones other than the Pixel 9 Pro, and from real Windows PCs, are especially
-useful: phone apps in windows rely on Android internals that vary between versions and
-manufacturers.
+## Reporting a device
+
+Tried Nearside on a phone other than the Pixel 9 Pro? Fill in a
+[device report](https://github.com/ramiejleh/Nearside/issues/new?template=device_report.yml),
+whether it worked or not: it asks how each feature did, and becomes a row in the
+[device matrix](docs/devices.md). Phone apps in windows and calls rely on Android internals that
+vary between versions and manufacturers, so every phone tells us something new.
 
 ## Building
 

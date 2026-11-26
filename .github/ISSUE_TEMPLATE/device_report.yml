@@ -1,0 +1,113 @@
+name: Device report
+description: How Nearside did on your phone, for the device matrix (docs/devices.md). Works or not, it helps.
+title: "Device report: "
+labels: [device report]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for trying Nearside on your phone. Your answers become a row in the
+        [device matrix](https://github.com/ramiejleh/Nearside/blob/main/docs/devices.md). Pick
+        "Not tried" for anything you didn't get to.
+  - type: input
+    id: phone
+    attributes:
+      label: Phone
+      description: Make and model.
+      placeholder: Samsung Galaxy S24
+    validations:
+      required: true
+  - type: input
+    id: android
+    attributes:
+      label: Android version
+      description: Settings → About phone. The maker's version too, if it has one (One UI, HyperOS...).
+      placeholder: Android 15, One UI 7
+    validations:
+      required: true
+  - type: input
+    id: computer
+    attributes:
+      label: Computer
+      placeholder: MacBook Air M2, macOS 15.2 (or a PC with Windows 11 24H2, x64 or Arm)
+    validations:
+      required: true
+  - type: input
+    id: nearside
+    attributes:
+      label: Nearside version
+      description: Settings → General, at the bottom.
+      placeholder: 0.3.0
+  - type: dropdown
+    id: clipboard
+    attributes:
+      label: Clipboard, both ways
+      options: [Works, Partly, "No", Not tried]
+    validations:
+      required: true
+  - type: dropdown
+    id: notifications
+    attributes:
+      label: Notifications, with buttons and replies
+      options: [Works, Partly, "No", Not tried]
+    validations:
+      required: true
+  - type: dropdown
+    id: sms
+    attributes:
+      label: Text messages (SMS)
+      options: [Works, Partly, "No", Not tried]
+    validations:
+      required: true
+  - type: dropdown
+    id: files
+    attributes:
+      label: Files, both ways
+      options: [Works, Partly, "No", Not tried]
+    validations:
+      required: true
+  - type: dropdown
+    id: windows
+    attributes:
+      label: Phone apps in windows, with sound
+      options: [Works, Partly, "No", Not tried]
+    validations:
+      required: true
+  - type: dropdown
+    id: mic
+    attributes:
+      label: The computer's microphone in app windows
+      options: [Works, Partly, "No", Not tried]
+    validations:
+      required: true
+  - type: dropdown
+    id: calls
+    attributes:
+      label: Calls (answering, and talking through the computer)
+      options: [Works, Partly, "No", Not tried]
+    validations:
+      required: true
+  - type: dropdown
+    id: webcam
+    attributes:
+      label: Phone camera as a webcam
+      options: [Works, Partly, "No", Not tried]
+    validations:
+      required: true
+  - type: dropdown
+    id: usb
+    attributes:
+      label: USB cable
+      options: [Works, Partly, "No", Not tried]
+    validations:
+      required: true
+  - type: textarea
+    id: notes
+    attributes:
+      label: What didn't work
+      description: For anything Partly or No, what happened. Logs help (see the bug report form for where they are); remove anything personal first.
+  - type: input
+    id: credit
+    attributes:
+      label: Name in the matrix
+      description: How you'd like to be credited, e.g. your GitHub username. Leave empty to stay anonymous.

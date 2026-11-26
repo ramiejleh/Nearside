@@ -215,8 +215,11 @@ Everything below is tested with **one phone**: a **Google Pixel 9 Pro on Android
 (API 37)**, with a **MacBook Air (Apple M5) on macOS 27.0.1** and a **Windows 11 PC (x64)**, over
 Wi-Fi and over USB. Nothing else has been tested yet: other phones, Android 11 to 16, macOS 14 to
 26, Intel Macs and Arm PCs may work, or may not.
-[Reports](https://github.com/ramiejleh/Nearside/issues/new/choose) from other setups are very
-welcome.
+
+**Phones:** the [device matrix](docs/devices.md) lists every phone tried so far, feature by
+feature; for now that's the Pixel 9 Pro. Tried another?
+[Send a device report](https://github.com/ramiejleh/Nearside/issues/new?template=device_report.yml),
+whether it worked or not, and it becomes a row there.
 
 | Feature | Mac (macOS 27) | Windows 11 | Notes |
 |---|---|---|---|
