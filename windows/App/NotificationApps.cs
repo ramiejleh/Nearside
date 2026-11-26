@@ -31,6 +31,8 @@ internal sealed class NotificationApps
     private bool iconsReady;
     private bool open;
     private string shown = "";
+    /// The rows' switches, by package: muting one only updates the switches, never rebuilds the list.
+    private readonly Dictionary<string, ToggleSwitch> toggles = [];
 
     /// `show(true)` swaps Settings for the page, `show(false)` back.
     public NotificationApps(Action<bool> show)
@@ -109,6 +111,7 @@ internal sealed class NotificationApps
     {
         open = false;
         list.Children.Clear(); // nothing of it kept while closed
+        toggles.Clear();
         shown = "";
         show(false);
     }
@@ -152,6 +155,7 @@ internal sealed class NotificationApps
             empty.Text = "Loading your phone's apps…";
             empty.Visibility = Visibility.Visible;
             list.Children.Clear();
+            toggles.Clear();
             shown = "";
             return;
         }
@@ -163,12 +167,18 @@ internal sealed class NotificationApps
             .Where(n => query.Length == 0 || n.Value.Contains(query, StringComparison.CurrentCultureIgnoreCase) || n.Key.Contains(query, StringComparison.OrdinalIgnoreCase))
             .OrderBy(n => n.Value, StringComparer.CurrentCultureIgnoreCase)
             .ToList();
-        var signature = string.Join("|", rows.Select(r => r.Key)) + "#" + string.Join(",", s.MutedApps) + "#" + icons.Count;
-        if (!force && signature == shown) return;
+        var signature = string.Join("|", rows.Select(r => r.Key)) + "#" + string.Join(",", rows.Where(r => s.NotifyingApps.ContainsKey(r.Key)).Select(r => r.Key)) + "#" + icons.Count;
+        if (!force && signature == shown)
+        {
+            // The same rows: only the switches follow (a mute from here, or from the Mac's list).
+            foreach (var (package, toggle) in toggles) toggle.IsOn = !s.MutedApps.Contains(package);
+            return;
+        }
         shown = signature;
         empty.Text = query.Length > 0 ? "No app matches." : "Your phone's apps show here once it's connected.";
         empty.Visibility = rows.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
         list.Children.Clear();
+        toggles.Clear();
         void Section(string title, IEnumerable<KeyValuePair<string, string>> part)
         {
             var items = part.ToList();
@@ -206,7 +216,13 @@ internal sealed class NotificationApps
         grid.Children.Add(label);
         var toggle = new ToggleSwitch { IsOn = on, OnContent = "", OffContent = "", MinWidth = 0 };
         Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(toggle, $"Notifications from {name}");
-        toggle.Toggled += (_, _) => EngineHost.Command("setAppMuted", new { package, muted = !toggle.IsOn });
+        toggle.Toggled += (_, _) =>
+        {
+            // Only a change the snapshot doesn't already have (setting IsOn from it toggles too).
+            var muted = !toggle.IsOn;
+            if (EngineHost.Current.MutedApps.Contains(package) != muted) EngineHost.Command("setAppMuted", new { package, muted });
+        };
+        toggles[package] = toggle;
         Grid.SetColumn(toggle, 2);
         grid.Children.Add(toggle);
         return grid;

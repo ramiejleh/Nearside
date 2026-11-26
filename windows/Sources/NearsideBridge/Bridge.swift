@@ -120,6 +120,34 @@ public func nearside_pump() {
     drainMainQueue(nil)
     #endif
     _ = RunLoop.main.run(mode: .default, before: Date())
+    SettingsSaver.now(every: 30) // what the engine noted by itself (the phone's name, its apps)
+}
+
+/// Foundation on Windows writes settings to disk only when asked, or at a clean exit, and an
+/// update's installer closes the app by force: so they're written soon after every command, and
+/// every half minute, or a change made in Settings came back undone after updating.
+@MainActor
+enum SettingsSaver {
+    private static var pending = false
+    private static var last = Date()
+
+    static func soon() {
+        guard !pending else { return }
+        pending = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+            pending = false
+            last = Date()
+            saveSettingsNow()
+        }
+    }
+
+    nonisolated static func now(every seconds: TimeInterval) {
+        MainActor.assumeIsolated {
+            guard Date().timeIntervalSince(last) >= seconds else { return }
+            last = Date()
+            saveSettingsNow()
+        }
+    }
 }
 
 /// How the engine sees the calling thread, as JSON (free it with nearside_free): for diagnosing the pump.
@@ -158,7 +186,10 @@ public func nearside_free(_ text: UnsafeMutablePointer<CChar>?) {
 public func nearside_command(_ json: UnsafePointer<CChar>) {
     let data = Data(String(cString: json).utf8)
     guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any], let name = object["c"] as? String else { return }
-    MainActor.assumeIsolated { Commands.run(name, object) }
+    MainActor.assumeIsolated {
+        Commands.run(name, object)
+        SettingsSaver.soon()
+    }
 }
 
 func duplicate(_ text: String) -> UnsafeMutablePointer<CChar>? {
