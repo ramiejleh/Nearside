@@ -105,13 +105,12 @@ class DisplaySession(
         val rate = if (fps > 60 && Build.VERSION.SDK_INT >= 34) fps.toFloat() else null
         display = device?.createDisplay("nearside-$id", w, h, dpi, surface, FLAGS, rate)
             ?: run { device?.close(); device = null; null }
-            ?: if (rate != null && Build.VERSION.SDK_INT >= 34) {
+            ?: rate?.takeIf { Build.VERSION.SDK_INT >= 34 }?.let {
                 Hidden.displayManager.createVirtualDisplay(
                     VirtualDisplayConfig.Builder("nearside-$id", w, h, dpi).setSurface(surface).setFlags(FLAGS)
-                        .setRequestedRefreshRate(rate).build(), null, null)
-            } else {
-                Hidden.displayManager.createVirtualDisplay("nearside-$id", w, h, dpi, surface, FLAGS)
+                        .setRequestedRefreshRate(it).build(), null, null)
             }
+            ?: Hidden.displayManager.createVirtualDisplay("nearside-$id", w, h, dpi, surface, FLAGS)
         Log.d("display session $id: display $displayId ${w}x$h@$dpi for $target${device?.let { " (virtual device ${it.deviceId})" } ?: ""}" +
             (rate?.let { ", asked for $it Hz, has ${display?.display?.refreshRate} Hz" } ?: ""))
         displays.add(displayId)
