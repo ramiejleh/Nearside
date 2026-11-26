@@ -286,21 +286,65 @@ struct PhoneStatusIcons: View {
 
 enum PanelTab: String { case notifications, clipboard }
 
-/// Notifications | Clipboard, under the header.
+/// Notifications | Clipboard, under the header: an icon and a count on each; the chosen one
+/// raised, like a segmented control.
 private struct PanelTabs: View {
     @Binding var tab: String
     let notifications: Int
     let newClips: Int
+    @Namespace private var selection
+    /// The chosen tab's fill: white on light, a lifted grey on dark (raised, not sunk).
+    private static let raised = Color(nsColor: NSColor(name: nil) { appearance in
+        appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua ? NSColor(white: 1, alpha: 0.16) : .white
+    })
 
     var body: some View {
-        Picker("Show", selection: $tab) {
-            Text(notifications > 0 ? "Notifications (\(notifications))" : "Notifications").tag(PanelTab.notifications.rawValue)
-            Text(newClips > 0 ? "Clipboard (\(newClips) new)" : "Clipboard").tag(PanelTab.clipboard.rawValue)
+        HStack(spacing: 2) {
+            item(.notifications, "Notifications", symbol: "bell", count: notifications, isNew: false)
+            item(.clipboard, "Clipboard", symbol: "doc.on.clipboard", count: newClips, isNew: true)
         }
-        .pickerStyle(.segmented)
-        .labelsHidden()
+        .padding(3)
+        .background(Color.primary.opacity(0.07), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
         .padding(.horizontal, 14)
         .padding(.vertical, 8)
+    }
+
+    private func item(_ which: PanelTab, _ title: String, symbol: String, count: Int, isNew: Bool) -> some View {
+        let selected = tab == which.rawValue
+        return Button {
+            withAnimation(.snappy(duration: 0.22)) { tab = which.rawValue }
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: selected ? "\(symbol).fill" : symbol)
+                    .font(.system(size: 12, weight: .medium))
+                    .frame(width: 16)
+                Text(title).font(.system(size: 12.5, weight: selected ? .semibold : .medium))
+                if count > 0 {
+                    Text(isNew ? "\(count) new" : "\(count)")
+                        .font(.system(size: 10.5, weight: .semibold))
+                        .monospacedDigit()
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 1.5)
+                        .foregroundStyle(isNew ? Theme.onAccent : Color.secondary)
+                        .background(isNew ? Theme.accent : Color.primary.opacity(0.1), in: Capsule())
+                }
+            }
+            .foregroundStyle(selected ? Color.primary : Color.secondary)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 6)
+            .background {
+                if selected {
+                    RoundedRectangle(cornerRadius: 7.5, style: .continuous)
+                        .fill(Self.raised)
+                        .shadow(color: .black.opacity(0.14), radius: 1.5, y: 0.5)
+                        .matchedGeometryEffect(id: "selected", in: selection)
+                }
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(count > 0 ? "\(title), \(isNew ? "\(count) new" : "\(count)")" : title)
+        .accessibilityAddTraits(selected ? .isSelected : [])
     }
 }
 
