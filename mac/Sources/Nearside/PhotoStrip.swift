@@ -23,6 +23,11 @@ struct PhotoStrip: View {
                         Thumbnail(photo: photo, data: photos.thumbnails[photo.id], busy: opening == photo.id)
                             .onTapGesture { open(photo) }
                             .onDrag { provider(for: photo) }
+                            .contextMenu {
+                                Button("Open") { open(photo) }
+                                Button("Save to Desktop") { save(photo, to: .desktopDirectory) }
+                                Button("Save to Downloads") { save(photo, to: .downloadsDirectory) }
+                            }
                             .help("\(photo.name)\(photo.isScreenshot ? " (screenshot)" : "") · \(photo.date.formatted(.relative(presentation: .named)))")
                     }
                 }
@@ -42,6 +47,23 @@ struct PhotoStrip: View {
                 _ = try? await NSWorkspace.shared.open([url], withApplicationAt: preview, configuration: NSWorkspace.OpenConfiguration())
             }
             opening = nil
+        }
+    }
+
+    /// A copy in that folder (quarantined, as pulled), under a free name; Downloads shows it in Finder.
+    private func save(_ photo: PhonePhoto, to directory: FileManager.SearchPathDirectory) {
+        Task {
+            guard let url = await engine.fetchPhoto(photo),
+                  let folder = FileManager.default.urls(for: directory, in: .userDomainMask).first else { return }
+            let name = url.deletingPathExtension().lastPathComponent, ext = url.pathExtension
+            var target = folder.appendingPathComponent(url.lastPathComponent)
+            var n = 2
+            while FileManager.default.fileExists(atPath: target.path) {
+                target = folder.appendingPathComponent("\(name) (\(n))").appendingPathExtension(ext)
+                n += 1
+            }
+            guard (try? FileManager.default.copyItem(at: url, to: target)) != nil else { return }
+            if directory == .downloadsDirectory { NSWorkspace.shared.activateFileViewerSelecting([target]) }
         }
     }
 

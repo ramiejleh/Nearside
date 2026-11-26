@@ -4,6 +4,25 @@ namespace Nearside.Engine;
 internal static class Demo
 {
     /// "apps" then "appIcons" events for the launcher: sample names, every icon Nearside's logo.
+    /// Sample photos for the panel's strip (--demo --photos), for testing dragging them out.
+    public static PhotosView Photos()
+    {
+        var now = DateTimeOffset.Now.ToUnixTimeMilliseconds();
+        return new PhotosView { Items = [new(1, "demo-photo-1.png", now - 60_000, true, 512, 512, false), new(2, "demo-photo-2.png", now - 600_000, false, 512, 512, false)] };
+    }
+
+    /// A photo "pulled from the phone": the app's logo, copied under the photo's name.
+    public static string PhotoFetched(object? fields)
+    {
+        var command = System.Text.Json.JsonSerializer.SerializeToElement(fields);
+        var id = command.GetProperty("id").GetInt64();
+        var folder = Path.Combine(Path.GetTempPath(), "nearside-demo", id.ToString());
+        Directory.CreateDirectory(folder);
+        var path = Path.Combine(folder, $"demo-photo-{id}.png");
+        File.Copy(Path.Combine(AppContext.BaseDirectory, "Assets", "Logo.png"), path, overwrite: true);
+        return System.Text.Json.JsonSerializer.Serialize(new { e = "photoFetched", id, @for = command.GetProperty("for").GetString(), path });
+    }
+
     public static IEnumerable<(string Name, string Json)> Apps()
     {
         string[] names = ["Calendar", "Camera", "Chrome", "Clock", "Contacts", "Drive", "Files", "Fit", "Gmail", "Keep", "Maps",

@@ -26,11 +26,12 @@ public static unsafe class EngineHost
     /// Showing sample content (--demo).
     public static bool IsDemo { get; private set; }
 
-    public static void StartDemo(bool setup, bool muted = false, bool away = false)
+    public static void StartDemo(bool setup, bool muted = false, bool away = false, bool photos = false)
     {
         IsDemo = true;
         queue = DispatcherQueue.GetForCurrentThread();
         Current = Demo.Snapshot(setup);
+        if (photos) Current = Current with { Photos = Demo.Photos() };
         if (away) Current = Current with { State = "searching", InUseOn = "MacBook Pro", PhoneStatus = null };
         if (muted) Current = Current with { MutedIndefinitely = false, MutedUntil = DateTimeOffset.Now.AddHours(2).ToUnixTimeMilliseconds() };
         Changed?.Invoke(Current);
@@ -81,6 +82,12 @@ public static unsafe class EngineHost
         {
             // The launcher's apps, made up; other commands do nothing.
             if (name == "listApps") queue?.TryEnqueue(() => { foreach (var (e, json) in Demo.Apps()) Handle(json); });
+            if (name == "photoFetch")
+            {
+                // As slow as pulling a photo from the phone over Wi-Fi.
+                var fetched = Demo.PhotoFetched(fields);
+                _ = Task.Delay(1500).ContinueWith(_ => queue?.TryEnqueue(() => Handle(fetched)));
+            }
             return;
         }
         var json = JsonSerializer.SerializeToNode(fields ?? new { })!.AsObject();

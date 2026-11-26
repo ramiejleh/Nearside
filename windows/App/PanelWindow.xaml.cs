@@ -313,11 +313,15 @@ public sealed partial class PanelWindow : Window
             Width = 64, Height = 64, Content = picture, IsTabStop = true, UseSystemFocusVisuals = true, CanDrag = true,
             CornerRadius = new CornerRadius(8),
         };
-        tile.PointerEntered += (_, _) => picture.Opacity = 0.85;
+        // Resting on a photo starts pulling it, so a drag that follows has the file in time
+        // (Explorer gives up on a drop whose file takes more than a moment).
+        tile.PointerEntered += (_, _) => { picture.Opacity = 0.85; _ = FetchForDrag(photo.Id); };
         tile.PointerExited += (_, _) => picture.Opacity = 1;
-        ToolTipService.SetToolTip(tile, $"{(photo.IsScreenshot ? "Screenshot" : "Photo")}, {DateTimeOffset.FromUnixTimeMilliseconds(photo.Date).LocalDateTime:g}");
+        var description = $"{(photo.IsScreenshot ? "Screenshot" : "Photo")}, {DateTimeOffset.FromUnixTimeMilliseconds(photo.Date).LocalDateTime:g}";
+        ToolTipService.SetToolTip(tile, description);
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(tile, description);
         void Open() => EngineHost.Command("photoFetch", new { id = photo.Id, @for = "open" });
-        tile.Tapped += (_, _) => Open();
+        tile.Tapped += (_, _) => { if (!draggingPhoto) Open(); };
         tile.KeyDown += (_, e) =>
         {
             if (e.Key is not (Windows.System.VirtualKey.Enter or Windows.System.VirtualKey.Space)) return;
@@ -326,43 +330,58 @@ public sealed partial class PanelWindow : Window
         };
         // Dragged out (to the desktop, a folder, a chat): the file is pulled from the phone when the
         // drag starts, from the moment the mouse goes down (a click opens it anyway).
-        tile.PointerPressed += (_, _) => _ = FetchForDrag(photo.Id);
-        tile.DropCompleted += (_, _) => draggingPhoto = false;
-        tile.DragStarting += async (_, e) =>
+        // Started here once the mouse moves a few pixels with the button down: CanDrag alone never
+        // started one inside the strip.
+        Windows.Foundation.Point? pressedAt = null;
+        tile.PointerPressed += (_, e) =>
+        {
+            _ = FetchForDrag(photo.Id);
+            pressedAt = e.GetCurrentPoint(tile).Position;
+        };
+        tile.PointerReleased += (_, e) => { pressedAt = null; tile.ReleasePointerCapture(e.Pointer); };
+        tile.PointerCaptureLost += (_, _) => pressedAt = null;
+        tile.DropCompleted += (_, e) => { draggingPhoto = false; Log.Info($"photo drag: dropped ({e.DropResult})"); };
+        tile.DragStarting += (_, e) =>
         {
             draggingPhoto = true;
-            var deferral = e.GetDeferral();
-            try
+            Log.Info("photo drag: started");
+            if (thumbnails.TryGetValue(photo.Id, out var thumbnail)) e.DragUI.SetContentFromBitmapImage(thumbnail);
+            e.Data.RequestedOperation = DataPackageOperation.Copy;
+            e.AllowedOperations = DataPackageOperation.Copy;
+            // The file is promised, not waited for: the drag starts at once, and wherever it's
+            // dropped asks for the file then (the pull, begun on mouse-down, is usually done).
+            e.Data.SetDataProvider(StandardDataFormats.StorageItems, async request =>
             {
-                if (thumbnails.TryGetValue(photo.Id, out var thumbnail)) e.DragUI.SetContentFromBitmapImage(thumbnail);
-                if (await FetchForDrag(photo.Id) is { } path)
+                var deferral = request.GetDeferral();
+                try
                 {
-                    e.Data.SetStorageItems([await StorageFile.GetFileFromPathAsync(path)]);
-                    e.Data.RequestedOperation = DataPackageOperation.Copy;
-                    e.AllowedOperations = DataPackageOperation.Copy;
+                    if (await FetchForDrag(photo.Id) is { } path)
+                    {
+                        request.SetData(new List<IStorageItem> { await StorageFile.GetFileFromPathAsync(path) });
+                        Log.Info("photo drag: file handed over");
+                    }
+                    else
+                    {
+                        Log.Info("photo drag: the photo couldn't be pulled");
+                    }
                 }
-                else
+                catch (Exception error)
                 {
-                    e.Cancel = true;
-                    draggingPhoto = false;
+                    Log.Info($"photo drag: {error.GetType().Name}");
                 }
-            }
-            catch (Exception error)
-            {
-                Log.Info($"photo drag: {error.GetType().Name}");
-                e.Cancel = true;
-                draggingPhoto = false;
-            }
-            finally
-            {
-                deferral.Complete();
-            }
+                finally
+                {
+                    deferral.Complete();
+                }
+            });
         };
+        var desktop = new MenuFlyoutItem { Text = "Save to Desktop", Icon = new FontIcon { Glyph = "\uE7F4" } };
+        desktop.Click += (_, _) => EngineHost.Command("photoFetch", new { id = photo.Id, @for = "desktop" });
         var save = new MenuFlyoutItem { Text = "Save to Downloads", Icon = new FontIcon { Glyph = "\uE896" } };
         save.Click += (_, _) => EngineHost.Command("photoFetch", new { id = photo.Id, @for = "save" });
         var open = new MenuFlyoutItem { Text = "Open", Icon = new FontIcon { Glyph = "\uE8A7" } };
         open.Click += (_, _) => EngineHost.Command("photoFetch", new { id = photo.Id, @for = "open" });
-        tile.ContextFlyout = new MenuFlyout { Items = { open, save } };
+        tile.ContextFlyout = new MenuFlyout { Items = { open, desktop, save } };
         return tile;
     }
 
@@ -395,16 +414,18 @@ public sealed partial class PanelWindow : Window
         if (fetched is not { } path) return;
         var explorer = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "explorer.exe");
         HidePanel(); // out of the way of the window that's about to open
-        if (e.GetProperty("for").GetString() == "save")
+        var purpose = e.GetProperty("for").GetString();
+        if (purpose is "save" or "desktop")
         {
-            var downloads = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Downloads");
-            var target = Path.Combine(downloads, Path.GetFileName(path));
+            var folder = purpose == "desktop" ? Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory)
+                : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Downloads");
+            var target = Path.Combine(folder, Path.GetFileName(path));
             for (var n = 2; File.Exists(target); n++)
             {
-                target = Path.Combine(downloads, $"{Path.GetFileNameWithoutExtension(path)} ({n}){Path.GetExtension(path)}");
+                target = Path.Combine(folder, $"{Path.GetFileNameWithoutExtension(path)} ({n}){Path.GetExtension(path)}");
             }
             File.Copy(path, target); // with its Mark of the Web
-            Process.Start(explorer, $"/select,\"{target}\"");
+            if (purpose == "save") Process.Start(explorer, $"/select,\"{target}\""); // the desktop shows it already
         }
         else if (ImageTypes.Contains(Path.GetExtension(path).ToLowerInvariant()))
         {
