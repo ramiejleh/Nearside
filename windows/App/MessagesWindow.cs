@@ -63,7 +63,8 @@ public sealed class MessagesWindow : Window
         var header = new StackPanel { Padding = new Thickness(16, 12, 16, 8), Children = { conversationTitle, conversationAddress } };
         scroller.Content = bubbles;
         send.Click += (_, _) => Send();
-        compose.KeyDown += OnComposeKey;
+        // Before the box itself: it takes Enter for a new line, so KeyDown never saw it.
+        compose.PreviewKeyDown += OnComposeKey;
         var composer = new Grid { ColumnSpacing = 8, Padding = new Thickness(16, 8, 16, 12) };
         composer.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         composer.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });

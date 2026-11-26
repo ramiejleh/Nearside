@@ -89,6 +89,13 @@ Out of scope: an attacker who has already unlocked the Mac as you, or who has ro
 - Apps that block screen capture (FLAG_SECURE) stay black; the window says so.
 - Files dropped into a window are shared with that one app through a non-exported provider with
   a per-share read grant.
+- **Enter sends messages** (on by default, a switch in Settings → Phone apps): for an Enter
+  without modifiers, the helper connects to Android's accessibility API (`UiAutomation`, which
+  the shell user may use, with the phone's own accessibility services left running), reads the
+  focused text field on that window's display and the controls around it, and taps a Send
+  button it finds there. It reads nothing else, keeps nothing and logs no content; the
+  connection closes after a minute without such an Enter. While it's open, apps that check for
+  accessibility services can see one.
 
 ## Calls and the microphone
 

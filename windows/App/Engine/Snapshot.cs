@@ -65,6 +65,7 @@ public sealed record Settings
     public bool ScreenshotsToPC { get; init; }
     public bool ScreenshotsToPhone { get; init; }
     public bool ShowCalls { get; init; }
+    public bool EnterSends { get; init; } = true;
     public bool RingHere { get; init; }
     public int HistoryLimit { get; init; }
     public bool LowBatteryAlert { get; init; }

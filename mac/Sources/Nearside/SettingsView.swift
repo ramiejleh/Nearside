@@ -14,6 +14,7 @@ struct SettingsView: View {
     @AppStorage(PhoneSpotlight.enabledKey) private var phoneAppsInSpotlight = true
     @AppStorage(PhoneAppLaunchers.enabledKey) private var phoneAppLaunchers = false
     @AppStorage("PhoneApps.motion") private var phoneAppsMotion = "smooth"
+    @AppStorage(KeyMap.enterSendsKey) private var enterSends = true
     @AppStorage("PhoneApps.notificationClick") private var notificationClick = "phone"
     @AppStorage(PhoneQuality.key) private var phoneQuality = PhoneQuality.auto.rawValue
     @AppStorage(PhoneFrameRate.key) private var phoneFrameRate = 60
@@ -119,6 +120,10 @@ struct SettingsView: View {
                     .onChange(of: phoneAppLaunchers) { _, on in
                         if !on { PhoneAppLaunchers.removeAll() }
                         PhoneWindowManager.shared?.indexApps() // the launchers, and Spotlight's entries follow
+                    }
+                    Toggle(isOn: $enterSends) {
+                        Text("Return sends messages")
+                        Text("In chat apps like WhatsApp and Messenger, Return taps the app's Send button; Shift-Return makes a new line. Your phone looks at the box you're typing in to find the button, and nothing else.")
                     }
                     Picker(selection: $phoneAppsMotion) {
                         Text("Smooth").tag("smooth")

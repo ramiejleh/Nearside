@@ -157,6 +157,7 @@ enum Commands {
             case "showCalls": engine.showCalls = on
             case "ringHere": engine.ringOnMac = on
             case "lowBatteryAlert": engine.lowBatteryAlert = on
+            case "enterSends": UserDefaults.standard.set(on, forKey: KeyMap.enterSendsKey) // read at each Enter
             default: break
             }
         } else if key == "historyLimit", let limit = value as? Int, limit > 0 {

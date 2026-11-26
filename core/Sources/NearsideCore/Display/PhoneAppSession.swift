@@ -451,7 +451,11 @@ public final class PhoneAppSession: @unchecked Sendable {
 
     // MARK: Keyboard
 
-    public func keys(_ keys: [KeyMap.Key]) { noteInput(); keys.forEach { send(DisplayWire.key($0)) } }
+    public func keys(_ keys: [KeyMap.Key]) {
+        noteInput()
+        let enterSends = UserDefaults.standard.object(forKey: KeyMap.enterSendsKey) as? Bool ?? true
+        KeyMap.marked(keys, enterSends: enterSends).forEach { send(DisplayWire.key($0)) }
+    }
 
     /// Typed text (the Mac's layout already applied).
     public func text(_ text: String) { noteInput(); send(DisplayWire.utf8(DisplayWire.text, text)) }

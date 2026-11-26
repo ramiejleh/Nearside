@@ -48,4 +48,15 @@ struct KeyMapTests {
         #expect(action(0x30, .control) == .keys([K(61, KeyMap.ctrl)])) // ⌃Tab
         #expect(action(0x00, .control, "a") == .keys([K(29, KeyMap.ctrl)]))
     }
+
+    @Test func enterSendsOnlyPlainEnter() {
+        let send = K(66, KeyMap.sendMeta)
+        #expect(KeyMap.marked([K(66)], enterSends: true) == [send])
+        #expect(KeyMap.marked([K(66)], enterSends: false) == [K(66)])
+        // Shift+Return stays a new line; ⌘Return and others pass as they are.
+        if case .keys(let keys) = action(0x24, .shift) { #expect(KeyMap.marked(keys, enterSends: true) == keys) }
+        #expect(KeyMap.marked([K(66, KeyMap.ctrl), K(67)], enterSends: true) == [K(66, KeyMap.ctrl), K(67)])
+        // Windows' Enter maps to the same plain Enter, so it's marked the same way.
+        if case .keys(let keys) = KeyMap.windowsAction(virtualKey: 0x0D, modifiers: []) { #expect(KeyMap.marked(keys, enterSends: true) == [send]) }
+    }
 }

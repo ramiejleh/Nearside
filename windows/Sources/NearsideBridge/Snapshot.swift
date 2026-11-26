@@ -29,6 +29,7 @@ enum Snapshot {
                 "lowBatteryAlert": engine.lowBatteryAlert,
                 "frameRate": PhoneFrameRate.current,
                 "quality": PhoneQuality.current.rawValue,
+                "enterSends": UserDefaults.standard.object(forKey: KeyMap.enterSendsKey) as? Bool ?? true,
             ] as [String: Any],
         ]
         if let inUseOn = engine.inUseOn { s["inUseOn"] = inUseOn }

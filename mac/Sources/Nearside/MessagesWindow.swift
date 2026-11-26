@@ -340,6 +340,12 @@ private struct ComposeBar: View {
                 .padding(.vertical, 8)
                 .background(.quaternary.opacity(0.6), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
                 .onSubmit(send)
+                // Return sends; Shift-Return is a new line (a multi-line field takes Return as one).
+                .onKeyPress(.return, phases: .down) { press in
+                    if press.modifiers.contains(.shift) { return .ignored }
+                    send()
+                    return .handled
+                }
             Button(action: send) {
                 Image(systemName: "arrow.up.circle.fill")
                     .font(.system(size: 26))

@@ -83,6 +83,11 @@ public sealed class SettingsWindow : Window
         Title = "Phone apps in the Start menu",
         Text = "A shortcut for each app on your phone, in \u201CNearside Phone Apps\u201D: search for an app in Start to open it in a window.",
     };
+    private readonly Choice enterSends = new()
+    {
+        Title = "Enter sends messages",
+        Text = "In chat apps like WhatsApp and Messenger, Enter taps the app's Send button; Shift+Enter makes a new line. Your phone looks at the box you're typing in to find the button, and nothing else.",
+    };
     private readonly Choice toast = new()
     {
         Title = "Hide “pasted from your clipboard” on the phone",
@@ -119,6 +124,8 @@ public sealed class SettingsWindow : Window
         screenshotsToPhone.Toggled += on => EngineHost.Command("set", new { key = "screenshotsToPhone", value = on });
         startup.Toggled += on => Startup.IsOn = on;
         startMenu.IsOn = PhoneAppShortcuts.On;
+        enterSends.IsOn = EngineHost.Current.Settings.EnterSends;
+        enterSends.Toggled += on => EngineHost.Command("set", new { key = "enterSends", value = on });
         startMenu.Toggled += PhoneAppShortcuts.SetOn;
         arrival.IsOn = ArrivalCard.On;
         arrival.Toggled += on => ArrivalCard.On = on;
@@ -202,6 +209,7 @@ public sealed class SettingsWindow : Window
         page.Children.Add(Row("Ask for Windows Hello", "Phone apps work while your phone is locked, so this PC asks before showing them.", hello));
         page.Children.Add(Row("Open the launcher", "From anywhere: Ctrl+Alt+N.", new TextBlock()));
         page.Children.Add(startMenu);
+        page.Children.Add(enterSends);
         page.Children.Add(qualityRow);
         page.Children.Add(Row("Frame rate", "Above 60, scrolling is smoother on a fast screen; it needs good Wi-Fi and Android 14 or later. For windows opened from now on.", frameRate));
         page.Children.Add(Header("Phone camera"));

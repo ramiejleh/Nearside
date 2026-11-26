@@ -19,6 +19,19 @@ public enum KeyMap {
         case none
     }
 
+    /// Settings → Phone apps → Enter sends messages (on unless turned off); read by the session.
+    public static let enterSendsKey = "PhoneApps.enterSends"
+    /// Marks an Enter as "send": the phone taps the app's Send button if it finds one, else
+    /// presses Enter (not a real Android meta bit; the helper takes it off). EnterSends.kt.
+    static let sendMeta: UInt32 = 0x4000_0000
+    static let enter: UInt16 = 66
+
+    /// Enter without modifiers marked "send" when `enterSends` (Shift+Enter stays a new line).
+    public static func marked(_ keys: [Key], enterSends: Bool) -> [Key] {
+        guard enterSends else { return keys }
+        return keys.map { $0 == Key(enter) ? Key(enter, sendMeta) : $0 }
+    }
+
     public struct Key: Equatable, Sendable {
         public let code: UInt16
         public let meta: UInt32

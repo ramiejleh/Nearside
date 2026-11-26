@@ -208,7 +208,16 @@ class DisplaySession(
             DisplayWire.TOUCHES -> if (b.remaining() >= 13) touches(b)
             DisplayWire.SCROLL -> if (b.remaining() >= 20) scroll(b.int, b.float, b.float, b.float, b.float)
             DisplayWire.MOUSE -> if (b.remaining() >= 13) mouse(b.get().toInt(), b.int, b.float, b.float)
-            DisplayWire.KEY -> if (b.remaining() >= 6) keyboard?.press(b.short.toInt() and 0xffff, b.int)
+            DisplayWire.KEY -> if (b.remaining() >= 6) {
+                val code = b.short.toInt() and 0xffff
+                val meta = b.int
+                // An Enter marked "send": the app's Send button if there is one, else Enter.
+                if (meta and EnterSends.SEND_META != 0) {
+                    if (!EnterSends.send(displayId)) keyboard?.press(code, meta and EnterSends.SEND_META.inv())
+                } else {
+                    keyboard?.press(code, meta)
+                }
+            }
             DisplayWire.TEXT -> keyboard?.type(utf8(b))
             DisplayWire.LAYOUT -> keyboard?.setLayout(utf8(b))
             DisplayWire.PASTE -> keyboard?.paste(utf8(b).ifEmpty { null }, restore = false)
