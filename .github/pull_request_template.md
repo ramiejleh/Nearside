@@ -4,9 +4,9 @@
 
 ## Checked
 
-- [ ] `swift test` passes in `mac/`
+- [ ] `swift test` passes in `core/` and `mac/` (Windows changes: `windows/` and its app build)
 - [ ] The Android app builds (`./gradlew assembleDebug` in `android/`)
-- [ ] Tried on a real phone and Mac (which ones?)
+- [ ] Tried on a real phone and computer (which ones?)
 - [ ] Touches security (authentication, the helper's rights, what the phone exposes): the threat it handles is described above
 
 ## Agreement

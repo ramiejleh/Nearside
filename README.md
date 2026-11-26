@@ -4,12 +4,13 @@
 
 # Nearside
 
-**Continuity for Android and the Mac.**
-Your phone's clipboard, notifications, messages, files and apps, on your Mac.
+**Continuity for Android, on your Mac or Windows PC.**
+Your phone's clipboard, notifications, messages, files and apps, on your computer.
 Open source. No cloud, no account.
 
 [![License: AGPL v3](https://img.shields.io/badge/license-AGPL%20v3-blue.svg)](LICENSE)
 [![macOS 14+](https://img.shields.io/badge/macOS-14%2B-000000?logo=apple&logoColor=white)](#requirements)
+[![Windows 11](https://img.shields.io/badge/Windows-11-0078D4?logo=windows11&logoColor=white)](#requirements)
 [![Android 11+](https://img.shields.io/badge/Android-11%2B-3DDC84?logo=android&logoColor=white)](#requirements)
 [![CI](https://github.com/ramiejleh/Nearside/actions/workflows/ci.yml/badge.svg)](https://github.com/ramiejleh/Nearside/actions/workflows/ci.yml)
 [![Status: alpha](https://img.shields.io/badge/status-alpha-orange)](#status)
@@ -29,20 +30,25 @@ Open source. No cloud, no account.
 ---
 
 Apple's Continuity is the reason many people stay on an iPhone. Nearside brings it to an
-Android phone and a Mac:
+Android phone and a Mac or a Windows PC:
 - Copy on one and paste on the other.
 - See and answer your notifications.
-- Text from your Mac.
+- Text from your computer.
 - Drop files either way.
-- Open any phone app in its own Mac window, even while the phone stays locked in your pocket.
+- Open any phone app in its own window, even while the phone stays locked in your pocket.
 
-It runs quietly in the background. Everything travels directly between your two devices, over
-an encrypted link on your own network or a USB cable.
+It runs quietly in the background, in the Mac's menu bar or the PC's notification area.
+Everything travels directly between your two devices, over an encrypted link on your own network
+or a USB cable.
+
+The features below are described for the Mac; the Windows app has the same ones, with the
+differences noted under each. It's new and still being tested on real PCs (see
+[what's tested](#whats-tested-and-where)).
 
 ## Features
 
-### Phone apps on your Mac
-Any app on your phone opens in its own Mac window, or you can open a whole second phone with its
+### Phone apps on your computer
+Any app on your phone opens in its own window on your computer, or you can open a whole second phone with its
 own home screen.
 
 - **Real windows.** They work with the Dock, ⌘-Tab, Mission Control and Spotlight, plus a
@@ -69,6 +75,12 @@ own home screen.
   Responsive shows every frame the moment it arrives.
 - **Seamless hand-off.** Open the app on the phone and it moves back there. Close the window
   and it's on your phone, where you left it.
+- **Up to 120 frames a second** on a fast screen, if your phone runs Android 14 or later and the
+  Wi-Fi keeps up (Settings → Frame rate).
+
+**On Windows:** each window has its own taskbar button and shows in Alt+Tab. Phone apps can go in
+the Start menu, each with a small Nearside badge. The launcher is Ctrl+Alt+N, and Windows Hello
+(or your PIN) stands in for Touch ID. The PC decodes on its graphics card (H.264), with Direct3D.
 
 <p align="center">
   <img src="docs/images/whatsapp.jpg" width="290" alt="WhatsApp in its own Mac window (demo chats)">
@@ -84,10 +96,13 @@ own home screen.
 
 Copy on the phone and paste on the Mac, or the other way round. It happens automatically,
 without opening anything on the phone.
-- A searchable history in the menu bar puts any earlier clip back on both clipboards.
+- The panel has two tabs: **Notifications**, what's on your phone right now, and **Clipboard**, a
+  searchable history that puts any earlier clip back on both clipboards.
 - A small card tells you when something arrives.
 - Items that password managers mark as concealed are never recorded.
 - You can also hide Android's "pasted from your clipboard" message from the Mac.
+- While the phone is away, the panel shows nothing of it: only where it is, Settings, and
+  **Connect** when another computer has it. Nothing is recorded meanwhile.
 
 ### Photos and screenshots
 The panel shows your phone's newest photos and screenshots while it's open. Drag one into any
@@ -99,27 +114,30 @@ Incoming calls ring on the Mac with Answer, Decline, or decline with a text, for
 app calls (WhatsApp, Messenger, Signal) alike. Answered or placed on the Mac, a call talks
 through the Mac: its sound and the Mac's microphone, the phone's own microphone off. During a
 call a small card under the menu-bar icon shows the time, Mute and End, and moves the call to the
-phone and back in one click. Call a number from Messages or from clipboard history.
+phone and back in one click. Call a number from Messages or from clipboard history. On Windows,
+calls ring as a Windows notification and the in-call card sits above the notification area.
 
 ### Phone camera as a webcam
 Pick "Nearside Camera" in FaceTime, Zoom, a browser or Photo Booth: the phone's back or front
 camera, upright however you hold it. The phone's camera is on only while an app uses it, and the
 phone says so, with a Stop button. Turn it on in Settings › Phone camera (macOS asks you to allow
-the camera extension once).
+the camera extension once). On Windows it's in Teams, Zoom, the Camera app and browsers, installed
+with the app.
 
 ### Phone status
 The menu bar shows your phone's battery, signal and network (5G, LTE) while it's connected,
 and tells you once when its battery runs low.
 
 ### Notifications
-Your phone's notifications appear as native macOS notifications, with their buttons and inline
-replies. Dismiss one on either device and it's gone on both. **Open on Mac** opens a
-notification's app in a Mac window, right where the notification points. You can choose whether
-clicking a notification opens it on the phone or on the Mac. The bell in the panel mutes them
-for 1 to 24 hours, or until you turn them back on; what's still on the phone then appears. The
-panel's Notifications tab lists what's on the phone now, beside the Clipboard tab. While the phone
-is away, nothing of it shows: no history, no notifications, and after a minute its apps leave
-Spotlight and Applications until it's back.
+Your phone's notifications appear as native macOS or Windows notifications, with their buttons
+and inline replies. Dismiss one on either device and it's gone on both. **Open on Mac** (**Open
+on PC**) opens a notification's app in a window, right where the notification points. The
+panel's Notifications tab lists what's on the phone now.
+- **Mute** them from the bell in the panel, for 1 to 24 hours or until you turn them back on.
+  When it ends, what's still on the phone appears.
+- **While the phone is away** they're cleared from the computer, and come back when it
+  reconnects. After a minute away, its apps also leave Spotlight, Applications or the Start
+  menu until it's back.
 
 ### Text messages
 Read and send SMS in a Messages window on the Mac: conversations, threads and new messages.
@@ -129,23 +147,27 @@ RCS chats stay in Google Messages.
 
 ### Files
 - **To the phone:** drag files onto the menu-bar icon, or onto the drop shelf that slides out
-  while you drag toward the top of the screen. A transfers list shows progress.
-- **To the Mac:** use **Send to Mac** in Android's share sheet. Files land in your Downloads.
+  while you drag toward the top of the screen. On Windows, drop them on the panel. A transfers
+  list shows progress.
+- **To the computer:** use **Send to computer** in Android's share sheet. Files land in your
+  Downloads.
 - **Into an app:** drop files onto a phone app's window to share them straight into that app.
 
 ### Keyboard shortcuts
 
-| Shortcut | What it does |
-|---|---|
-| ⌥⌘P | Open the launcher (change it in Settings) |
-| ⌥⇧⌘P | Open the phone window |
-| ⌘[ | Back |
-| ⌘1, ⌘2, ⌘3 | Home, Recents, Notifications (phone window) |
-| ⌃⌘1, ⌃⌘2, ⌃⌘3 | Phone, foldable, tablet size |
-| ⌘+, ⌘-, ⌘0 | Larger, smaller, actual size |
-| ⌃⌘F | Full screen |
-| ⌥⌘I | Show statistics (frame rate, bitrate, delay) |
-| ⌘C, ⌘V | Copy and paste between the Mac and the app |
+| Mac | Windows | What it does |
+|---|---|---|
+| ⌥⌘P | Ctrl+Alt+N | Open the launcher (change it in Settings on the Mac) |
+| ⌥⇧⌘P | | Open the phone window |
+| ⌘[ | Esc | Back |
+| ⌘1, ⌘2, ⌘3 | | Home, Recents, Notifications (phone window) |
+| ⌃⌘1, ⌃⌘2, ⌃⌘3 | | Phone, foldable, tablet size |
+| ⌘+, ⌘-, ⌘0 | Drag the window's edge | Larger, smaller (⌘0: actual size) |
+| ⌃⌘F | | Full screen |
+| ⌥⌘I | | Show statistics (frame rate, bitrate, delay) |
+| ⌘C, ⌘V | Ctrl+C, Ctrl+V | Copy and paste between the computer and the app |
+
+On Windows the phone window's toolbar has Home, Recents, Notifications and the sizes.
 
 ## How it works
 
@@ -155,18 +177,22 @@ RCS chats stay in Google Messages.
 </picture>
 
 Android doesn't let ordinary apps read the clipboard in the background, or show other apps'
-screens without asking every time. Nearside's Mac app starts a small helper on the phone over
+screens without asking every time. Nearside's computer app starts a small helper on the phone over
 **wireless debugging**, where it runs with the same rights as `adb shell`. It's the technique
 [scrcpy](https://github.com/Genymobile/scrcpy) and [Shizuku](https://github.com/RikkaApps/Shizuku)
 use. No root, no cloud service.
 
-- The Mac has its **own adb client**, so there's nothing to install besides the app.
+- The computer has its **own adb client**, so there's nothing to install besides the app. The
+  Mac and Windows apps share one engine, written in Swift.
 - **Phone-app windows are virtual displays** on the phone. The phone's hardware encodes them
-  (HEVC), the Mac decodes them with VideoToolbox, and sound is captured per window and sent as
-  Opus.
-- **Plug in a USB cable** and the Mac switches to it, then goes back to Wi-Fi when you unplug.
-- **After a reboot or a Wi-Fi change**, the phone turns wireless debugging back on and the Mac
-  restarts the helper. You do nothing.
+  (HEVC for the Mac, H.264 for a PC), the computer decodes them on its graphics hardware, and
+  sound is captured per window and sent as Opus.
+- **Plug in a USB cable** and the computer switches to it, then goes back to Wi-Fi when you
+  unplug. Windows needs no driver.
+- **After a reboot or a Wi-Fi change**, the phone turns wireless debugging back on and the
+  computer restarts the helper. You do nothing.
+- **One computer at a time.** If your Mac has the phone, the PC shows where it is, with
+  **Connect** to take it over, and the other way round.
 
 The [architecture notes](docs/architecture.md) go deeper.
 
@@ -188,10 +214,11 @@ tested yet: other phones, Android 11 to 16, macOS 14 to 26 and Intel Macs may wo
 [Reports](https://github.com/ramiejleh/Nearside/issues/new/choose) from other setups are very
 welcome.
 
-The Windows app is new and **not tested on a real PC yet**: so far only in a Windows 11 Arm
-virtual machine.
+The Windows app is new and **not tested on a real PC yet**: so far in a Windows 11 Arm virtual
+machine, which has no graphics card for video decoding, no Windows Hello and no USB. Real-PC
+results will fill in this column.
 
-| Feature | Pixel 9 Pro, Android 17 + macOS 27 | Windows 11 | Notes |
+| Feature | Mac (macOS 27) | Windows 11 | Notes |
 |---|---|---|---|
 | Clipboard, both ways, with history | Tested | Not yet | |
 | Notifications, with buttons and replies | Tested | Not yet | |
@@ -206,10 +233,12 @@ virtual machine.
 | Phone camera as a webcam, back and front | Tested | Not yet | Mac: release builds only (needs Apple signing) |
 | USB cable | Tested | Not yet | |
 | Wi-Fi (wireless debugging) | Tested | Not yet | |
+| Phone-app windows at 90 or 120 frames a second | Not yet | Not yet | Android 14 or later |
+| Muting notifications, the Notifications tab | Not yet | Not yet | New |
 
 ### Install
 
-Download `Nearside-<version>.zip` from the [latest release](https://github.com/ramiejleh/Nearside/releases/latest),
+On the Mac, download `Nearside-<version>.zip` from the [latest release](https://github.com/ramiejleh/Nearside/releases/latest),
 unzip it and move Nearside to Applications. Or, with [Homebrew](https://brew.sh):
 
 ```sh
@@ -217,8 +246,7 @@ brew install --cask ramiejleh/tap/nearside
 ```
 
 Releases are signed and notarised by Apple. Nearside checks for updates by itself, and
-**Settings → General → Check for Updates…** checks now. When the Mac app updates, it updates
-the phone app too.
+**Settings → General → Check for Updates…** checks now.
 
 On Windows, download `Nearside-<version>-x64.exe` (or `-arm64.exe` for Arm PCs) from the same
 release and run it, or use winget:
@@ -229,10 +257,11 @@ winget install Nearside.Nearside
 
 It installs for everyone on the PC (it asks for an administrator once, for the webcam). Nearside
 checks for updates by itself; **Check for updates** in its notification-area menu checks now.
+When either app updates, it updates the phone app too.
 
 ### Build it yourself
 
-To build Nearside from source you need Xcode 26 or later and Android Studio (Gradle uses its
+To build the Mac app from source you need Xcode 26 or later and Android Studio (Gradle uses its
 bundled JDK).
 
 ```sh
@@ -244,22 +273,26 @@ mac/scripts/bundle.sh                     # builds mac/build/Nearside.app
 open mac/build/Nearside.app
 ```
 
+On Windows you need the Swift toolchain, the Visual Studio Build Tools and the .NET 10 SDK; see
+[Developing on Windows](docs/development-windows.md).
+
 The first launch opens a setup assistant. On the phone, turn on **Developer options →
-Wireless debugging** and scan the pairing QR code your Mac shows. That's the only time you
-touch the phone: the Mac installs the phone app and does the rest.
+Wireless debugging** and scan the pairing QR code your computer shows. That's the only time you
+touch the phone: the computer installs the phone app and does the rest.
 
 ## Privacy and security
 
 - **Nothing leaves your devices.** There is no server, account or telemetry.
-- **Pinned to your phone.** During pairing, the Mac pins your phone's TLS key (the pairing code
-  authenticates it), so a look-alike device on the network is refused. Over USB, the phone must
-  first prove it holds this Mac's secret.
-- **Mutual authentication.** The Mac and the helper prove to each other that they share a
-  per-Mac secret, without ever sending it. The helper only trusts the shell user and the
+- **Pinned to your phone.** During pairing, the computer pins your phone's TLS key (the pairing
+  code authenticates it), so a look-alike device on the network is refused. Over USB, the phone
+  must first prove it holds this computer's secret.
+- **Mutual authentication.** The computer and the helper prove to each other that they share a
+  per-computer secret, without ever sending it. The helper only trusts the shell user and the
   Nearside app, and phone-app streams need single-use tickets.
-- **Touch ID or your password** before phone apps are shown, because they work while the phone
-  is locked. The phone always shows that apps are open on your Mac, with a Stop button.
-- **Your data stays yours.** Clipboard history lives in your Mac account only, readable by you
+- **Touch ID, Windows Hello or your password** before phone apps are shown, because they work
+  while the phone is locked. The phone always shows that apps are open on your computer, with a
+  Stop button.
+- **Your data stays yours.** Clipboard history lives in your user account only, readable by you
   alone. Concealed clipboard items are never stored.
 
 The full design and threat model are in [`docs/security.md`](docs/security.md). Found a
@@ -268,7 +301,8 @@ vulnerability? Please report it privately; see [SECURITY.md](SECURITY.md).
 ## Status
 
 Nearside is **alpha** software. It's built and used daily on a Pixel 9 Pro (Android 17 beta)
-with a MacBook Air (macOS 27); see [what's tested](#whats-tested-and-where). Known limitations:
+with a MacBook Air (macOS 27); the Windows app is newer still. See
+[what's tested](#whats-tested-and-where). Known limitations:
 
 - Apps that block screen capture (many banking apps) show black in a window. The window says so
   and offers to open the app on the phone.
@@ -277,7 +311,9 @@ with a MacBook Air (macOS 27); see [what's tested](#whats-tested-and-where). Kno
 - The webcam needs Nearside from the releases (or your own Apple developer signing, see
   [development.md](docs/development.md)): macOS loads camera extensions only when signed,
   provisioned and notarised.
-- The phone's own on-screen keyboard can't show in a Mac window; you type with the Mac's.
+- The phone's own on-screen keyboard can't show in a window; you type with the computer's.
+- The phone works with one computer at a time; **Connect** moves it from one to the other.
+- Windows: the PC asks the phone for H.264, as Windows' own HEVC decoder is a paid extension.
 - The Android app isn't on Google Play, because it needs SMS and notification access that
   Google restricts.
 
@@ -306,13 +342,16 @@ mac/                     Swift package: the Mac app
 windows/                 the Windows app: the engine as a DLL, the WinUI 3 app (C#), the
                          webcam's media source (C++) and the installer (see windows/README.md)
 android/                 Kotlin: the phone app and the shell-user helper
-docs/                    architecture, security design, protocol, development
+docs/                    architecture, security design, protocol, development (Mac, Windows,
+                         adding a platform), releasing
 site/                    the project website (GitHub Pages)
 ```
 
 Read [`docs/architecture.md`](docs/architecture.md) for how it works and why,
 [`docs/security.md`](docs/security.md) for the security design and
-[`docs/development.md`](docs/development.md) to work on it.
+[`docs/development.md`](docs/development.md) to work on it (with pages for
+[the Mac](docs/development-mac.md), [Windows](docs/development-windows.md) and
+[adding a platform](docs/adding-a-platform.md), such as Linux).
 
 ## Contributing
 
@@ -334,11 +373,15 @@ Nearside stands on the shoulders of these projects:
   provide the TLS and SPAKE2 cryptography under the adb client, with
   [SwiftNIO](https://github.com/apple/swift-nio), Swift Atomics, Swift Collections and
   Swift System.
+- On Windows: **[FFmpeg](https://ffmpeg.org/)** (LGPL) decodes video and sound,
+  **[WinSparkle](https://winsparkle.org/)** brings updates, and the
+  **[Windows App SDK](https://github.com/microsoft/WindowsAppSDK)** draws the interface.
 - **[KDE Connect](https://kdeconnect.kde.org/)**, for showing for years that phones and
   computers should simply work together.
 
 Full attributions are in [NOTICE](NOTICE). Android is a trademark of Google LLC; Mac, macOS and
-Continuity are trademarks of Apple Inc. Nearside is not affiliated with either.
+Continuity are trademarks of Apple Inc.; Windows is a trademark of Microsoft Corporation.
+Nearside is not affiliated with any of them.
 
 ## License
 

@@ -6,17 +6,22 @@ Thanks for helping! Bug reports, device reports and pull requests are all welcom
 
 Open an issue with:
 
-- your Mac (model, macOS version) and phone (model, Android version);
+- your computer (Mac model and macOS version, or PC and Windows version) and phone (model,
+  Android version);
 - what you did, what you expected and what happened;
-- logs if you can: the helper's log (`adb shell cat /data/local/tmp/nearside-helper.log`)
-  and the Mac app's (`log show --last 10m --predicate 'process == "Nearside"'`).
+- logs if you can: the helper's log (`adb shell cat /data/local/tmp/nearside-helper.log`), and
+  the Mac app's (`log show --last 10m --predicate 'process == "Nearside"'`) or the Windows app's
+  (`%LOCALAPPDATA%\Nearside\nearside.log`).
 
-Reports from phones other than the Pixel 9 Pro are especially useful: phone apps on the Mac
-rely on Android internals that vary between versions and manufacturers.
+Reports from phones other than the Pixel 9 Pro, and from real Windows PCs, are especially
+useful: phone apps in windows rely on Android internals that vary between versions and
+manufacturers.
 
 ## Building
 
-See [Build it yourself](README.md#build-it-yourself). For a development loop:
+See [Build it yourself](README.md#build-it-yourself) and [docs/development.md](docs/development.md),
+with its pages for the [Mac](docs/development-mac.md) and [Windows](docs/development-windows.md).
+A development loop on the Mac:
 
 ```sh
 (cd android && ./gradlew assembleDebug) && adb install -r android/app/build/outputs/apk/debug/app-debug.apk
@@ -25,13 +30,15 @@ adb shell 'kill $(pidof nearside-helper)'     # the Mac starts the new helper
 ```
 
 The Mac app has test hooks driven by environment variables (`NEARSIDE_OPEN_APP`,
-`NEARSIDE_TRACE`, `NEARSIDE_TEST_INPUT`…); they're documented in
-[`docs/development.md`](docs/development.md), with how the code is organised.
+`NEARSIDE_TRACE`, `NEARSIDE_TEST_INPUT`…), and the Windows app has test switches (`--demo`…);
+they're in each platform's development page. Bringing Nearside to another system, such as
+Linux? Start with [docs/adding-a-platform.md](docs/adding-a-platform.md).
 
 ## Pull requests
 
 - Keep changes focused: one fix or feature per pull request.
-- Run `swift test` in `core/` and `mac/` and build the Android app before opening it.
+- Run `swift test` in `core/` and `mac/` (or build `windows/` and its app for a Windows change)
+  and build the Android app before opening it. CI runs all of them.
 - Match the style around you: small functions, comments that say *why*, plain names.
 - Anything that touches security (authentication, the helper's permissions, what the phone
   exposes) needs a short explanation of the threat it handles in the description.

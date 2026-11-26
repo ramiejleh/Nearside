@@ -1,128 +1,97 @@
 # Development
 
-## Build and run
+Nearside is three programs that work together:
 
-Needs Xcode 26 or later and Android Studio (its bundled JDK; a newer system JDK is too new for Gradle).
+- the **phone app** and its **helper** (`android/`, Kotlin): one APK, the same for every computer;
+- the **engine** (`core/`, Swift): adb, the helper link, sync, and the window, call and camera
+  streams, shared by every computer app;
+- a **computer app** for each system: the Mac's (`mac/`, Swift) and Windows' (`windows/`, Swift
+  engine bridge plus a C# WinUI 3 app).
+
+This page covers what they share. Each computer has its own page:
+
+- [Developing on the Mac](development-mac.md): building, signed builds (the webcam), test hooks.
+- [Developing on Windows](development-windows.md): toolchain, building, the camera, the installer.
+- [Adding a platform](adding-a-platform.md): what a new computer app (Linux, say) needs.
+- [Releasing](releasing.md): making a release for both.
+
+## The phone app
+
+Build it with Android Studio's bundled JDK (a newer system JDK is too new for Gradle):
 
 ```sh
-export JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home"
-(cd android && ./gradlew assembleDebug)   # phone app + helper (one APK)
-mac/scripts/bundle.sh                     # → mac/build/Nearside.app, APK inside
-open mac/build/Nearside.app
+export JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home"   # macOS
+(cd android && ./gradlew assembleDebug)
 ```
 
-The Mac app installs and updates the phone app itself. While iterating on the phone side:
+Each computer app bundles the APK it was built with and installs or updates the phone app
+itself; `versionCode` is the number of commits, so a newer build always replaces an older one.
+While working on the phone side:
 
 ```sh
 adb install -r android/app/build/outputs/apk/debug/app-debug.apk
-adb shell 'kill $(pidof nearside-helper)'     # the Mac starts the new helper within seconds
+adb shell 'kill $(pidof nearside-helper)'     # the computer starts the new helper within seconds
 ```
 
-Logs:
+The helper's log: `adb shell cat /data/local/tmp/nearside-helper.log`.
 
-- Helper: `adb shell cat /data/local/tmp/nearside-helper.log`
-- Mac: `/usr/bin/log show --last 10m --predicate 'subsystem == "dev.nearside.mac"'`
-  (in zsh, plain `log` is a shell builtin)
+A phone whose app was installed from a release can't be updated in place by a debug build (Android
+requires the same signing key): the panel then offers **Reinstall**, which swaps it.
 
-### Signed builds (the webcam)
+## The engine
 
-macOS only loads the camera extension ("Nearside Camera") from a build that is signed with a
-Developer ID, carries provisioning profiles allowing a system extension, is notarised, and sits
-in /Applications. Plain builds leave the extension out and work otherwise.
+`core/` is a Swift package with no UI. It builds on macOS, Windows and Linux:
 
-To build it yourself you need your own Apple developer account:
+```sh
+cd core && swift test
+```
 
-1. Identifiers: App IDs `dev.nearside.mac` (with the System Extension capability) and
-   `dev.nearside.mac.camera` (or your own IDs, changed throughout).
-2. Profiles: a Developer ID profile for each, saved as `~/nearside-profiles/app.provisionprofile`
-   and `~/nearside-profiles/camera.provisionprofile`.
-3. Your team ID in `mac/scripts/team-id`, and a notarytool profile (`xcrun notarytool
-   store-credentials nearside`).
-4. `mac/scripts/install-signed.sh`: builds, signs, notarises (a few minutes) and installs to
-   /Applications. Then Settings › Phone camera, and allow it in System Settings › General ›
-   Login Items & Extensions.
+The tests cover protocol encoding and decoding, input mapping, key maps, sizes, the audio jitter
+buffer, clipboard history, the adb key format, notification muting and more. Live tests against a
+phone are opt-in: `NEARSIDE_DEVICE=<ip:port> swift test` (`NEARSIDE_INSTALL_APK=<apk>` adds the
+install test).
 
-Its logs: `/usr/bin/log show --last 5m --predicate 'category == "webcam" OR (process ==
-"dev.nearside.mac.camera" AND category == "camera")'`. Info-level lines only show live
-(`log stream --level info`).
+On Linux it builds and tests too, which catches Apple-only code creeping in (CI does this):
 
-## Tests
+```sh
+docker run --rm -v "$PWD/core":/src:ro swift:6.4.3 bash -c 'cp -r /src /w && rm -rf /w/.build && cd /w && swift test'
+```
 
-- `cd core && swift test`: protocol encoding and decoding, input mapping, key map, sizes, the
-  audio jitter buffer, clipboard history, adb key format and more.
-- `cd mac && swift test`: the Mac parts (a real Opus round trip, quarantine).
-- The engine also builds and tests on Linux, which catches Apple-only code creeping into
-  `core/` (CI does this): `docker run --rm -v "$PWD/core":/src:ro swift:6.4.3 bash -c 'cp -r /src
-  /w && rm -rf /w/.build && cd /w && swift test'`. Sockets, mDNS and USB are placeholders there
-  (`Unsupported.swift`), so the macOS-only network tests are left out.
-- Live tests against a phone are opt-in: `cd core && NEARSIDE_DEVICE=<ip:port> swift test`
-  (`NEARSIDE_INSTALL_APK=<apk>` adds the install test).
+Sockets, mDNS and USB are placeholders there (`core/Sources/NativeAdb/Unsupported.swift`), so the
+network tests are left out.
 
-## Test hooks
+## Continuous integration
 
-The Mac app reads these environment variables when started directly
-(`mac/build/Nearside.app/Contents/MacOS/Nearside`), so phone-app windows can be tested
-without clicking:
-
-| Variable | Effect |
-|---|---|
-| `NEARSIDE_OPEN_APP` | Open windows on launch: comma-separated `pkg`, `pkg/activity` or `phone` (the phone window) |
-| `NEARSIDE_OPEN_APP_DELAY` | Seconds to wait before opening |
-| `NEARSIDE_TEST_WINDOW` | An app window saves its chrome (toolbar, corners) to this PNG once showing |
-| `NEARSIDE_OPEN_APP_GAP` | Seconds between the windows in `NEARSIDE_OPEN_APP` (default 4) |
-| `NEARSIDE_OPEN_NOTIFICATION` | Open a notification key in a window |
-| `NEARSIDE_TRACE` | Write a trace (frames, delays, audio, stats) to this file, and the shown picture to `<file>.png` once a second |
-| `NEARSIDE_TEST_INPUT` | Drive a window: `tap`, `click`, `scroll`, `wheel`, `pinch`, `mouse`, `type`, `keys`, `copy`, `paste`, `resize`, `size`, `hide`, `close`, `drop` |
-| `NEARSIDE_TEST_TAP` | `x,y` (0…1 of the window) for `tap` |
-| `NEARSIDE_TEST_TEXT` | Text for `type` |
-| `NEARSIDE_TEST_SIZE`, `NEARSIDE_TEST_SIZE2` | `WxH` in points, or `phone`, `foldable`, `tablet`, for `size` (the second 8 s later) |
-| `NEARSIDE_TEST_CLOSE_AFTER` | Seconds before `close` / how long `hide` lasts |
-| `NEARSIDE_TEST_HIDE_AFTER` | Seconds before `hide` minimises the window (default 0) |
-| `NEARSIDE_TEST_FILE` | File for `drop` |
-| `NEARSIDE_TEST_PHONE` | Phone window: `recents`, `notifications`, `close`, `bar`, `drag` |
-| `NEARSIDE_TEST_DISMISS` | With `NEARSIDE_TEST_PHONE=notifications`: dismiss the first notification from this app |
-| `NEARSIDE_TEST_WAIT` | Seconds before the phone-window test runs |
-| `NEARSIDE_TEST_DEMO_NOTIFICATIONS` | `1`: with `NEARSIDE_TEST_PHONE=notifications`, the panel shows made-up notifications (for pictures) |
-| `NEARSIDE_TEST_DOCK` | The phone window's dock: comma-separated packages instead of your favourites |
-| `NEARSIDE_TEST_OVERLAY` | Output PNG for the overlay, phone-window and `NEARSIDE_TEST_VIEW` snapshots |
-| `NEARSIDE_TEST_SHOT` | Save the whole window as it looks (toolbar, panels and the app's picture) to this PNG, `NEARSIDE_TEST_SHOT_AFTER` seconds (default 4) after it shows; for the phone window, counted from opening |
-| `NEARSIDE_TEST_VIEW` | Save `panel`, `settings` or `messages` to `NEARSIDE_TEST_OVERLAY` after `NEARSIDE_TEST_WAIT` s (default 8); `NEARSIDE_TEST_DARK=1` for dark mode |
-| `NEARSIDE_TEST_LAUNCHER` | Save the launcher to this PNG (with `NEARSIDE_TEST_QUERY`, `NEARSIDE_TEST_MOVES=down,right`) |
-| `NEARSIDE_TEST_SETUP` | Save a setup page to this PNG (`NEARSIDE_TEST_SETUP_PAGE`: `welcome`, `permissions`, `phone`; `NEARSIDE_TEST_DARK=1` for dark mode; after `NEARSIDE_TEST_WAIT` s, default 3) |
-| `NEARSIDE_TEST_DOCK_ICON` | Save the Dock icon to this PNG |
-| `NEARSIDE_TEST_LAYOUTS` | Log the phone's keyboard layouts |
-| `NEARSIDE_TEST_VIDEO_KBPS` | Read video at most this fast (tests the adaptive bitrate) |
-
-Notes:
-
-- An app started from a shell can't become the key window, so ⌘ shortcuts in tests go through
-  `performKeyEquivalent`.
-- Hidden windows pause their encoder, so trace pictures go stale while a window is covered.
-- Phone-side debug properties (set with `adb shell setprop`): `debug.nearside.sleep_after_s`
-  (seconds of silence before a hidden window's display sleeps) and `debug.nearside.bars_idle_s`
-  (how long the system-bars host stays after the last window).
-- README and website pictures: `NEARSIDE_TEST_SHOT` and `NEARSIDE_TEST_VIEW` make the raw
-  captures; blur anything personal before using them. The "How it works" picture is
-  [`assets/src/architecture.html`](assets/src/architecture.html), rendered to PNG with a
-  headless browser (the command is in the file).
-- Phone apps ask for Touch ID by default; for unattended tests set
-  `defaults write dev.nearside.mac PhoneApps.authentication never` and delete it afterwards.
+`.github/workflows/ci.yml` runs on every push and pull request: the engine on Linux, the Mac app's
+tests on macOS, the Windows engine tests, bridge, camera and app on Windows, and the phone app's
+debug build. `.github/workflows/pages.yml` publishes `site/` to GitHub Pages from `main`.
 
 ## Code map
 
 ```
-core/Sources/NearsideCore/  SyncEngine, helper link, clipboard history, Display/ streams;
-                            Platform.swift: what each app provides (the Mac's: NearsideMac)
-core/Sources/NativeAdb/     adb client: TLS, pairing, mDNS discovery, streams, sync, install
-mac/Sources/Nearside/       UI: menu-bar panel, setup, settings, Messages, phone-app windows
-mac/Sources/NearsideMac/    the engine's Mac parts: VideoToolbox decoding, audio, microphone,
-                            pasteboard, notifications, screenshots, quarantine
-mac/Sources/NearsideCamera/ the camera extension
+core/Sources/NearsideCore/   SyncEngine (connection, clipboard, notifications, calls, photos, SMS),
+                             the helper link, Display/ (window, call and camera streams);
+                             Platform.swift: what each computer app provides
+core/Sources/NativeAdb/      adb client: TLS, pairing, mDNS discovery, USB, streams, sync, install;
+                             *+Windows.swift: the Windows sockets, mDNS and USB
+mac/Sources/Nearside/        the Mac UI: menu-bar panel, setup, settings, Messages, phone windows
+mac/Sources/NearsideMac/     the engine's Mac platform: VideoToolbox, audio, microphone,
+                             pasteboard, notifications, screenshots, quarantine
+mac/Sources/NearsideCamera/  the Mac camera extension
+windows/Sources/             WindowsPlatform (the engine's Windows platform) and NearsideBridge
+                             (the engine as a DLL with a JSON C API)
+windows/App/                 the Windows UI (C#, WinUI 3): tray panel, setup, settings, Messages,
+                             phone windows (FFmpeg, Direct3D 11), WASAPI sound and microphone
+windows/Camera/              the Windows virtual camera (a C++ Media Foundation source)
+windows/installer/           the Inno Setup installer
 android/app/src/main/java/dev/nearside/
-  helper/                   the shell-user helper (Main.kt) and display/ (virtual displays,
-                            encoder, input, audio, system bars, app catalog)
-  link/                     app side of the helper Binder link
-  phone/                    home screen, system-bars host, dropped files, in-use notification
+  helper/                    the shell-user helper (Main.kt) and display/ (virtual displays,
+                             encoder, input, audio, system bars, app catalog, camera)
+  link/                      app side of the helper Binder link
+  phone/                     home screen, system-bars host, dropped files, in-use notification
+site/                        the website and the update feeds (appcast.xml, appcast-windows.xml)
 ```
 
-See [architecture.md](architecture.md) for how the pieces fit together.
+See [architecture.md](architecture.md) for how the pieces fit together,
+[security.md](security.md) for the security design and
+[display-protocol.md](display-protocol.md) for the stream format.

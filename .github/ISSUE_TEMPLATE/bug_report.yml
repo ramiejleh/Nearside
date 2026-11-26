@@ -12,8 +12,8 @@ body:
   - type: input
     id: mac
     attributes:
-      label: Mac
-      placeholder: MacBook Air M2, macOS 15.2
+      label: Computer
+      placeholder: MacBook Air M2, macOS 15.2 (or a PC with Windows 11 24H2, x64 or Arm)
     validations:
       required: true
   - type: input
@@ -34,7 +34,11 @@ body:
         - Notifications
         - Text messages
         - Files
-        - Phone apps on the Mac
+        - Phone apps in windows
+        - Calls
+        - Phone camera (webcam)
+        - Photos and screenshots
+        - Updates and installing
         - Something else
     validations:
       required: true
@@ -43,6 +47,7 @@ body:
     attributes:
       label: Logs
       description: |
-        If you can: the helper's log (`adb shell cat /data/local/tmp/nearside-helper.log`) and the Mac app's
-        (`/usr/bin/log show --last 10m --predicate 'subsystem == "dev.nearside.mac"'`). Remove anything personal first.
+        If you can: the helper's log (`adb shell cat /data/local/tmp/nearside-helper.log`), and the Mac app's
+        (`/usr/bin/log show --last 10m --predicate 'subsystem == "dev.nearside.mac"'`) or the Windows app's
+        (`%LOCALAPPDATA%\Nearside\nearside.log`). Remove anything personal first.
       render: text

@@ -6,7 +6,7 @@ body:
     id: idea
     attributes:
       label: The idea
-      description: What would you like to do with your phone and Mac, and why?
+      description: What would you like to do with your phone and computer, and why?
     validations:
       required: true
   - type: textarea

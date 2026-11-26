@@ -7,16 +7,22 @@ design see [security.md](security.md); for the phone-app stream format see
 ## The three pieces
 
 ```
-Mac app ──(adb over TLS, wireless debugging)──> helper (shell user) <──(Binder)──> phone app
+Mac or PC app ──(adb over TLS, wireless debugging)──> helper (shell user) <──(Binder)──> phone app
 ```
 
-- **Mac app** (`mac/`, Swift): a menu-bar app. The engine is its own package (`core/`), to be
-  shared with a Windows app: `NearsideCore` holds the sync engine, protocols and the display,
-  call and camera streams; `NativeAdb` is a complete adb client (TLS, pairing, streams, file
-  sync, install) so nothing else needs installing. What differs per computer is behind
-  `Platform` (`core/Sources/NearsideCore/Platform.swift`): the Mac's side, `NearsideMac`, decodes
-  video with VideoToolbox, plays and records sound with AVAudioEngine, and handles the
-  pasteboard, notifications, screenshots and quarantine. `Nearside` is the UI.
+- **Computer app**: the Mac's (`mac/`, Swift, a menu-bar app) or Windows' (`windows/`, a
+  notification-area app). Both run the same engine (`core/`): `NearsideCore` holds the sync
+  engine, protocols and the display, call and camera streams; `NativeAdb` is a complete adb
+  client (TLS, pairing, streams, file sync, install, USB) so nothing else needs installing. What
+  differs per computer is behind `Platform` (`core/Sources/NearsideCore/Platform.swift`):
+  - the Mac's side, `NearsideMac`, decodes video with VideoToolbox, plays and records sound with
+    AVAudioEngine, and handles the pasteboard, notifications, screenshots and quarantine;
+    `Nearside` is the UI;
+  - on Windows the engine is a DLL (`NearsideBridge`) under a C# WinUI 3 app, which decodes with
+    FFmpeg and Direct3D 11, plays and records with WASAPI, and handles notifications; see
+    [On Windows](#on-windows).
+
+  "The Mac" below means either computer, except where Windows is named.
 - **Helper** (`android/.../helper/`, Kotlin): a process the Mac starts with
   `app_process` from the phone app's own APK, over adb, so it runs as the **shell user** — the
   rights `adb shell` has. It reads the clipboard in the background, starts activities, creates
@@ -80,6 +86,15 @@ so updates replace and removals clear; dismissing on either side clears both. In
 fill the action's RemoteInput. Opening a notification fires its PendingIntent through the
 helper (apps can't start activities from the background) — on the phone, or into a Mac window.
 On connect the phone catches the Mac up: the newest three as banners, older ones quietly.
+The panel's Notifications tab lists the same set. **Muting** (1 to 24 hours, or until turned
+back on) is the computer's alone: notifications still arrive and fill the list, but aren't
+shown; when it ends, the ones still on the phone are shown, the newest three as banners.
+
+**While the phone is away** the computer shows nothing of it: the panel offers only Settings
+and Connect (when another computer has the phone), the clipboard history is hidden and copies
+aren't recorded, and the computer's notifications are cleared (they come back quietly on
+reconnect). After a minute away, its apps leave Spotlight, Applications or the Start menu
+until it's back; a shorter drop doesn't count.
 
 ### SMS
 `SmsBridge` reads the Telephony provider and sends with `SmsManager`; the Mac grants the
@@ -88,7 +103,7 @@ notification replies. Google Messages ignores the provider's read flag, so marki
 conversation read also presses that conversation notification's "Mark as read" action.
 
 ### Files
-- **Phone → Mac:** the "Send to Mac" share target passes each file's descriptor to the helper,
+- **Phone → Mac:** the "Send to computer" share target passes each file's descriptor to the helper,
   which stages it in a shell-only folder; the Mac pulls it into Downloads (quarantined) and the
   staged copy is deleted.
 - **Mac → phone:** files dropped on the menu-bar icon, the panel, or the drop shelf that slides
@@ -154,6 +169,28 @@ network's capabilities).
 - **On the Mac:** it shows in the panel's status pill, and one notification at 20% unless the
   phone is charging.
 - **Permission:** the network type needs `READ_PHONE_STATE`, which the Mac grants over adb.
+
+## On Windows
+
+The phone and the protocol are the same; a PC is another paired desktop (it says `"os":
+"windows"` in its hello, so the phone words its text "PC").
+
+- **Engine:** `NearsideBridge.dll` runs the engine on the app's UI thread (its main actor), pumped
+  when its wake handle is signalled. The app reads a JSON snapshot after each change event and
+  sends JSON commands; video, sound and the microphone use their own C calls.
+- **adb:** Winsock sockets, mDNS through `DnsServiceBrowse`, and USB through WinUSB (adbd's own
+  descriptors make Windows load WinUSB, so no driver).
+- **Video:** the phone encodes H.264 for a PC that asks for it (`OPEN` carries the codec), since
+  Windows' HEVC decoder is a paid extension. FFmpeg decodes on the graphics card (D3D11VA), or on
+  the processor if that fails, and a Direct3D 11 swap chain draws.
+- **Sound and microphone:** WASAPI, with the same jitter buffer as the Mac.
+- **Notifications:** Windows app notifications, with buttons, a reply box and "Open on PC".
+- **Webcam:** `NearsideCamera.dll`, a Media Foundation media source registered machine-wide,
+  which Windows' camera service (Frame Server) loads. The app feeds it NV12 frames over a named
+  pipe; the DLL only accepts `Nearside.exe` from its own folder.
+- **Phone apps:** windows with their own taskbar buttons, Start-menu shortcuts (`nearside:`
+  links), a launcher (Ctrl+Alt+N), and Windows Hello before they show.
+- **Updates:** WinSparkle reads `site/appcast-windows.xml`; installers are Inno Setup, per machine.
 
 ## Phone apps on the Mac
 

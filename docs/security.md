@@ -135,20 +135,49 @@ Out of scope: an attacker who has already unlocked the Mac as you, or who has ro
 ## Developer test hooks
 
 The Mac app reads a few `NEARSIDE_*` environment variables
-([development.md](development.md#test-hooks)) so its windows can be tested without clicking.
+([development-mac.md](development-mac.md#test-hooks)) so its windows can be tested without clicking.
 They only take effect when someone starts the app's binary with them set, which already means
 running programs as you. Windows they open still go through the Touch ID gate; some can save
 what a window shows to a file of the caller's choosing.
 
+## On Windows
+
+The phone side and the link are the same as with a Mac. What's specific to the PC:
+
+- **Secrets and history** live in your Windows profile's application data, which only your
+  account (and administrators) can read.
+- **Windows Hello** (or your PIN) before phone apps show, as Touch ID on the Mac; windows are
+  covered while the PC is locked.
+- **Received files** get the Mark of the Web, so Windows treats them as downloaded (SmartScreen,
+  Office's Protected View), and are always announced with a notification.
+- **The camera** (`NearsideCamera.dll`) is installed only in `C:\Program Files\Nearside`, which
+  only administrators can change, and registered machine-wide. A machine-wide registration that
+  points at a user-writable path would let other users' programs run inside Windows' camera
+  service. The DLL accepts pictures only from `Nearside.exe` in its own folder (it checks the
+  process on its named pipe, whose process id Windows' camera service sets itself). That's a
+  stronger check than macOS allows.
+- **`nearside:` links and Start-menu shortcuts** start `Nearside.exe --link <link>`, and a link
+  launch ignores every other switch. As on the Mac, a link only opens one of the phone's own apps
+  (by package: letters, digits, dots, underscores) behind the Hello gate. A second start hands the
+  link to the running app (`WM_COPYDATA`, size-checked). Shortcuts carry a Nearside badge so
+  they aren't mistaken for PC apps, and only the ones Nearside made are ever removed.
+- **Updates:** WinSparkle checks `https://ramiejleh.github.io/Nearside/appcast-windows.xml`. An
+  update installs only if its Ed25519 signature matches the public key built into the app. The
+  installer refuses downgrades and any folder but `Program Files\Nearside`. The feed override and
+  the install-now switch exist only in builds made for testing (`release.ps1 -UpdateTest`), which
+  are never published.
+- **Installers** are signed with the project's code-signing certificate, and install per
+  machine (administrator once, for the camera).
+
 ## Known limitations
 
-- Nearside Camera takes pictures from one writer at a time, and refuses one macOS names as
+- On the Mac, Nearside Camera takes pictures from one writer at a time, and refuses one macOS names as
   anything but Nearside, but it can't prove the writer is Nearside: macOS gives camera extensions
   no audit token, their sandbox blocks code-signature lookups, and they run as their own user
   (no files shared with the app). So a program already running on your Mac could feed it pictures;
   such a program could equally create a camera of its own. Apple's own sample accepts any writer.
 
-- Any foreground phone app can invoke "Send to Mac" with a file of its choosing (Android's share
+- Any foreground phone app can invoke "Send to computer" with a file of its choosing (Android's share
   sheet doesn't tell the target who started it). The notification and quarantine contain this.
 - Android's own "Wireless debugging connected" notification stays while the Mac is attached.
 - One-time codes may arrive redacted in mirrored notifications (Android 17 hides them from
