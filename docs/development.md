@@ -33,11 +33,12 @@ In practice:
 
 Gaps still to close (Windows is missing these from the Mac):
 
-- Settings: what clicking a notification opens, Motion, Quality, where sound plays, using the
+- Settings: what clicking a notification opens, Motion, where sound plays, using the
   PC's microphone, the keyboard layout, returning hidden apps to the phone, changing the
   launcher's shortcut, turning the webcam on and off, automatic update checks.
 - The phone window's keyboard shortcuts (Home, Recents, Notifications, sizes, full screen,
   statistics) and the drop shelf for files.
+- The clipboard history's All / Phone / PC filter.
 
 ## The phone app
 
