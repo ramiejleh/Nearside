@@ -38,6 +38,8 @@ public sealed class PhoneWindow : Window
     private readonly Border overlay = new() { Visibility = Visibility.Collapsed };
     private readonly TextBlock overlayText = new() { TextWrapping = TextWrapping.Wrap, TextAlignment = TextAlignment.Center, MaxWidth = 280 };
     private readonly ProgressRing overlayRing = new() { IsActive = true, Width = 28, Height = 28 };
+    /// Reopen | Close Window, under the words when the app was closed on the phone (as on the Mac).
+    private readonly StackPanel overlayButtons = new() { Orientation = Orientation.Horizontal, Spacing = 8, HorizontalAlignment = HorizontalAlignment.Center };
     /// A few seconds' message over the picture (dropped files the app couldn't take).
     private readonly Border notice = new()
     {
@@ -123,31 +125,46 @@ public sealed class PhoneWindow : Window
         size = AppSettings.Get(SizeKey) is { } saved && Sizes.Contains(saved) ? saved : "phone";
 
         toolbar = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4, Padding = new Thickness(6, 4, 6, 4), Height = ToolbarHeight };
-        toolbar.Children.Add(ToolButton("\uE72B", "Back (Esc)", GoBack));
-        toolbar.Children.Add(ToolButton("\uE80F", "Home", () => { recents?.Hide(); Command("home"); }));
-        if (package == null) toolbar.Children.Add(ToolButton("\uE7C4", "Recents", ToggleRecents));
+        // The phone window: the phone's own buttons, then sizes. An app's window: sizes and moving
+        // it to the phone only (Esc is still Back; Back on an app's first screen would close it).
         if (package == null)
         {
+            toolbar.Children.Add(ToolButton("\uE72B", "Back (Esc)", GoBack));
+            toolbar.Children.Add(ToolButton("\uE80F", "Home", () => { recents?.Hide(); Command("home"); }));
+            toolbar.Children.Add(ToolButton("\uE7C4", "Recents", ToggleRecents));
             bellButton = ToolButton("\uEA8F", "Notifications", ToggleNotifications);
             toolbar.Children.Add(bellButton);
+            toolbar.Children.Add(new AppBarSeparator());
         }
-        toolbar.Children.Add(new AppBarSeparator());
         foreach (var (name, glyph, tip) in new[] { ("phone", "\uE8EA", "Phone size"), ("foldable", "\uE89A", "Foldable size"), ("tablet", "\uE70A", "Tablet size") })
         {
             var button = ToolButton(glyph, tip, () => SetSize(name));
             sizeButtons[name] = button;
             toolbar.Children.Add(button);
         }
-        toolbar.Children.Add(new AppBarSeparator());
-        toolbar.Children.Add(ToolButton("\uE8A7", "Open on the phone", () => Command("openOnPhone")));
+        if (package != null)
+        {
+            toolbar.Children.Add(new AppBarSeparator());
+            toolbar.Children.Add(ToolButton("\uE8A7", "Open on the phone", () => Command("openOnPhone")));
+        }
         ShowSize();
 
         overlay.Background = (Brush)Application.Current.Resources["SolidBackgroundFillColorBaseBrush"];
         overlay.Child = new StackPanel
         {
             Spacing = 12, VerticalAlignment = VerticalAlignment.Center, HorizontalAlignment = HorizontalAlignment.Center,
-            Children = { overlayRing, overlayText },
+            Children = { overlayRing, overlayText, overlayButtons },
         };
+        var reopen = new Button { Content = "Reopen", Style = (Style)Application.Current.Resources["AccentButtonStyle"] };
+        reopen.Click += (_, _) =>
+        {
+            Close();
+            _ = OpenAsync(package, null, title);
+        };
+        var closeWindow = new Button { Content = "Close Window" };
+        closeWindow.Click += (_, _) => Close();
+        overlayButtons.Children.Add(reopen);
+        overlayButtons.Children.Add(closeWindow);
         var stage = new Grid { Background = new SolidColorBrush(Microsoft.UI.Colors.Black) };
         recents = new Recents(pick: task => { Command("front", new { task }); }, remove: task => Command("removeTask", new { task }),
                               home: () => Command("home"));
@@ -462,7 +479,7 @@ public sealed class PhoneWindow : Window
                         break;
                     case "opening": ShowOverlay("Opening…", busy: true); break;
                     case "reconnecting": ShowOverlay("Reconnecting…", busy: true); break;
-                    case "exited": ShowOverlay("The app was closed on your phone.", busy: false); break;
+                    case "exited": ShowOverlay($"{Title} was closed on your phone.", busy: false, reopen: package != null); break;
                     case "busy": ShowOverlay("Your phone can't show another window right now. Close one and try again.", busy: false); break;
                     case "failed": ShowOverlay(e.TryGetProperty("message", out var m) ? m.GetString() ?? "" : "Couldn't open.", busy: false); break;
                     case "movedToPhone":
@@ -502,7 +519,7 @@ public sealed class PhoneWindow : Window
     private bool covered;
     /// What the session says (its overlay text and spinner; null while showing) and whether the
     /// app blocks capture: the overlay comes from these and `covered`, in Overlay().
-    private (string Text, bool Busy)? sessionState = ("Opening…", true);
+    private (string Text, bool Busy, bool Reopen)? sessionState = ("Opening…", true, false);
     private bool secure;
 
     /// The PC locked: the window shows nothing, takes no input and gets no video until Windows
@@ -528,9 +545,9 @@ public sealed class PhoneWindow : Window
         Command("visibility", new { v = 0 });
     }
 
-    private void ShowOverlay(string text, bool busy)
+    private void ShowOverlay(string text, bool busy, bool reopen = false)
     {
-        sessionState = (text, busy);
+        sessionState = (text, busy, reopen);
         Overlay();
     }
 
@@ -538,14 +555,15 @@ public sealed class PhoneWindow : Window
     /// session's state.
     private void Overlay()
     {
-        (string Text, bool Busy)? shown = covered ? ("Locked. Click to show it again.", false)
-            : secure ? ("This app doesn't allow its screen to be shown elsewhere.", false)
+        (string Text, bool Busy, bool Reopen)? shown = covered ? ("Locked. Click to show it again.", false, false)
+            : secure ? ("This app doesn't allow its screen to be shown elsewhere.", false, false)
             : sessionState;
         overlay.Visibility = shown == null ? Visibility.Collapsed : Visibility.Visible;
         if (shown is { } s)
         {
             overlayText.Text = s.Text;
             overlayRing.Visibility = s.Busy ? Visibility.Visible : Visibility.Collapsed;
+            overlayButtons.Visibility = s.Reopen ? Visibility.Visible : Visibility.Collapsed;
         }
     }
 

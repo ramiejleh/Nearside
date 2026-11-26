@@ -69,6 +69,8 @@ public sealed record Settings
     public int HistoryLimit { get; init; }
     public bool LowBatteryAlert { get; init; }
     public int FrameRate { get; init; } = 60;
+    /// Phone apps' picture: "auto", "sharper" or "smoother" (PhoneQuality).
+    public string Quality { get; init; } = "auto";
 }
 
 public sealed record PhotosView

@@ -25,10 +25,12 @@ public sealed class Picture(byte[] bgra, int width, int height)
     }
 }
 
-/// H.264 or HEVC with FFmpeg: on the graphics card (D3D11VA) where it can, else on the processor;
-/// either way each picture comes back to memory and is converted to BGRA (or filtered, for the
-/// camera). Used from the session's reading thread; a reconnecting window's old reader may still be
-/// decoding while the new one configures, so FFmpeg's state is only touched under the lock.
+/// H.264 or HEVC with FFmpeg: on the graphics card (D3D11VA) where it can, else on the processor.
+/// A phone window shares its Direct3D device (`SharedDevice`) and keeps pictures on the card
+/// (`KeepOnCard`): it draws the decoder's own textures. Otherwise each picture comes back to memory
+/// and is converted to BGRA (or filtered, for the camera). Used from the session's reading thread;
+/// a reconnecting window's old reader may still be decoding while the new one configures, so
+/// FFmpeg's state is only touched under the lock.
 public sealed unsafe class Decoder : IDisposable
 {
     public const int Hevc = 0, H264 = 1; // DisplayWire.Codec
@@ -46,6 +48,14 @@ public sealed unsafe class Decoder : IDisposable
     private AVFrame* converted = ffmpeg.av_frame_alloc();
     private SwsContext* scaler;
     private byte[]? pendingConfig;
+    /// The BGRA picture's memory, reused frame to frame (a fresh one each frame kept the garbage
+    /// collector busy, and the window stuttered when it ran).
+    private byte[]? bgra;
+
+    /// The ID3D11Device to decode on (a window's, so it can draw the textures); 0: one of FFmpeg's.
+    public nint SharedDevice { get; set; }
+    /// Pictures stay on the graphics card (AV_PIX_FMT_D3D11 frames); false: copied to memory.
+    public bool KeepOnCard { get; set; }
     /// The parameter sets, kept to start again in software if the graphics card fails at once.
     private byte[]? config;
     private int codec;
@@ -78,8 +88,9 @@ public sealed unsafe class Decoder : IDisposable
         c->flags |= ffmpeg.AV_CODEC_FLAG_LOW_DELAY;
         if (onCard)
         {
-            AVBufferRef* device = null;
-            if (ffmpeg.av_hwdevice_ctx_create(&device, AVHWDeviceType.AV_HWDEVICE_TYPE_D3D11VA, null, null, 0) < 0)
+            var device = SharedDevice != 0 ? OnDevice(SharedDevice) : null;
+            if (device == null) KeepOnCard = false; // FFmpeg's own device: its textures can't be drawn here
+            if (device == null && ffmpeg.av_hwdevice_ctx_create(&device, AVHWDeviceType.AV_HWDEVICE_TYPE_D3D11VA, null, null, 0) < 0)
             {
                 ffmpeg.avcodec_free_context(&c);
                 hardwareWorks = false;
@@ -108,15 +119,21 @@ public sealed unsafe class Decoder : IDisposable
         return true;
     }
 
-    /// The pictures in one access unit (usually one), as BGRA.
-    public List<Picture> Decode(ReadOnlySpan<byte> annexB, uint frameGen, long pts)
+    /// FFmpeg's D3D11VA device on `d3d11Device` (AVD3D11VADeviceContext's first field is the
+    /// device; FFmpeg fills in the rest and releases the reference it's given). Null if refused.
+    private static AVBufferRef* OnDevice(nint d3d11Device)
     {
-        var pictures = new List<Picture>(1);
-        DecodeFrames(annexB, frameGen, pts, decoded =>
+        var buffer = ffmpeg.av_hwdevice_ctx_alloc(AVHWDeviceType.AV_HWDEVICE_TYPE_D3D11VA);
+        if (buffer == null) return null;
+        var context = (AVHWDeviceContext*)buffer->data;
+        System.Runtime.InteropServices.Marshal.AddRef(d3d11Device);
+        *(nint*)context->hwctx = d3d11Device;
+        if (ffmpeg.av_hwdevice_ctx_init(buffer) < 0)
         {
-            if (Convert((AVFrame*)decoded) is { } picture) pictures.Add(picture);
-        });
-        return pictures;
+            ffmpeg.av_buffer_unref(&buffer); // releases the device reference too
+            return null;
+        }
+        return buffer;
     }
 
     /// Each decoded frame in memory (valid during the call, under the decoder's lock).
@@ -160,7 +177,7 @@ public sealed unsafe class Decoder : IDisposable
         while ((received = ffmpeg.avcodec_receive_frame(context, frame)) == 0)
         {
             var picture = frame;
-            if (frame->hw_frames_ctx != null)
+            if (frame->hw_frames_ctx != null && !KeepOnCard)
             {
                 ffmpeg.av_frame_unref(copied);
                 if (ffmpeg.av_hwframe_transfer_data(copied, frame, 0) < 0)
@@ -189,17 +206,19 @@ public sealed unsafe class Decoder : IDisposable
         }
     }
 
-    private Picture? Convert(AVFrame* frame)
+    /// A frame in memory as BGRA, in memory reused by the next call (shown before then).
+    public Picture? Convert(AVFrame* frame)
     {
         int w = frame->width, h = frame->height;
+        // Bilinear: the colour planes are half size, and point sampling left blocky edges.
         scaler = ffmpeg.sws_getCachedContext(scaler, w, h, (AVPixelFormat)frame->format, w, h, AVPixelFormat.AV_PIX_FMT_BGRA,
-            (int)SwsFlags.SWS_POINT, null, null, null);
+            (int)SwsFlags.SWS_BILINEAR, null, null, null);
         ffmpeg.av_frame_unref(converted);
         converted->width = w;
         converted->height = h;
         converted->format = (int)AVPixelFormat.AV_PIX_FMT_BGRA;
         if (scaler == null || ffmpeg.av_frame_get_buffer(converted, 0) != 0 || ffmpeg.sws_scale_frame(scaler, converted, frame) < 0) return null;
-        var bgra = new byte[w * h * 4];
+        if (bgra?.Length != w * h * 4) bgra = new byte[w * h * 4];
         var stride = converted->linesize[0];
         fixed (byte* output = bgra)
         {

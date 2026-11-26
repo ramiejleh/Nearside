@@ -116,6 +116,24 @@ public partial class App : Application
             OpenMessages();
             if (shot != null) saved = Shots.SaveAsync(messages!, messages!.Content, shot);
         }
+        else if (line.Contains("--launcher"))
+        {
+            OpenLauncher();
+            // Its apps and icons arrive just after it opens.
+            if (shot != null)
+            {
+                saved = Task.Delay(1500).ContinueWith(_ =>
+                {
+                    var done = new TaskCompletionSource();
+                    queue!.TryEnqueue(async () =>
+                    {
+                        await Shots.SaveAsync(launcher!, launcher!.Content, shot);
+                        done.SetResult();
+                    });
+                    return done.Task;
+                }).Unwrap();
+            }
+        }
         else if (line.Contains("--settings"))
         {
             OpenSettings();

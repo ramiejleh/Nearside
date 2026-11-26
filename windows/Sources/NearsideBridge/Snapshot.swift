@@ -28,6 +28,7 @@ enum Snapshot {
                 "historyLimit": engine.historyLimit,
                 "lowBatteryAlert": engine.lowBatteryAlert,
                 "frameRate": PhoneFrameRate.current,
+                "quality": PhoneQuality.current.rawValue,
             ] as [String: Any],
         ]
         if let inUseOn = engine.inUseOn { s["inUseOn"] = inUseOn }

@@ -55,6 +55,14 @@ public sealed class SettingsWindow : Window
     private readonly ComboBox historyLimit = new() { MinWidth = 130 };
     private readonly ComboBox hello = new() { MinWidth = 220 };
     private readonly ComboBox frameRate = new() { MinWidth = 130 };
+    private readonly ComboBox quality = new() { MinWidth = 130 };
+    /// PhoneQuality's choices, names and what each does (as the Mac says it).
+    private static readonly (string Value, string Title, string Detail)[] Qualities =
+    [
+        ("auto", "Automatic", "Detail follows your Wi-Fi."),
+        ("sharper", "Sharper", "More detail at half the frame rate. For reading and photos."),
+        ("smoother", "Smoother", "Less detail, so fewer stalls. Best on busy Wi-Fi."),
+    ];
     private readonly NotificationApps notificationApps;
     private ScrollViewer? settingsPage;
     private static readonly int[] FrameRates = [60, 90, 120];
@@ -126,6 +134,17 @@ public sealed class SettingsWindow : Window
         frameRate.SelectedIndex = Math.Max(0, Array.IndexOf(FrameRates, EngineHost.Current.Settings.FrameRate));
         frameRate.SelectionChanged += (_, _) =>
             EngineHost.Command("set", new { key = "frameRate", value = FrameRates[Math.Max(0, frameRate.SelectedIndex)] });
+        foreach (var q in Qualities) quality.Items.Add(q.Title);
+        quality.SelectedIndex = Math.Max(0, Array.FindIndex(Qualities, q => q.Value == EngineHost.Current.Settings.Quality));
+        string QualityDetail() => Qualities[Math.Max(0, quality.SelectedIndex)].Detail + " For windows opened from now on.";
+        var qualityRow = Row("Quality", QualityDetail(), quality);
+        // The row's second line says what the chosen one does.
+        var qualityDetail = (TextBlock)((StackPanel)((Grid)qualityRow.Child).Children[0]).Children[1];
+        quality.SelectionChanged += (_, _) =>
+        {
+            EngineHost.Command("set", new { key = "quality", value = Qualities[Math.Max(0, quality.SelectedIndex)].Value });
+            qualityDetail.Text = QualityDetail();
+        };
         cameraSide.SelectedIndex = Video.CameraFeed.Front ? 1 : 0;
         cameraSide.SelectionChanged += (_, _) => Video.CameraFeed.Front = cameraSide.SelectedIndex == 1;
         foreach (var mode in HelloModes) hello.Items.Add(mode);
@@ -183,6 +202,7 @@ public sealed class SettingsWindow : Window
         page.Children.Add(Row("Ask for Windows Hello", "Phone apps work while your phone is locked, so this PC asks before showing them.", hello));
         page.Children.Add(Row("Open the launcher", "From anywhere: Ctrl+Alt+N.", new TextBlock()));
         page.Children.Add(startMenu);
+        page.Children.Add(qualityRow);
         page.Children.Add(Row("Frame rate", "Above 60, scrolling is smoother on a fast screen; it needs good Wi-Fi and Android 14 or later. For windows opened from now on.", frameRate));
         page.Children.Add(Header("Phone camera"));
         page.Children.Add(Row("Camera", "Apps on this PC can use your phone as a webcam: choose \u201CNearside Camera\u201D. The back camera is the better one; this takes effect the next time an app starts it.", cameraSide));

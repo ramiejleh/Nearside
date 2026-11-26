@@ -18,7 +18,20 @@ public final class WindowsPlatform: Platform, @unchecked Sendable {
     public var notifications: (@MainActor () -> any SystemNotifications)?
     public init() {}
 
-    public var computerName: String { ProcessInfo.processInfo.hostName }
+    /// The PC's name as Settings → System → About shows it (Foundation's hostName is "localhost"
+    /// on Windows, which the phone then showed as "In use on localhost").
+    public var computerName: String {
+        #if os(Windows)
+        var size = DWORD(256)
+        var name = [WCHAR](repeating: 0, count: Int(size))
+        if GetComputerNameExW(ComputerNamePhysicalDnsHostname, &name, &size), size > 0 {
+            return String(decoding: name[..<Int(size)], as: UTF16.self)
+        }
+        return ProcessInfo.processInfo.environment["COMPUTERNAME"] ?? "PC"
+        #else
+        return ProcessInfo.processInfo.hostName
+        #endif
+    }
     public var osName: String? { "windows" }
     /// The phone app's versionCode, from phone-app.version next to the app (release.ps1 writes it
     /// beside phone-app.apk): an older phone app is updated to it. None in development builds.

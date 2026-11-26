@@ -3,6 +3,27 @@ namespace Nearside.Engine;
 /// Made-up content for screenshots (Nearside.exe --demo).
 internal static class Demo
 {
+    /// "apps" then "appIcons" events for the launcher: sample names, every icon Nearside's logo.
+    public static IEnumerable<(string Name, string Json)> Apps()
+    {
+        string[] names = ["Calendar", "Camera", "Chrome", "Clock", "Contacts", "Drive", "Files", "Fit", "Gmail", "Keep", "Maps",
+            "Messages", "Music", "News", "Phone", "Photos", "Podcasts", "Recorder", "Settings", "Translate", "Wallet", "Weather"];
+        var now = DateTimeOffset.Now.ToUnixTimeMilliseconds();
+        string[] recent = ["Maps", "Gmail", "Keep", "Photos", "Weather"];
+        var apps = names.Select(n => new Dictionary<string, object>
+        {
+            ["id"] = $"demo.{n.ToLowerInvariant()}/.Main", ["package"] = $"demo.{n.ToLowerInvariant()}", ["activity"] = ".Main", ["label"] = n,
+            ["lastUsed"] = Array.IndexOf(recent, n) is var i and >= 0 ? now - i * 60_000 : 0,
+        });
+        var logo = Path.Combine(AppContext.BaseDirectory, "Assets", "Logo.png");
+        yield return ("apps", System.Text.Json.JsonSerializer.Serialize(new { e = "apps", apps }));
+        yield return ("appIcons", System.Text.Json.JsonSerializer.Serialize(new
+        {
+            e = "appIcons",
+            icons = names.Where((_, i) => i % 4 != 3).ToDictionary(n => $"demo.{n.ToLowerInvariant()}/.Main", _ => new { path = logo, adaptive = true }),
+        }));
+    }
+
     public static Snapshot Snapshot(bool setup)
     {
         if (setup)

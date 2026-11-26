@@ -163,6 +163,8 @@ enum Commands {
             engine.historyLimit = limit
         } else if key == "frameRate", let fps = value as? Int, PhoneFrameRate.choices.contains(fps) {
             UserDefaults.standard.set(fps, forKey: PhoneFrameRate.key) // windows opened from now on
+        } else if key == "quality", let name = value as? String, let quality = PhoneQuality(rawValue: name) {
+            UserDefaults.standard.set(quality.rawValue, forKey: PhoneQuality.key) // windows opened from now on
         }
     }
 }

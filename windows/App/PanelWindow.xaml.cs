@@ -42,6 +42,12 @@ public sealed partial class PanelWindow : Window
         HistoryList.ItemsSource = clips;
         TransferList.ItemsSource = transfers;
         NotificationsHost.Children.Add(notificationList.Root);
+        // "Open on PC": the panel goes at once, not when the app's window takes focus later.
+        notificationList.OpenHere = note =>
+        {
+            HidePanel();
+            EngineHost.Command("phoneNotifOpen", new { key = note.Key, here = true });
+        };
         tab = AppSettings.Get("Panel.tab") == "clipboard" ? "clipboard" : "notifications";
         Tabs.SelectedItem = tab == "clipboard" ? ClipboardTab : NotificationsTab;
 
@@ -327,6 +333,7 @@ public sealed partial class PanelWindow : Window
     {
         if (!e.TryGetProperty("path", out var p) || p.GetString() is not { } path || !File.Exists(path)) return;
         var explorer = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "explorer.exe");
+        HidePanel(); // out of the way of the window that's about to open
         if (e.GetProperty("for").GetString() == "save")
         {
             var downloads = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Downloads");

@@ -29,6 +29,7 @@ public static unsafe class EngineHost
     public static void StartDemo(bool setup, bool muted = false, bool away = false)
     {
         IsDemo = true;
+        queue = DispatcherQueue.GetForCurrentThread();
         Current = Demo.Snapshot(setup);
         if (away) Current = Current with { State = "searching", InUseOn = "MacBook Pro", PhoneStatus = null };
         if (muted) Current = Current with { MutedIndefinitely = false, MutedUntil = DateTimeOffset.Now.AddHours(2).ToUnixTimeMilliseconds() };
@@ -76,6 +77,12 @@ public static unsafe class EngineHost
 
     public static void Command(string name, object? fields = null)
     {
+        if (IsDemo)
+        {
+            // The launcher's apps, made up; other commands do nothing.
+            if (name == "listApps") queue?.TryEnqueue(() => { foreach (var (e, json) in Demo.Apps()) Handle(json); });
+            return;
+        }
         var json = JsonSerializer.SerializeToNode(fields ?? new { })!.AsObject();
         json["c"] = name;
         Native.Command(json.ToJsonString());
