@@ -23,8 +23,8 @@ public sealed unsafe class VideoView : IDisposable
     private int videoWidth, videoHeight;
     /// The swap chain's height: the picture's less the crop when it was made.
     private int chainHeight;
-    /// Rows at the top of each picture not shown (the phone's status bar).
-    private int crop;
+    /// Rows at the top and bottom of each picture not shown (the phone's status and gesture bars).
+    private int cropTop, cropBottom;
     private double panelWidth, panelHeight;
     /// The video processor and what it was made for (input and output sizes).
     private ID3D11VideoDevice? videoDevice;
@@ -68,11 +68,12 @@ public sealed unsafe class VideoView : IDisposable
     /// The device to decode on, when this view can draw its textures; else 0.
     public nint DevicePointer => videoDevice != null && videoContext != null ? device!.NativePointer : 0;
 
-    public int Crop
+    public void SetCrop(int top, int bottom)
     {
-        set
+        lock (gate)
         {
-            lock (gate) crop = Math.Max(0, value);
+            cropTop = Math.Max(0, top);
+            cropBottom = Math.Max(0, bottom);
         }
     }
 
@@ -81,7 +82,7 @@ public sealed unsafe class VideoView : IDisposable
     {
         get
         {
-            lock (gate) return Fit(videoWidth, videoHeight - crop);
+            lock (gate) return Fit(videoWidth, videoHeight - cropTop - cropBottom);
         }
     }
 
@@ -91,7 +92,7 @@ public sealed unsafe class VideoView : IDisposable
         {
             if (device == null || context == null) return;
             DropOutputs(); // copied into directly now (views of the buffers would block a resize)
-            var shownHeight = picture.Height - crop;
+            var shownHeight = picture.Height - cropTop - cropBottom;
             if (shownHeight <= 0) return;
             if (swapChain == null || picture.Width != videoWidth || picture.Height != videoHeight || shownHeight != chainHeight)
             {
@@ -103,8 +104,8 @@ public sealed unsafe class VideoView : IDisposable
             using var back = swapChain!.GetBuffer<ID3D11Texture2D>(0);
             fixed (byte* bgra = picture.Bgra)
             {
-                // The rows under the status bar only.
-                context.UpdateSubresource(back, 0u, (Vortice.Mathematics.Box?)null, (nint)(bgra + crop * picture.Width * 4), (uint)(picture.Width * 4), 0u);
+                // The rows between the status and gesture bars only (the buffer is that tall).
+                context.UpdateSubresource(back, 0u, (Vortice.Mathematics.Box?)null, (nint)(bgra + cropTop * picture.Width * 4), (uint)(picture.Width * 4), 0u);
             }
             swapChain.Present(0, PresentFlags.None);
         }
@@ -117,7 +118,7 @@ public sealed unsafe class VideoView : IDisposable
         lock (gate)
         {
             if (videoDevice == null || videoContext == null || device == null || context == null) return false;
-            var shownHeight = height - crop;
+            var shownHeight = height - cropTop - cropBottom;
             if (shownHeight <= 0) return true;
             try
             {
@@ -157,7 +158,7 @@ public sealed unsafe class VideoView : IDisposable
                     }, out output).CheckError();
                     outputs[back.NativePointer] = output;
                 }
-                // The rows under the status bar, into the whole buffer.
+                // The rows between the status and gesture bars, into the whole buffer.
                 Blt(input, output, width, height, width, shownHeight);
                 swapChain.Present(0, PresentFlags.None);
                 Probe(input, width, height);
@@ -173,7 +174,7 @@ public sealed unsafe class VideoView : IDisposable
 
     private void Blt(ID3D11VideoProcessorInputView input, ID3D11VideoProcessorOutputView output, int width, int height, int outW, int outH)
     {
-        videoContext!.VideoProcessorSetStreamSourceRect(processor!, 0, true, new Vortice.RawRect(0, crop, width, height));
+        videoContext!.VideoProcessorSetStreamSourceRect(processor!, 0, true, new Vortice.RawRect(0, cropTop, width, height - cropBottom));
         videoContext.VideoProcessorSetStreamDestRect(processor!, 0, true, new Vortice.RawRect(0, 0, outW, outH));
         videoContext.VideoProcessorSetOutputTargetRect(processor!, true, new Vortice.RawRect(0, 0, outW, outH));
         videoContext.VideoProcessorBlt(processor!, output, 0, 1, [new VideoProcessorStream { Enable = true, InputSurface = input }]);
@@ -333,9 +334,9 @@ public sealed unsafe class VideoView : IDisposable
     /// The swap chain's pixels are DIPs to the panel: scale and centre them to fit.
     private void Transform()
     {
-        var (x, y, w, h) = Fit(videoWidth, videoHeight - crop);
+        var (x, y, w, h) = Fit(videoWidth, videoHeight - cropTop - cropBottom);
         if (w <= 0 || h <= 0) return;
-        swapChain!.MatrixTransform = Matrix3x2.CreateScale((float)(w / videoWidth), (float)(h / (videoHeight - crop)))
+        swapChain!.MatrixTransform = Matrix3x2.CreateScale((float)(w / videoWidth), (float)(h / (videoHeight - cropTop - cropBottom)))
             * Matrix3x2.CreateTranslation((float)x, (float)y);
     }
 

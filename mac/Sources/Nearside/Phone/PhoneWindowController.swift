@@ -38,10 +38,10 @@ final class PhoneWindowController: NSObject, NSWindowDelegate {
 
     /// The screen in dp (points at actual size).
     private var dp: CGSize { size.dp(phone: PhoneInfo.screenDp) }
-    /// What the window shows: all but the status bar the phone gives the display.
-    private var shownDp: CGSize { PhoneDisplaySize.shownDp(dp, statusBarDp: PhoneInfo.statusBarDp) }
-    /// The status bar's rows at the top of the display (the phone says), and the video's size.
-    private var cropPixels = 0
+    /// What the window shows: all but the status and gesture bars the phone gives the display.
+    private var shownDp: CGSize { PhoneDisplaySize.shownDp(dp, statusBarDp: PhoneInfo.statusBarDp, gestureBarDp: PhoneInfo.gestureBarDp) }
+    /// The status and gesture bars' rows at the top and bottom of the display (the phone says), and the video's size.
+    private var cropPixels = (top: 0, bottom: 0)
     private var stats: StatsOverlay?
     private var videoPixels: CGSize?
 
@@ -132,10 +132,10 @@ final class PhoneWindowController: NSObject, NSWindowDelegate {
             videoPixels = size
             showVideoSize()
         }
-        session.onCrop = { [weak self] rows in
+        session.onCrop = { [weak self] top, bottom in
             guard let self else { return }
-            cropPixels = rows
-            renderer.cropPixels = rows
+            cropPixels = (top, bottom)
+            renderer.cropPixels = (top, bottom)
             showVideoSize()
         }
         session.onThermal = { [weak self] reduced in self?.tools.setHidden("warm", !reduced) }
@@ -404,7 +404,7 @@ final class PhoneWindowController: NSObject, NSWindowDelegate {
     /// What's shown of the video: all but the status bar's rows.
     private func showVideoSize() {
         guard let videoPixels else { return }
-        stream.videoSize = CGSize(width: videoPixels.width, height: videoPixels.height - CGFloat(cropPixels))
+        stream.videoSize = CGSize(width: videoPixels.width, height: videoPixels.height - CGFloat(cropPixels.top + cropPixels.bottom))
     }
 
     private func updateSizes() {

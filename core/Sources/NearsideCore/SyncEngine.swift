@@ -81,6 +81,9 @@ public final class SyncEngine {
     /// The phone's current notifications, newest first (the phone window's notification panel).
     /// Filled while notifications are mirrored; emptied when the phone isn't connected.
     public private(set) var phoneNotifications: [PhoneNotification] = []
+    /// What each notification said when last shown here (title and text), kept across reconnects:
+    /// the phone sends them all again then, and one that hasn't changed comes back quietly.
+    private var shownContent: [String: String] = [:]
 
     /// Test hook (pictures for the README and website): shows these instead of the phone's own,
     /// and ignores the phone's until the app quits.
@@ -632,22 +635,28 @@ public final class SyncEngine {
                 snooze.hold(key, quiet: message["quiet"] as? Bool ?? false)
                 return
             }
+            let content = note.title + "\u{1}" + note.text
+            let unchanged = shownContent[key] == content
+            if shownContent.count >= 500, !unchanged { shownContent.removeAll() } // bounded; only costs a banner
+            shownContent[key] = content
             notifications.show(key: key, package: note.package, app: note.app, title: note.title, text: note.text,
                                iconPNG: (message["icon"] as? String).flatMap { Data(base64Encoded: $0) },
                                actions: actions.map { .init(title: $0.title, isReply: $0.isReply) },
-                               quiet: message["quiet"] as? Bool ?? false)
+                               quiet: unchanged || message["quiet"] as? Bool ?? false)
         case "notif-active":
             if mirrorNotifications, !demoNotifications, let keys = message["keys"] as? [String] {
                 notifications.keepOnly(Set(keys))
                 calls.keepOnly(Set(keys))
                 snooze.keepOnly(Set(keys))
                 phoneNotifications.removeAll { !keys.contains($0.key) }
+                shownContent = shownContent.filter { keys.contains($0.key) }
             }
         case "notif-removed":
             if !demoNotifications, let key = message["key"] as? String {
                 notifications.remove(key: key)
                 snooze.drop(key)
                 phoneNotifications.removeAll { $0.key == key }
+                shownContent[key] = nil
             }
         default:
             break

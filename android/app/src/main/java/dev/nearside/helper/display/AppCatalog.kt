@@ -49,6 +49,7 @@ object AppCatalog {
                 .put("ver", ver).put("used", used[a.packageName] ?: 0L))
         }
         return JSONObject().put("t", "display-apps").put("apps", apps).put("statusBarDp", statusBar)
+            .put("gestureBarDp", gestureBar)
             .put("screenDp", screenDp()).put("densityDpi", densityDpi())
     }
 
@@ -113,6 +114,12 @@ object AppCatalog {
             res.getDimensionPixelSize(res.getIdentifier("status_bar_height", "dimen", "android")) / density
         }.getOrNull()
         return Math.round(real?.takeIf { it > 0 } ?: resource ?: 0f).also { Log.d("status bar: $it dp (window manager $real, resource $resource)") }
+    }
+
+    /** The phone's gesture (navigation) bar in dp: windows hide it, as it's empty on our displays. */
+    val gestureBar by lazy {
+        val density = android.content.res.Resources.getSystem().displayMetrics.density
+        Math.round(SystemBars.phone.bottom / density).also { Log.d("gesture bar: $it dp") }
     }
 
     /** The phone's screen in dp, "WxH" (portrait): the phone window has its shape. */

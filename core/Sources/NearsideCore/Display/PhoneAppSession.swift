@@ -32,9 +32,9 @@ public final class PhoneAppSession: @unchecked Sendable {
     /// Phone window: its apps (top first), and their pictures as they come, on the main thread.
     public var onTasks: (@MainActor @Sendable ([PhoneTask]) -> Void)?
     public var onSnapshot: (@MainActor @Sendable (Int32, Data) -> Void)?
-    /// Rows at the top of the display the window doesn't show (the phone's status bar there),
-    /// on the main thread.
-    public var onCrop: (@MainActor @Sendable (Int) -> Void)?
+    /// Rows at the top and bottom of the display the window doesn't show (the phone's status and
+    /// gesture bars there), on the main thread.
+    public var onCrop: (@MainActor @Sendable (_ top: Int, _ bottom: Int) -> Void)?
     /// The video's pixel size (it changes after a resize), on the main thread.
     public var onVideoSize: (@MainActor @Sendable (CGSize) -> Void)?
 
@@ -50,8 +50,8 @@ public final class PhoneAppSession: @unchecked Sendable {
     private var gen: UInt32 = 0
     private var closing = false
     private var size: (width: Int, height: Int, dpi: Int)
-    /// Top rows of the display the window doesn't show (the status bar's); input maps past them.
-    private var cropPixels = 0
+    /// Rows of the display the window doesn't show (the status and gesture bars'); input maps past them.
+    private var crop = (top: 0, bottom: 0)
     private let fps: Int
     private let kbps: Int
     /// The window's sound plays on the Mac (else it stays on the phone).
@@ -184,9 +184,9 @@ public final class PhoneAppSession: @unchecked Sendable {
                 if let onSnapshot { Task { @MainActor in onSnapshot(task, jpeg) } }
             case .secure(let on):
                 if let onSecure { Task { @MainActor in onSecure(on) } }
-            case .insets(let top, _):
-                lock.withLock { cropPixels = top }
-                if let onCrop { Task { @MainActor in onCrop(top) } }
+            case let .insets(top, bottom):
+                lock.withLock { crop = (top, bottom) }
+                if let onCrop { Task { @MainActor in onCrop(top, bottom) } }
             case .thermal(let reduced):
                 if let onThermal { Task { @MainActor in onThermal(reduced) } }
             case let .pong(t0, phone):
@@ -483,8 +483,8 @@ public final class PhoneAppSession: @unchecked Sendable {
     private var layoutHint: String?
 
     private func displayY(_ y: Float) -> Float {
-        let (crop, height) = lock.withLock { (cropPixels, size.height) }
-        return PhoneDisplaySize.displayY(y, cropPixels: crop, height: height)
+        let (crop, height) = lock.withLock { (crop, size.height) }
+        return PhoneDisplaySize.displayY(y, cropTop: crop.top, cropBottom: crop.bottom, height: height)
     }
 
     /// The window's new pixel size; the phone re-lays the app out for it.

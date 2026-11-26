@@ -299,8 +299,7 @@ public sealed partial class PanelWindow : Window
 
     private UIElement PhotoTile(PhonePhoto photo)
     {
-        // The picture is the content, not the button's background: hovering swaps the background
-        // for the theme's grey. Hover dims it slightly instead.
+        // Hover dims the picture slightly.
         var picture = new Border
         {
             Width = 64, Height = 64, CornerRadius = new CornerRadius(8),
@@ -308,18 +307,57 @@ public sealed partial class PanelWindow : Window
                 ? new ImageBrush { ImageSource = image, Stretch = Stretch.UniformToFill }
                 : (Brush)Application.Current.Resources["SubtleFillColorSecondaryBrush"],
         };
-        var tile = new Button
+        // Not a Button: a button keeps the pointer, so it can't be dragged out.
+        var tile = new ContentControl
         {
-            Width = 64, Height = 64, Padding = new Thickness(0), CornerRadius = new CornerRadius(8),
-            BorderThickness = new Thickness(0), Content = picture,
+            Width = 64, Height = 64, Content = picture, IsTabStop = true, UseSystemFocusVisuals = true, CanDrag = true,
+            CornerRadius = new CornerRadius(8),
         };
-        var clear = new SolidColorBrush(Microsoft.UI.Colors.Transparent);
-        foreach (var key in new[] { "ButtonBackground", "ButtonBackgroundPointerOver", "ButtonBackgroundPressed" })
-            tile.Resources[key] = clear;
         tile.PointerEntered += (_, _) => picture.Opacity = 0.85;
         tile.PointerExited += (_, _) => picture.Opacity = 1;
         ToolTipService.SetToolTip(tile, $"{(photo.IsScreenshot ? "Screenshot" : "Photo")}, {DateTimeOffset.FromUnixTimeMilliseconds(photo.Date).LocalDateTime:g}");
-        tile.Click += (_, _) => EngineHost.Command("photoFetch", new { id = photo.Id, @for = "open" });
+        void Open() => EngineHost.Command("photoFetch", new { id = photo.Id, @for = "open" });
+        tile.Tapped += (_, _) => Open();
+        tile.KeyDown += (_, e) =>
+        {
+            if (e.Key is not (Windows.System.VirtualKey.Enter or Windows.System.VirtualKey.Space)) return;
+            Open();
+            e.Handled = true;
+        };
+        // Dragged out (to the desktop, a folder, a chat): the file is pulled from the phone when the
+        // drag starts, from the moment the mouse goes down (a click opens it anyway).
+        tile.PointerPressed += (_, _) => _ = FetchForDrag(photo.Id);
+        tile.DropCompleted += (_, _) => draggingPhoto = false;
+        tile.DragStarting += async (_, e) =>
+        {
+            draggingPhoto = true;
+            var deferral = e.GetDeferral();
+            try
+            {
+                if (thumbnails.TryGetValue(photo.Id, out var thumbnail)) e.DragUI.SetContentFromBitmapImage(thumbnail);
+                if (await FetchForDrag(photo.Id) is { } path)
+                {
+                    e.Data.SetStorageItems([await StorageFile.GetFileFromPathAsync(path)]);
+                    e.Data.RequestedOperation = DataPackageOperation.Copy;
+                    e.AllowedOperations = DataPackageOperation.Copy;
+                }
+                else
+                {
+                    e.Cancel = true;
+                    draggingPhoto = false;
+                }
+            }
+            catch (Exception error)
+            {
+                Log.Info($"photo drag: {error.GetType().Name}");
+                e.Cancel = true;
+                draggingPhoto = false;
+            }
+            finally
+            {
+                deferral.Complete();
+            }
+        };
         var save = new MenuFlyoutItem { Text = "Save to Downloads", Icon = new FontIcon { Glyph = "\uE896" } };
         save.Click += (_, _) => EngineHost.Command("photoFetch", new { id = photo.Id, @for = "save" });
         var open = new MenuFlyoutItem { Text = "Open", Icon = new FontIcon { Glyph = "\uE8A7" } };
@@ -328,10 +366,33 @@ public sealed partial class PanelWindow : Window
         return tile;
     }
 
-    /// A photo pulled from the phone (marked as downloaded): opened in its app, or kept in Downloads.
+    /// Photos being pulled for a drag (or pulled: the file stays in the cache until Nearside quits).
+    private readonly Dictionary<long, TaskCompletionSource<string?>> dragFetches = [];
+    private bool draggingPhoto;
+
+    private Task<string?> FetchForDrag(long id)
+    {
+        if (dragFetches.TryGetValue(id, out var running) && (!running.Task.IsCompleted || running.Task.Result is { } done && File.Exists(done)))
+        {
+            return running.Task;
+        }
+        var fetch = new TaskCompletionSource<string?>();
+        dragFetches[id] = fetch;
+        EngineHost.Command("photoFetch", new { id, @for = "drag" });
+        return fetch.Task;
+    }
+
+    /// A photo pulled from the phone (marked as downloaded): opened in its app, kept in Downloads,
+    /// or handed to a drag.
     private void PhotoFetched(System.Text.Json.JsonElement e)
     {
-        if (!e.TryGetProperty("path", out var p) || p.GetString() is not { } path || !File.Exists(path)) return;
+        string? fetched = e.TryGetProperty("path", out var given) && given.GetString() is { } file && File.Exists(file) ? file : null;
+        if (e.GetProperty("for").GetString() == "drag")
+        {
+            if (dragFetches.TryGetValue(e.GetProperty("id").GetInt64(), out var waiting)) waiting.TrySetResult(fetched);
+            return;
+        }
+        if (fetched is not { } path) return;
         var explorer = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "explorer.exe");
         HidePanel(); // out of the way of the window that's about to open
         if (e.GetProperty("for").GetString() == "save")
@@ -477,7 +538,7 @@ public sealed partial class PanelWindow : Window
 
     private void OnDragOver(object sender, DragEventArgs e)
     {
-        if (!e.DataView.Contains(StandardDataFormats.StorageItems)) return;
+        if (!e.DataView.Contains(StandardDataFormats.StorageItems) || draggingPhoto) return; // a phone photo isn't sent back
         var connected = EngineHost.Current.Connected;
         e.AcceptedOperation = connected ? DataPackageOperation.Copy : DataPackageOperation.None;
         var phone = EngineHost.Current.PhoneName;

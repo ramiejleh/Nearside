@@ -34,7 +34,7 @@ final class MetalRenderer: @unchecked Sendable {
     private var textureCache: CVMetalTextureCache?
     private let lock = NSLock()
     private var latest: VideoDecoder.Frame?
-    private var crop = 0
+    private var crop = (top: 0, bottom: 0)
     // Pacing (under `pace`). Responsive: frames waiting for the next refresh, whether this refresh
     // has shown a frame, how long the queue stayed full.
     private let pace = NSLock()
@@ -54,8 +54,8 @@ final class MetalRenderer: @unchecked Sendable {
     var onWantsTicks: (() -> Void)?
     private var idleTicks = 0
 
-    /// Top rows of each frame not to show (an app's empty band; see PhoneDisplaySize).
-    var cropPixels: Int {
+    /// Rows at the top and bottom of each frame not to show (the phone's empty bars; see PhoneDisplaySize).
+    var cropPixels: (top: Int, bottom: Int) {
         get { lock.withLock { crop } }
         set { lock.withLock { crop = newValue }; redraw() }
     }
@@ -88,13 +88,15 @@ final class MetalRenderer: @unchecked Sendable {
     /// The newest frame, if any.
     var lastFrame: VideoDecoder.Frame? { lock.withLock { latest } }
 
-    /// The picture as shown (without the cropped status rows), as an image: a view capture can't
+    /// The picture as shown (without the cropped bars' rows), as an image: a view capture can't
     /// see the Metal layer. For screenshots (WindowShot).
     func shownImage() -> CGImage? {
         guard let frame = lastFrame else { return nil }
         let full = CIImage(cvPixelBuffer: frame.image)
-        let rows = min(max(lock.withLock { crop }, 0), Int(full.extent.height) / 2)
-        let image = full.cropped(to: CGRect(x: 0, y: 0, width: full.extent.width, height: full.extent.height - CGFloat(rows)))
+        let crop = lock.withLock { crop }, h = Int(full.extent.height)
+        let top = min(max(crop.top, 0), h / 2), bottom = min(max(crop.bottom, 0), h / 4)
+        // CIImage's origin is bottom-left.
+        let image = full.cropped(to: CGRect(x: 0, y: CGFloat(bottom), width: full.extent.width, height: full.extent.height - CGFloat(top + bottom)))
         return CIContext().createCGImage(image, from: image.extent, format: .RGBA8, colorSpace: CGColorSpace(name: CGColorSpace.sRGB)!)
     }
 
@@ -176,8 +178,11 @@ final class MetalRenderer: @unchecked Sendable {
         guard let cache = textureCache, let drawable = layer.nextDrawable() else { return }
         let image = frame.image
         let w = CVPixelBufferGetWidth(image), h = CVPixelBufferGetHeight(image)
-        let cropRows = min(max(lock.withLock { crop }, 0), h / 2)
-        var top = Float(cropRows) / Float(h) // the shown part of the texture starts here
+        let crop = lock.withLock { crop }
+        let topRows = min(max(crop.top, 0), h / 2), bottomRows = min(max(crop.bottom, 0), h / 4)
+        let cropRows = topRows + bottomRows
+        // The shown part of the texture, from its first row to its last (0…1).
+        var span = SIMD2<Float>(Float(topRows) / Float(h), Float(h - bottomRows) / Float(h))
         var luma: CVMetalTexture?, chroma: CVMetalTexture?
         CVMetalTextureCacheCreateTextureFromImage(nil, cache, image, nil, .r8Unorm, w, h, 0, &luma)
         CVMetalTextureCacheCreateTextureFromImage(nil, cache, image, nil, .rg8Unorm, w / 2, h / 2, 1, &chroma)
@@ -196,7 +201,7 @@ final class MetalRenderer: @unchecked Sendable {
         encoder.setRenderPipelineState(pipeline)
         encoder.setFragmentTexture(CVMetalTextureGetTexture(luma), index: 0)
         encoder.setFragmentTexture(CVMetalTextureGetTexture(chroma), index: 1)
-        encoder.setFragmentBytes(&top, length: MemoryLayout<Float>.size, index: 0)
+        encoder.setFragmentBytes(&span, length: MemoryLayout<SIMD2<Float>>.size, index: 0)
         encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 3)
         encoder.endEncoding()
         if let time { buffer.present(drawable, atTime: time) } else { buffer.present(drawable) }
@@ -208,7 +213,7 @@ final class MetalRenderer: @unchecked Sendable {
             }
         }
         Trace.log("drawn \(pts)")
-        if Trace.enabled { saveSnapshotSoon(frame, cropRows: cropRows) }
+        if Trace.enabled { saveSnapshotSoon(frame, top: topRows, bottom: bottomRows) }
         let textures = TextureHold(luma: luma, chroma: chroma)
         buffer.addCompletedHandler { _ in _ = textures } // live until the GPU is done
         buffer.commit()
@@ -218,15 +223,16 @@ final class MetalRenderer: @unchecked Sendable {
 
     /// Trace mode: the latest frame shown, as <trace>.png, at most once a second (a blinking caret
     /// never lets the picture settle).
-    private func saveSnapshotSoon(_ frame: VideoDecoder.Frame, cropRows: Int) {
+    private func saveSnapshotSoon(_ frame: VideoDecoder.Frame, top: Int, bottom: Int) {
         guard !snapshotPending else { return }
         snapshotPending = true
         let work = DispatchWorkItem { [self] in
             guard let path = Trace.path, let frame = lastFrame else { return }
             snapshotPending = false
-            // As shown: without the cropped top rows (CIImage's origin is bottom-left).
+            // As shown: without the cropped rows (CIImage's origin is bottom-left).
             let full = CIImage(cvPixelBuffer: frame.image)
-            let image = full.cropped(to: CGRect(x: 0, y: 0, width: full.extent.width, height: full.extent.height - CGFloat(cropRows)))
+            let image = full.cropped(to: CGRect(x: 0, y: CGFloat(bottom), width: full.extent.width,
+                                                height: full.extent.height - CGFloat(top + bottom)))
             let context = CIContext()
             try? context.writePNGRepresentation(of: image, to: URL(fileURLWithPath: path + ".png"),
                                                 format: .RGBA8, colorSpace: CGColorSpace(name: CGColorSpace.sRGB)!)
@@ -247,9 +253,9 @@ final class MetalRenderer: @unchecked Sendable {
             V v; v.position = float4(p * 2.0 - 1.0, 0, 1); v.uv = float2(p.x, 1.0 - p.y); return v;
         }
         fragment float4 fmain(V in [[stage_in]], texture2d<float> y [[texture(0)]], texture2d<float> c [[texture(1)]],
-                              constant float &top [[buffer(0)]]) {
+                              constant float2 &span [[buffer(0)]]) {
             constexpr sampler s(filter::linear);
-            float2 uv = float2(in.uv.x, top + in.uv.y * (1.0 - top));
+            float2 uv = float2(in.uv.x, span.x + in.uv.y * (span.y - span.x));
             float Y = (y.sample(s, uv).r - 16.0 / 255.0) * (255.0 / 219.0);
             float2 C = (c.sample(s, uv).rg - 128.0 / 255.0) * (255.0 / 224.0);
             float3 rgb = float3(Y + 1.5748 * C.y, Y - 0.1873 * C.x - 0.4681 * C.y, Y + 1.8556 * C.x);

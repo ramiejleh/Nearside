@@ -96,7 +96,7 @@ enum Sessions {
         observe(session, id)
         all[id] = session
         session.start()
-        let shown = PhoneDisplaySize.shownDp(dp, statusBarDp: PhoneInfo.statusBarDp)
+        let shown = PhoneDisplaySize.shownDp(dp, statusBarDp: PhoneInfo.statusBarDp, gestureBarDp: PhoneInfo.gestureBarDp)
         return ["width": display.width, "height": display.height, "dpi": display.dpi,
                 "shownWidthDp": Double(shown.width), "shownHeightDp": Double(shown.height)]
     }
@@ -128,7 +128,7 @@ enum Sessions {
             }
         }
         session.onVideoSize = { size in emit("videoSize", ["width": Int(size.width), "height": Int(size.height)]) }
-        session.onCrop = { rows in emit("crop", ["rows": rows]) }
+        session.onCrop = { top, bottom in emit("crop", ["top": top, "bottom": bottom]) }
         session.onSecure = { on in emit("secure", ["on": on]) }
         session.onThermal = { on in emit("thermal", ["on": on]) }
         session.onTasks = { tasks in
@@ -195,7 +195,7 @@ enum Sessions {
             let dp = preset.dp(phone: PhoneInfo.screenDp)
             let display = PhoneDisplaySize.forPreset(dp, density: PhoneInfo.densityDpi)
             session.resize(width: display.width, height: display.height, dpi: display.dpi)
-            let shown = PhoneDisplaySize.shownDp(dp, statusBarDp: PhoneInfo.statusBarDp)
+            let shown = PhoneDisplaySize.shownDp(dp, statusBarDp: PhoneInfo.statusBarDp, gestureBarDp: PhoneInfo.gestureBarDp)
             Bridge.emit("session", ["id": id, "kind": "size", "size": preset.rawValue,
                                     "shownWidthDp": Double(shown.width), "shownHeightDp": Double(shown.height)])
         case "back": session.back()

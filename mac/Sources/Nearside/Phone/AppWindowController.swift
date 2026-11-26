@@ -17,8 +17,8 @@ final class AppWindowController: NSObject, NSWindowDelegate {
     private let overlay = OverlayHostingView(rootView: AppWindowOverlay(state: .opening, label: ""))
     private var state: PhoneAppSession.State = .opening
     private let onClosed: (AppWindowController) -> Void
-    /// The status bar's rows at the top of the display (the phone says; see PhoneDisplaySize).
-    private var cropPixels = 0
+    /// The status and gesture bars' rows at the top and bottom of the display (the phone says; see PhoneDisplaySize).
+    private var cropPixels = (top: 0, bottom: 0)
     private var videoPixels: CGSize?
     private var stats: StatsOverlay?
     /// Covered after the Mac slept or locked, until Touch ID (AuthGate).
@@ -39,8 +39,8 @@ final class AppWindowController: NSObject, NSWindowDelegate {
     }
 
     private var dp: CGSize { size.dp(phone: PhoneInfo.screenDp) }
-    /// What the window shows: all but the status bar the phone gives the display.
-    private var shownDp: CGSize { PhoneDisplaySize.shownDp(dp, statusBarDp: PhoneInfo.statusBarDp) }
+    /// What the window shows: all but the status and gesture bars the phone gives the display.
+    private var shownDp: CGSize { PhoneDisplaySize.shownDp(dp, statusBarDp: PhoneInfo.statusBarDp, gestureBarDp: PhoneInfo.gestureBarDp) }
 
     /// The display keeps the preset's dp at the phone's density; the window only scales it.
     private func displaySize() -> (width: Int, height: Int, dpi: Int) {
@@ -166,10 +166,10 @@ final class AppWindowController: NSObject, NSWindowDelegate {
             videoPixels = size
             showVideoSize()
         }
-        session.onCrop = { [weak self] rows in
+        session.onCrop = { [weak self] top, bottom in
             guard let self else { return }
-            cropPixels = rows
-            renderer.cropPixels = rows
+            cropPixels = (top, bottom)
+            renderer.cropPixels = (top, bottom)
             showVideoSize()
         }
         stream.session = session
@@ -508,7 +508,7 @@ final class AppWindowController: NSObject, NSWindowDelegate {
     /// What's shown of the video: all but the status bar's rows.
     private func showVideoSize() {
         guard let videoPixels else { return }
-        stream.videoSize = CGSize(width: videoPixels.width, height: videoPixels.height - CGFloat(cropPixels))
+        stream.videoSize = CGSize(width: videoPixels.width, height: videoPixels.height - CGFloat(cropPixels.top + cropPixels.bottom))
     }
 
     /// Toolbox / View → Phone, Foldable, Tablet.

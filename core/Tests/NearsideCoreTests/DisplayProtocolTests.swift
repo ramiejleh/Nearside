@@ -133,8 +133,11 @@ struct DisplayProtocolTests {
     }
 
     @Test func inputMapsPastTheCroppedBand() {
-        #expect(PhoneDisplaySize.displayY(0, cropPixels: 136, height: 1896) == Float(136) / 1896)
-        #expect(PhoneDisplaySize.displayY(1, cropPixels: 136, height: 1896) == 1)
-        #expect(PhoneDisplaySize.displayY(0.5, cropPixels: 0, height: 1760) == 0.5)
+        #expect(PhoneDisplaySize.displayY(0, cropTop: 136, cropBottom: 0, height: 1896) == Float(136) / 1896)
+        #expect(PhoneDisplaySize.displayY(1, cropTop: 136, cropBottom: 0, height: 1896) == 1)
+        #expect(PhoneDisplaySize.displayY(0.5, cropTop: 0, cropBottom: 0, height: 1760) == 0.5)
+        // The gesture bar's rows at the bottom: the shown part's bottom edge is just above them.
+        #expect(PhoneDisplaySize.displayY(1, cropTop: 136, cropBottom: 72, height: 1896) == Float(1896 - 72) / 1896)
+        #expect(PhoneDisplaySize.displayY(0, cropTop: 136, cropBottom: 72, height: 1896) == Float(136) / 1896)
     }
 }

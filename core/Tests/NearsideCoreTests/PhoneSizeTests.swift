@@ -28,8 +28,9 @@ struct PhoneSizeTests {
         #expect(p.width == 1280 && p.height == 2856 && p.dpi == 480)
         let t = PhoneDisplaySize.forPreset(PhoneSize.tablet.dp(phone: phone), density: 480)
         #expect(t.width == 3840 && t.height == 2400 && t.dpi == 480)
-        // The window shows all but the 68 dp status bar: the phone's screen below its status bar.
-        #expect(PhoneDisplaySize.shownDp(phone, statusBarDp: 68) == CGSize(width: 427, height: 884))
-        #expect(PhoneDisplaySize.shownDp(phone, statusBarDp: 0) == phone)
+        // The window shows all but the 68 dp status bar and the 24 dp gesture bar.
+        #expect(PhoneDisplaySize.shownDp(phone, statusBarDp: 68, gestureBarDp: 0) == CGSize(width: 427, height: 884))
+        #expect(PhoneDisplaySize.shownDp(phone, statusBarDp: 68, gestureBarDp: 24) == CGSize(width: 427, height: 860))
+        #expect(PhoneDisplaySize.shownDp(phone, statusBarDp: 0, gestureBarDp: 0) == phone)
     }
 }

@@ -421,7 +421,8 @@ public sealed class PhoneWindow : Window
     private readonly Grid notesLayer = new()
     {
         Visibility = Visibility.Collapsed, RequestedTheme = ElementTheme.Dark,
-        Background = new SolidColorBrush(Windows.UI.Color.FromArgb(0xE6, 0x16, 0x16, 0x18)),
+        // Opaque: the phone's screen behind made the list hard to read.
+        Background = new SolidColorBrush(Windows.UI.Color.FromArgb(0xFF, 0x16, 0x16, 0x18)),
     };
     private readonly TextBlock notesHeader = new()
     {
@@ -493,7 +494,7 @@ public sealed class PhoneWindow : Window
                 ShowNotice(e.GetProperty("accepts").GetBoolean() ? $"Couldn't share the files with {Title}" : $"{Title} can't open files like these");
                 break;
             case "crop":
-                view.Crop = e.GetProperty("rows").GetInt32();
+                view.SetCrop(e.GetProperty("top").GetInt32(), e.GetProperty("bottom").GetInt32());
                 break;
             case "size":
                 shownWidthDp = e.GetProperty("shownWidthDp").GetDouble();

@@ -129,6 +129,7 @@ extension SyncEngine {
         if let error = reply?["error"] { NSLog("Nearside: display-apps failed: \(error)") }
         let size = (reply?["screenDp"] as? String)?.split(separator: "x").compactMap { Double($0) }
         PhoneInfo.update(statusBarDp: (reply?["statusBarDp"] as? Int).flatMap { $0 > 0 ? $0 : nil },
+                         gestureBarDp: (reply?["gestureBarDp"] as? Int).flatMap { $0 >= 0 ? $0 : nil },
                          densityDpi: (reply?["densityDpi"] as? Int).flatMap { (120...800).contains($0) ? $0 : nil },
                          screenDp: size.flatMap { $0.count == 2 && $0[0] > 200 && $0[1] > 300 ? CGSize(width: $0[0], height: $0[1]) : nil })
         guard let list = reply?["apps"] as? [[String: Any]] else { return nil }
@@ -282,7 +283,7 @@ public enum PhoneDisplaySize {
     /// The display for a size: `dp` at the phone's own density (so an app moving between the
     /// phone and a window, or between sizes, only ever changes size, never density: YouTube kept a
     /// density-changed layout until killed). The phone gives it its status and gesture bars, and
-    /// the window hides the status bar (see `shownDp`).
+    /// the window hides both (see `shownDp`).
     public static func forPreset(_ dp: CGSize, density: Int) -> (width: Int, height: Int, dpi: Int) {
         let scale = Double(density) / 160
         let w = Int((dp.width * scale).rounded()) & ~1
@@ -291,15 +292,17 @@ public enum PhoneDisplaySize {
     }
 
     /// What a window shows of a display `dp` in size: all but the phone's status bar at the top
-    /// (the phone draws it there so apps lay out as on the phone, but there's nothing in it).
-    public static func shownDp(_ dp: CGSize, statusBarDp: Int) -> CGSize {
-        CGSize(width: dp.width, height: dp.height - CGFloat(max(statusBarDp, 0)))
+    /// and its gesture bar at the bottom (the phone gives the display them so apps lay out as on
+    /// the phone, but there's nothing in them).
+    public static func shownDp(_ dp: CGSize, statusBarDp: Int, gestureBarDp: Int) -> CGSize {
+        CGSize(width: dp.width, height: dp.height - CGFloat(max(statusBarDp, 0) + max(gestureBarDp, 0)))
     }
 
     /// A y (0…1) in the shown part → y (0…1) in the whole display.
-    public static func displayY(_ y: Float, cropPixels: Int, height: Int) -> Float {
-        guard cropPixels > 0, height > cropPixels else { return y }
-        return (Float(cropPixels) + y * Float(height - cropPixels)) / Float(height)
+    public static func displayY(_ y: Float, cropTop: Int, cropBottom: Int, height: Int) -> Float {
+        let top = max(cropTop, 0), shown = height - top - max(cropBottom, 0)
+        guard top + max(cropBottom, 0) > 0, shown > 0 else { return y }
+        return (Float(top) + y * Float(shown)) / Float(height)
     }
 }
 
@@ -311,6 +314,7 @@ public enum PhoneDisplaySize {
 public enum PhoneInfo {
     private static let lock = NSLock()
     nonisolated(unsafe) private static var _statusBarDp = UserDefaults.standard.integer(forKey: "PhoneInfo.statusBarDp")
+    nonisolated(unsafe) private static var _gestureBarDp = UserDefaults.standard.integer(forKey: "PhoneInfo.gestureBarDp")
     nonisolated(unsafe) private static var _screenDp = NSSizeFromString(UserDefaults.standard.string(forKey: "PhoneInfo.screenDp") ?? "")
     nonisolated(unsafe) private static var _densityDpi = UserDefaults.standard.integer(forKey: "PhoneInfo.densityDpi")
     nonisolated(unsafe) private static var _current = false
@@ -323,13 +327,16 @@ public enum PhoneInfo {
     }
     /// The phone's status-bar height in dp (0 until the phone has told us).
     public static var statusBarDp: Int { lock.withLock { _statusBarDp } }
+    /// The phone's gesture-bar (navigation-bar) height in dp (0 until the phone has told us).
+    public static var gestureBarDp: Int { lock.withLock { _gestureBarDp } }
     /// The phone has sent them since Nearside started (its display settings may have changed).
     public static var isCurrent: Bool { lock.withLock { _current } }
 
-    static func update(statusBarDp: Int?, densityDpi: Int?, screenDp: CGSize?) {
+    static func update(statusBarDp: Int?, gestureBarDp: Int?, densityDpi: Int?, screenDp: CGSize?) {
         let defaults = UserDefaults.standard
         lock.withLock {
             if let statusBarDp { _statusBarDp = statusBarDp; defaults.set(statusBarDp, forKey: "PhoneInfo.statusBarDp") }
+            if let gestureBarDp { _gestureBarDp = gestureBarDp; defaults.set(gestureBarDp, forKey: "PhoneInfo.gestureBarDp") }
             if let densityDpi { _densityDpi = densityDpi; defaults.set(densityDpi, forKey: "PhoneInfo.densityDpi") }
             if let screenDp { _screenDp = screenDp; defaults.set(NSStringFromSize(screenDp), forKey: "PhoneInfo.screenDp") }
             if densityDpi != nil, screenDp != nil { _current = true }

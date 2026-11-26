@@ -41,6 +41,9 @@ class NotificationMirror : NotificationListenerService() {
         private const val MAX_ACTIONS = 3
         /** Catch-up shows this many newest as banners; older ones go quietly to the list. */
         private const val CATCH_UP_BANNERS = 3
+        /** ...and only ones posted this recently (a link that dropped for a moment); older ones
+         *  were already seen on the phone, or are simply still there: quiet. */
+        private const val CATCH_UP_RECENT_MS = 2 * 60_000L
         /** After a reply from the Mac, the app re-posts with our reply added: don't re-alert. */
         private const val QUIET_AFTER_ACTION_MS = 8_000L
         /** CallStyle's extras (hidden constants; their values are stable across releases). */
@@ -160,9 +163,10 @@ class NotificationMirror : NotificationListenerService() {
     }
 
     /**
-     * Everything still showing, sent again to a Mac that (re)connected: what it never had, the
-     * newest few as banners; what was sent before, quietly (a link that died unnoticed may have
-     * swallowed it; the Mac replaces it by key, without alerting).
+     * Everything still showing, sent again to a computer that (re)connected: what it never had and
+     * arrived in the last two minutes, the newest few as banners; the rest quietly (what was sent
+     * before: a link that died unnoticed may have swallowed it; the computer replaces it by key,
+     * without alerting).
      */
     private fun catchUp() {
         val showing = runCatching { activeNotifications }.getOrNull() ?: return
@@ -172,9 +176,10 @@ class NotificationMirror : NotificationListenerService() {
         calls.clear()
         iconsSent.clear() // a new connection: maybe another Mac, without our icons
         var banners = 0
+        val now = System.currentTimeMillis()
         for (sbn in sorted) {
-            val before = sbn.key in sentBefore
-            if (mirror(sbn, quiet = before || banners >= CATCH_UP_BANNERS) && !before) banners++
+            val alert = sbn.key !in sentBefore && now - sbn.postTime < CATCH_UP_RECENT_MS && banners < CATCH_UP_BANNERS
+            if (mirror(sbn, quiet = !alert) && alert) banners++
         }
         val keys = JSONArray().apply { sorted.forEach { put(it.key) } }
         HelperConnection.send(JSONObject().put("t", "notif-active").put("keys", keys))
