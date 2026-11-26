@@ -80,10 +80,7 @@ struct NotificationPanel: View {
     }
 
     /// The app's launcher icon, else the one the phone sent with a notification, else a symbol.
-    private func icon(_ package: String) -> NSImage? {
-        if let app = library.app(package: package) { return library.icon(app) }
-        return PhoneNotification.iconURL(package: package).flatMap(NSImage.init(contentsOf:))
-    }
+    private func icon(_ package: String) -> NSImage? { PhoneAppIcons.icon(package) }
 }
 
 /// One notification: open, buttons, reply, dismiss. Its colours follow the light or dark around it.

@@ -55,7 +55,8 @@ public sealed class SettingsWindow : Window
     private readonly ComboBox historyLimit = new() { MinWidth = 130 };
     private readonly ComboBox hello = new() { MinWidth = 220 };
     private readonly ComboBox frameRate = new() { MinWidth = 130 };
-    private readonly NotificationApps notificationApps = new();
+    private readonly NotificationApps notificationApps;
+    private ScrollViewer? settingsPage;
     private static readonly int[] FrameRates = [60, 90, 120];
     private readonly ComboBox cameraSide = new() { MinWidth = 130, Items = { "Back", "Front" } };
     private static readonly string[] HelloModes = ["Never", "After this PC wakes or unlocks", "Every time an app opens"];
@@ -94,6 +95,7 @@ public sealed class SettingsWindow : Window
 
     public SettingsWindow()
     {
+        notificationApps = new NotificationApps(open => Content = open ? notificationApps!.Page : settingsPage);
         Title = "Nearside settings";
         AppWindow.SetIcon(Path.Combine(AppContext.BaseDirectory, "Assets", "Nearside.ico"));
         SystemBackdrop = new MicaBackdrop();
@@ -171,7 +173,7 @@ public sealed class SettingsWindow : Window
             FontSize = 12, Foreground = Blocks.Secondary, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(2, 2, 0, 0),
         });
         page.Children.Add(Header("Notifications"));
-        page.Children.Add(notificationApps.Root);
+        page.Children.Add(notificationApps.Entry);
         page.Children.Add(Header("Calls"));
         page.Children.Add(ring);
         page.Children.Add(Header("Screenshots"));
@@ -197,7 +199,9 @@ public sealed class SettingsWindow : Window
         page.Children.Add(startup);
         var version = typeof(SettingsWindow).Assembly.GetName().Version;
         page.Children.Add(new TextBlock { Text = $"Nearside {version?.ToString(3) ?? "dev"}", FontSize = 12, Foreground = Blocks.Secondary, Margin = new Thickness(0, 12, 0, 0) });
-        Content = new ScrollViewer { Content = page };
+        settingsPage = new ScrollViewer { Content = page };
+        Content = settingsPage;
+        if (EngineHost.IsDemo && Environment.GetCommandLineArgs().Contains("--apps")) notificationApps.Open(); // its screenshot
 
         EngineHost.Changed += Render;
         Closed += (_, _) => { EngineHost.Changed -= Render; notificationApps.Detach(); };

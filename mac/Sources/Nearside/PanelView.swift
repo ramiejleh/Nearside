@@ -425,11 +425,8 @@ private struct PanelNotifications: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
-    /// The app's launcher icon, else the one the phone sent with a notification.
-    private func icon(_ package: String) -> NSImage? {
-        if let library = PhoneWindowManager.shared?.library, let app = library.app(package: package) { return library.icon(app) }
-        return PhoneNotification.iconURL(package: package).flatMap(NSImage.init(contentsOf:))
-    }
+    /// The app's launcher icon, else the one the phone sent with a notification (loaded once).
+    private func icon(_ package: String) -> NSImage? { PhoneAppIcons.icon(package) }
 }
 
 /// The phone isn't connected: nothing of it shows, only where it is and how to get it back.

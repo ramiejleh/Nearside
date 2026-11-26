@@ -27,8 +27,18 @@ struct SettingsView: View {
     @State private var automaticUpdates = Updates.automaticChecks
     @State private var confirmReset = false
     @State private var permissions = Permissions()
+    /// Settings → Notifications → Apps, a page of its own (its long list is built only when open).
+    @State private var showingApps = false
 
     var body: some View {
+        if showingApps {
+            NotificationAppsPage(engine: engine) { showingApps = false }
+        } else {
+            form
+        }
+    }
+
+    private var form: some View {
         VStack(spacing: 0) {
             Form {
                 // What the panel shows and Nearside does: each feature's own switch. Their details
@@ -65,7 +75,7 @@ struct SettingsView: View {
                 }
 
                 Section("Notifications") {
-                    NotificationApps(engine: engine)
+                    NotificationAppsRow(engine: engine) { showingApps = true }
                     Picker(selection: $notificationClick) {
                         Text("On your phone").tag("phone")
                         Text("On this Mac").tag("mac")
