@@ -42,7 +42,7 @@ Everything travels directly between your two devices, over an encrypted link on 
 or a USB cable.
 
 The features below are described for the Mac; the Windows app has the same ones, with the
-differences noted under each. It's new and still being tested on real PCs (see
+differences noted under each. Both are tested on real hardware (see
 [what's tested](#whats-tested-and-where)).
 
 ## Features
@@ -211,31 +211,28 @@ The [architecture notes](docs/architecture.md) go deeper.
 
 ### What's tested, and where
 
-Everything below is tested on **one setup**: a **Google Pixel 9 Pro on Android 17 beta (API 37)**
-with a **MacBook Air (Apple M5) on macOS 27.0.1**, over Wi-Fi and over USB. Nothing else has been
-tested yet: other phones, Android 11 to 16, macOS 14 to 26 and Intel Macs may work, or may not.
+Everything below is tested with **one phone**: a **Google Pixel 9 Pro on Android 17 beta
+(API 37)**, with a **MacBook Air (Apple M5) on macOS 27.0.1** and a **Windows 11 PC (x64)**, over
+Wi-Fi and over USB. Nothing else has been tested yet: other phones, Android 11 to 16, macOS 14 to
+26, Intel Macs and Arm PCs may work, or may not.
 [Reports](https://github.com/ramiejleh/Nearside/issues/new/choose) from other setups are very
 welcome.
 
-The Windows app is new and **not tested on a real PC yet**: so far in a Windows 11 Arm virtual
-machine, which has no graphics card for video decoding, no Windows Hello and no USB. Real-PC
-results will fill in this column.
-
 | Feature | Mac (macOS 27) | Windows 11 | Notes |
 |---|---|---|---|
-| Clipboard, both ways, with history | Tested | Not yet | |
-| Notifications, with buttons and replies | Tested | Not yet | |
-| Text messages (SMS) | Tested | Not yet | RCS stays in Google Messages |
-| Files, both ways | Tested | Not yet | |
-| Phone apps in computer windows, with sound | Tested | Not yet | Uses Android's virtual devices |
-| The computer's microphone in app windows | Tested | Not yet | WhatsApp and Messenger calls |
-| Phone status (battery, signal, network) | Tested | Not yet | |
-| Photos and screenshots | Tested | Not yet | |
-| Incoming calls: answer, decline, reply | Tested | Not yet | Phone, WhatsApp and Messenger calls |
-| Phone calls through the computer (sound and microphone) | Tested | Not yet | Uses the in-call audio paths Pixel's Call Screen uses |
-| Phone camera as a webcam, back and front | Tested | Not yet | Mac: release builds only (needs Apple signing) |
-| USB cable | Tested | Not yet | |
-| Wi-Fi (wireless debugging) | Tested | Not yet | |
+| Clipboard, both ways, with history | Tested | Tested | |
+| Notifications, with buttons and replies | Tested | Tested | |
+| Text messages (SMS) | Tested | Tested | RCS stays in Google Messages |
+| Files, both ways | Tested | Tested | |
+| Phone apps in computer windows, with sound | Tested | Tested | Uses Android's virtual devices |
+| The computer's microphone in app windows | Tested | Tested | WhatsApp and Messenger calls |
+| Phone status (battery, signal, network) | Tested | Tested | |
+| Photos and screenshots | Tested | Tested | |
+| Incoming calls: answer, decline, reply | Tested | Tested | Phone, WhatsApp and Messenger calls |
+| Phone calls through the computer (sound and microphone) | Tested | Tested | Uses the in-call audio paths Pixel's Call Screen uses |
+| Phone camera as a webcam, back and front | Tested | Tested | Mac: release builds only (needs Apple signing) |
+| USB cable | Tested | Tested | |
+| Wi-Fi (wireless debugging) | Tested | Tested | |
 | Phone-app windows at 90 or 120 frames a second | Not yet | Not yet | Android 14 or later |
 | Muting notifications, the Notifications tab | Not yet | Not yet | New |
 
@@ -304,7 +301,7 @@ vulnerability? Please report it privately; see [SECURITY.md](SECURITY.md).
 ## Status
 
 Nearside is **alpha** software. It's built and used daily on a Pixel 9 Pro (Android 17 beta)
-with a MacBook Air (macOS 27); the Windows app is newer still. See
+with a MacBook Air (macOS 27) and a Windows 11 PC. See
 [what's tested](#whats-tested-and-where). Known limitations:
 
 - Apps that block screen capture (many banking apps) show black in a window. The window says so
