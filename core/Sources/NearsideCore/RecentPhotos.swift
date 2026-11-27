@@ -73,6 +73,15 @@ public final class RecentPhotos {
         send(["t": "photos-watch", "on": now])
     }
 
+    /// Sample photos (pictures for the README): shown instead of the phone's until the app quits.
+    @ObservationIgnored private var demo = false
+
+    public func showDemo(_ photos: [(PhonePhoto, Data)]) {
+        demo = true
+        items = photos.map(\.0)
+        thumbnails = Dictionary(uniqueKeysWithValues: photos.map { ($0.0.id, $0.1) })
+    }
+
     public func panelOpened() { setWatching("panel", true) }
     public func panelClosed() { setWatching("panel", false) }
 
@@ -85,12 +94,14 @@ public final class RecentPhotos {
 
     func connectionLost() {
         connected = false
+        guard !demo else { return }
         items = []
         thumbnails = [:]
         requested = []
     }
 
     func handle(_ message: [String: Any]) {
+        guard !demo else { return }
         switch message["t"] as? String {
         case "photos":
             denied = message["denied"] as? Bool ?? false

@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Nearside: Continuity for Android, on your Mac or PC</title>
 <meta name="description" content="The most seamless way to use an Android phone with a Mac or a Windows PC: one clipboard, notifications, texts and calls, files, and every phone app in its own window. Open source, no cloud, no account.">
-<meta property="og:title" content="Nearside: Continuity, without the lock-in">
+<meta property="og:title" content="Nearside: Continuity the way it was meant to be">
 <meta property="og:description" content="Use the Android phone you want with the Mac or PC you want: one clipboard, notifications, texts, calls, files and every phone app in its own window. Open source, no cloud.">
 <meta property="og:image" content="https://ramiejleh.github.io/Nearside/images/hero.jpg">
 <meta name="theme-color" content="#E8E9EC" media="(prefers-color-scheme: light)">
@@ -33,6 +33,7 @@
     <a href="#apps">Phone apps</a>
     <a href="#everyday">Everyday</a>
     <a href="#how">How it works</a>
+    <a href="#download">Download</a>
     <a href="#tested">Tested</a>
     <a href="#support">Support</a>
     <a class="pill" href="https://github.com/ramiejleh/Nearside">GitHub</a>
@@ -44,13 +45,13 @@
   <!-- The one orchestrated moment: things cross from the phone to the Mac. -->
   <section class="hero">
     <div class="hero-text">
-      <h1>Continuity, without the lock&#8209;in.</h1>
+      <h1>Continuity the way it was meant to be.</h1>
       <p class="lede">The most seamless way to use an Android phone with a Mac or a Windows PC. Copy on one and paste on the other, answer notifications, texts and calls from your computer, drop files either way, and open any phone app in its own window, with the phone still locked in your pocket.</p>
       <div class="actions">
-        <a class="button primary" href="https://github.com/ramiejleh/Nearside">View on GitHub</a>
-        <a class="button" href="#how">How it works</a>
+        <a class="button primary" data-os="mac" href="https://github.com/ramiejleh/Nearside/releases/latest/download/Nearside-mac.zip">Download for Mac</a>
+        <a class="button" data-os="windows" href="https://github.com/ramiejleh/Nearside/releases/latest/download/Nearside-windows-x64.exe">Download for Windows</a>
       </div>
-      <p class="fine">Free and open source. macOS 14 or later, or Windows 11; Android 11 or later. No cloud, no account.</p>
+      <p class="fine">Free and open source. macOS 14 or later, or Windows 11 (<a href="https://github.com/ramiejleh/Nearside/releases/latest/download/Nearside-windows-arm64.exe">for Arm PCs</a>); Android 11 or later. No cloud, no account. <a href="#download">How to set it up</a>.</p>
     </div>
 
     <div class="stage" role="img" aria-label="A clip and a phone app travel from an Android phone to a Mac, then a message arrives on both at once">
@@ -153,7 +154,7 @@
       </div>
 
       <div class="pair flip">
-        <img src="images/window-notifications.png" alt="The phone window's notification panel with notifications, their buttons and reply" loading="lazy">
+        <img src="images/window-panel-notifications.png" alt="Nearside's panel: the phone's recent photos and its notifications, with their buttons (sample content)" loading="lazy">
         <div>
           <h3>Notifications you can act on</h3>
           <p>Your phone's notifications arrive as real macOS or Windows notifications, with their buttons and inline replies, and the panel lists what's on the phone now. Dismiss one on either device and it's gone on both, open it in a window right where it points, or mute them all for a few hours.</p>
@@ -212,6 +213,28 @@
     </div>
   </section>
 
+  <section id="download" class="download">
+    <div class="wrap">
+      <h2>Get Nearside.</h2>
+      <p class="intro">Three steps, about five minutes. Nothing to sign up for.</p>
+      <ol class="steps">
+        <li>
+          <h3>Download it</h3>
+          <p><a href="https://github.com/ramiejleh/Nearside/releases/latest/download/Nearside-mac.zip">For Mac</a> (macOS 14 or later): open the zip and drag Nearside to Applications. <a href="https://github.com/ramiejleh/Nearside/releases/latest/download/Nearside-windows-x64.exe">For Windows</a> (Windows 11; <a href="https://github.com/ramiejleh/Nearside/releases/latest/download/Nearside-windows-arm64.exe">Arm PCs</a>): run the installer.</p>
+        </li>
+        <li>
+          <h3>Open it</h3>
+          <p>It shows a QR code. On Windows, the installer isn't code-signed yet (a certificate costs money every year), so Windows says it protected your PC: choose <b>More info</b>, then <b>Run anyway</b>.</p>
+        </li>
+        <li>
+          <h3>Scan it with your phone</h3>
+          <p>On the phone, turn on <b>Developer options &rarr; Wireless debugging</b>, choose <b>Pair device with QR code</b> and scan. Your computer installs the phone app and does the rest. No Developer options yet? In <b>Settings &rarr; About phone</b>, tap <b>Build number</b> seven times.</p>
+        </li>
+      </ol>
+      <p class="fine">Both apps update themselves, and the phone app with them. Every version, with checksums, is on <a href="https://github.com/ramiejleh/Nearside/releases">GitHub</a>.</p>
+    </div>
+  </section>
+
   <section id="support" class="support">
     <div class="wrap">
       <h2>Keep it free and getting better.</h2>
@@ -225,6 +248,15 @@
   </section>
 
 </main>
+
+<script>
+  // On Windows, the Windows download comes first.
+  if (/Windows/.test(navigator.userAgent)) {
+    const mac = document.querySelector('[data-os="mac"]'), win = document.querySelector('[data-os="windows"]');
+    mac.classList.remove('primary'); win.classList.add('primary');
+    win.parentNode.insertBefore(win, mac);
+  }
+</script>
 
 <footer class="foot">
   <div class="wrap">

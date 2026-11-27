@@ -178,7 +178,7 @@ final class PhoneWindowController: NSObject, NSWindowDelegate {
     }
 
     /// Made-up notifications for pictures (NEARSIDE_TEST_DEMO_NOTIFICATIONS=1).
-    private static var demoNotifications: [PhoneNotification] {
+    static var demoNotifications: [PhoneNotification] {
         let now = Date()
         func note(_ pkg: String, _ app: String, _ title: String, _ text: String, _ minutes: Double, _ actions: [(String, Bool)]) -> PhoneNotification {
             PhoneNotification(key: "demo|\(pkg)|\(minutes)", package: pkg, app: app, title: title, text: text,

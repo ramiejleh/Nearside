@@ -75,6 +75,8 @@ without clicking:
 | `NEARSIDE_TEST_PHONE` | Phone window: `recents`, `notifications`, `close`, `bar`, `drag` |
 | `NEARSIDE_TEST_DISMISS` | With `NEARSIDE_TEST_PHONE=notifications`: dismiss the first notification from this app |
 | `NEARSIDE_TEST_WAIT` | Seconds before the phone-window test runs |
+| `NEARSIDE_TEST_DEMO` | `1`: with `NEARSIDE_TEST_VIEW=panel`, sample notifications, clips and photos instead of yours (nothing saved; for the README and website) |
+| `NEARSIDE_TEST_TAB` | With `NEARSIDE_TEST_DEMO`: the panel's tab, `notifications` or `clipboard` (kept apart from your own choice) |
 | `NEARSIDE_TEST_DEMO_NOTIFICATIONS` | `1`: with `NEARSIDE_TEST_PHONE=notifications`, the panel shows made-up notifications (for pictures) |
 | `NEARSIDE_TEST_DOCK` | The phone window's dock: comma-separated packages instead of your favourites |
 | `NEARSIDE_TEST_OVERLAY` | Output PNG for the overlay, phone-window and `NEARSIDE_TEST_VIEW` snapshots |

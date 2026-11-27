@@ -96,6 +96,19 @@ public final class SyncEngine {
     }
 
     private var demoNotifications = false
+    /// Sample content (pictures): nothing is saved, and the phone's clips don't replace it.
+    private var demoContent = false
+
+    /// Test hook (pictures for the README and website): sample notifications, clipboard history and
+    /// photos in place of the phone's, in memory only (the history file isn't touched), until the
+    /// app quits. The newest clip shows as just arrived.
+    public func showDemoContent(notifications: [PhoneNotification], clips: [ClipItem], photos: [(PhonePhoto, Data)]) {
+        showDemoNotifications(notifications)
+        demoContent = true
+        history = ClipHistory(items: clips, limit: history.limit)
+        unseenIDs = Set(clips.prefix(1).map(\.id))
+        self.photos.showDemo(photos)
+    }
 
     /// SMS for the Messages window.
     public let messages = MessagesStore()
@@ -613,7 +626,7 @@ public final class SyncEngine {
         case "share-failed":
             if let pkg = message["pkg"] as? String { onShareFailed?(pkg, message["accepts"] as? Bool ?? false) }
         case "clip":
-            guard state == .connected, clipboardSync, let text = message["text"] as? String, !text.isEmpty else { return }
+            guard state == .connected, clipboardSync, !demoContent, let text = message["text"] as? String, !text.isEmpty else { return }
             pasteboard.write(text)
             let item = history.add(text, source: .android)
             unseenIDs.insert(item.id)
@@ -935,7 +948,7 @@ public final class SyncEngine {
     private func macCopied(_ text: String) {
         // Nothing is kept while the phone isn't connected (the panel shows no history then), or
         // while clipboard sync is off.
-        guard state == .connected, clipboardSync else { return }
+        guard state == .connected, clipboardSync, !demoContent else { return }
         history.add(text, source: .mac)
         persist()
         if state == .connected {
@@ -1000,6 +1013,7 @@ public final class SyncEngine {
     }
 
     private func persist() {
+        guard !demoContent else { return } // sample clips never replace the saved history
         defaults.set(history.limit, forKey: "historyLimit")
         saveSettingsNow()
         try? history.save(to: Paths.history)

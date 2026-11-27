@@ -220,7 +220,7 @@ p { margin: 0; max-width: 62ch; }
 figcaption { margin-top: 12px; font-size: 15px; color: var(--on-dusk-soft); text-align: center; }
 
 /* Everyday */
-.why, .everyday, .how, .tested, .support { padding: clamp(64px, 9vw, 128px) 0; }
+.why, .everyday, .how, .download, .tested, .support { padding: clamp(64px, 9vw, 128px) 0; }
 .pair { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 6fr); gap: clamp(28px, 5vw, 80px); align-items: center; margin-top: 56px; }
 .pair img { width: min(100%, 345px); max-height: 78vh; object-fit: contain; justify-self: center; }
 .pair p { margin-top: 12px; color: var(--soft); font-size: 19px; }
@@ -245,6 +245,16 @@ figcaption { margin-top: 12px; font-size: 15px; color: var(--on-dusk-soft); text
 .promises b { color: var(--ink); }
 @media (max-width: 800px) { .promises { grid-template-columns: 1fr; } }
 
+
+/* Get Nearside: three steps. */
+.download { background: var(--surface); }
+.steps { list-style: none; counter-reset: step; margin: 40px 0 0; padding: 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 32px 48px; }
+.steps li { counter-increment: step; }
+.steps li::before { content: counter(step); display: grid; place-items: center; width: 36px; height: 36px; border-radius: 50%; border: 1.5px solid var(--line); font-weight: 700; margin-bottom: 14px; }
+.steps h3 { font-size: 20px; }
+.steps p { margin-top: 8px; color: var(--soft); }
+.steps b { color: var(--ink); font-weight: 600; }
+@media (max-width: 800px) { .steps { grid-template-columns: 1fr; } }
 
 /* Support */
 .support { text-align: center; }

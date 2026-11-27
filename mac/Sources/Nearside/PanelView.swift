@@ -11,7 +11,10 @@ struct PanelView: View {
     @State private var highlighted: Set<UUID> = []
     @State private var showingSettings = false
     @State private var dropTargeted = false
-    @AppStorage("Panel.tab") private var tab = PanelTab.notifications.rawValue
+    @AppStorage("Panel.tab", store: PanelView.tabStore) private var tab = PanelTab.notifications.rawValue
+    /// Pictures (NEARSIDE_TEST_DEMO) keep their tab apart, so taking them never changes yours.
+    static let tabStore: UserDefaults = ProcessInfo.processInfo.environment["NEARSIDE_TEST_DEMO"] == "1"
+        ? UserDefaults(suiteName: "dev.nearside.test") ?? .standard : .standard
 
     var body: some View {
         VStack(spacing: 0) {

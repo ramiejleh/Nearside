@@ -189,6 +189,9 @@ foreach ($a in $Arch) {
     $installer = Join-Path $Out "Nearside-$Version-$a.exe"
     $sha = (Get-FileHash $installer -Algorithm SHA256).Hash.ToLowerInvariant()
     Write-Text "$installer.sha256" "$sha  $(Split-Path -Leaf $installer)`n" # LF: shasum -c reads it
+    # The same installer under a name that never changes, for the website's download buttons
+    # (releases/latest/download/Nearside-windows-<arch>.exe).
+    Copy-Item $installer (Join-Path $Out "Nearside-windows-$a.exe") -Force
     $Installers[$a] = @{ Path = $installer; Sha = $sha }
 }
 
@@ -293,7 +296,8 @@ if ($UpdateTest) { Write-Host "  (a test build with the update test hooks: don't
 Next:
   1. Try an installer on a clean PC: install, check it connects, check the camera shows up.
   2. git tag v$Version; git push --tags (the Mac release uses the same tag).
-  3. Add the installers and their .sha256 files to the GitHub release for v$Version.
+  3. Add the installers, their .sha256 files and Nearside-windows-x64.exe / -arm64.exe (the website's
+     download buttons) to the GitHub release for v$Version.
   4. Commit and push site\appcast-windows.xml (PCs then see the update).
   5. Copy $Out\winget\manifests into a fork of microsoft/winget-pkgs and open a pull request.
 "@ | Write-Host

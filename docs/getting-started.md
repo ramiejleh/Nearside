@@ -12,9 +12,8 @@
 
 ### Mac
 
-Download `Nearside-<version>.zip` from the
-[latest release](https://github.com/ramiejleh/Nearside/releases/latest), unzip it and move
-Nearside to Applications. Or, with [Homebrew](https://brew.sh):
+[Download Nearside for Mac](https://github.com/ramiejleh/Nearside/releases/latest/download/Nearside-mac.zip) (always the newest
+version), unzip it and move Nearside to Applications. Or, with [Homebrew](https://brew.sh):
 
 ```sh
 brew tap ramiejleh/tap
@@ -26,8 +25,8 @@ Releases are signed and notarised by Apple. Nearside checks for updates by itsel
 
 ### Windows
 
-Download `Nearside-<version>-x64.exe` (or `-arm64.exe` for Arm PCs) from the same release and run
-it. A winget package will follow.
+[Download Nearside for Windows](https://github.com/ramiejleh/Nearside/releases/latest/download/Nearside-windows-x64.exe) (or
+[for Arm PCs](https://github.com/ramiejleh/Nearside/releases/latest/download/Nearside-windows-arm64.exe)) and run it. A winget package will follow.
 
 **The installer isn't code-signed yet.** A code-signing certificate costs money every year, so for
 now Windows shows "Windows protected your PC" when you run it: choose **More info**, then **Run

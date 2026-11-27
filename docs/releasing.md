@@ -60,7 +60,10 @@ the scripts read them from the environment or the keychain.
 4. **Try them.** Install each on a clean account, check that it connects, and check that the
    phone app updates.
 5. **Tag and publish.** Tag `v<version>`, push the tag, and make a GitHub release with the zip,
-   both installers and their checksums.
+   both installers and their checksums, plus the copies under fixed names the scripts make
+   (`Nearside-mac.zip`, `Nearside-windows-x64.exe`, `Nearside-windows-arm64.exe`). The website's
+   and README's download buttons link to `releases/latest/download/<that name>`, so they always
+   get the newest release.
 6. **Then the feeds.** Commit both appcast entries and push to `main`; Pages publishes them.
    Never before the release exists, or computers fetch a missing file.
 7. **Package managers.** Copy the cask into the tap's `Casks/`, and open a pull request to

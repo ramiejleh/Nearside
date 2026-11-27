@@ -186,6 +186,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         default: (AnyView(PanelView(engine: engine, openMessages: {}, openSetup: {}, openApps: {})), NSSize(width: 380, height: 540))
         }
         let dark = env["NEARSIDE_TEST_DARK"] == "1"
+        // NEARSIDE_TEST_DEMO=1: sample notifications, clips and photos (nothing of yours), and
+        // NEARSIDE_TEST_TAB=notifications|clipboard picks the panel's tab.
+        if env["NEARSIDE_TEST_DEMO"] == "1" {
+            engine.showDemoContent(notifications: PhoneWindowController.demoNotifications, clips: DemoContent.clips, photos: DemoContent.photos)
+            if let tab = env["NEARSIDE_TEST_TAB"] { PanelView.tabStore.set(tab, forKey: "Panel.tab") }
+        }
         let window = NSWindow(contentRect: NSRect(origin: NSPoint(x: -3000, y: 0), size: size), styleMask: [.borderless],
                               backing: .buffered, defer: false)
         let view = NSHostingView(rootView: root.tint(Theme.accent))

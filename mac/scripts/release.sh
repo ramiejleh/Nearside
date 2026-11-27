@@ -121,6 +121,9 @@ fi
 # --- The download: the stapled app, zipped, with its checksum. ------------------------
 ditto -c -k --keepParent "$APP" "$ZIP"
 (cd "$OUT" && shasum -a 256 "$(basename "$ZIP")" > "$(basename "$ZIP").sha256")
+# The same zip under a name that never changes: the website's download button links to
+# releases/latest/download/Nearside-mac.zip.
+cp "$ZIP" "$OUT/Nearside-mac.zip"
 SHA="$(cut -d' ' -f1 "$ZIP.sha256")"
 URL="https://github.com/ramiejleh/Nearside/releases/download/v$VERSION/$(basename "$ZIP")"
 
@@ -186,7 +189,7 @@ cat <<NEXT
 Next:
   1. Try the zip: unzip it somewhere, open it, check it connects.
   2. git tag v$VERSION && git push --tags
-  3. Make a GitHub release for v$VERSION with the zip and its .sha256.
+  3. Make a GitHub release for v$VERSION with the zip, its .sha256 and Nearside-mac.zip (the website's download button).
   4. Commit and push site/appcast.xml (Pages serves it; Macs then see the update).
   5. Copy $OUT/nearside.rb to Casks/ in ramiejleh/homebrew-tap and push.
 NEXT

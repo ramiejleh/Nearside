@@ -4,8 +4,8 @@
 
 # Nearside
 
-**The most seamless way to use an Android phone with a Mac or a Windows PC.**
-Continuity, without being locked into one company's phone and laptop.
+**Continuity the way it was meant to be.**
+The most seamless way to use an Android phone with a Mac or a Windows PC.
 
 [![License: AGPL v3](https://img.shields.io/badge/license-AGPL%20v3-blue.svg)](LICENSE)
 [![macOS 14+](https://img.shields.io/badge/macOS-14%2B-000000?logo=apple&logoColor=white)](docs/getting-started.md#requirements)
@@ -14,6 +14,8 @@ Continuity, without being locked into one company's phone and laptop.
 [![CI](https://github.com/ramiejleh/Nearside/actions/workflows/ci.yml/badge.svg)](https://github.com/ramiejleh/Nearside/actions/workflows/ci.yml)
 [![Status: alpha](https://img.shields.io/badge/status-alpha-orange)](docs/getting-started.md#status)
 [![Sponsor](https://img.shields.io/badge/sponsor-GitHub-ea4aaa?logo=githubsponsors&logoColor=white)](https://github.com/sponsors/ramiejleh)
+
+**[Download for Mac](https://github.com/ramiejleh/Nearside/releases/latest/download/Nearside-mac.zip)** · **[Download for Windows](https://github.com/ramiejleh/Nearside/releases/latest/download/Nearside-windows-x64.exe)** ([Arm PCs](https://github.com/ramiejleh/Nearside/releases/latest/download/Nearside-windows-arm64.exe))
 
 [Website](https://ramiejleh.github.io/Nearside/) · [Features](#features) · [Get started](#get-started) ·
 [Support](#support-the-project)
@@ -109,8 +111,9 @@ Every feature in detail, with the keyboard shortcuts and the differences on Wind
 You need **macOS 14** or later or **Windows 11**, and an **Android 11** or later phone on the
 same Wi-Fi.
 
-1. **Install Nearside** from the [latest release](https://github.com/ramiejleh/Nearside/releases/latest):
-   the zip for the Mac, or the installer for Windows. On a Mac you can also use Homebrew:
+1. **Download Nearside:** [for Mac](https://github.com/ramiejleh/Nearside/releases/latest/download/Nearside-mac.zip) (open the zip and drag Nearside to
+   Applications) or [for Windows](https://github.com/ramiejleh/Nearside/releases/latest/download/Nearside-windows-x64.exe) ([Arm PCs](https://github.com/ramiejleh/Nearside/releases/latest/download/Nearside-windows-arm64.exe);
+   run the installer). On a Mac you can also use Homebrew:
 
    ```sh
    brew tap ramiejleh/tap
@@ -118,7 +121,9 @@ same Wi-Fi.
    ```
 
 2. **Open it.** A setup assistant shows a QR code.
-3. **On the phone**, turn on **Developer options → Wireless debugging** and scan the code.
+3. **On the phone**, turn on **Developer options → Wireless debugging**, choose **Pair device with
+   QR code** and scan it. No Developer options yet? In **Settings → About phone**, tap **Build
+   number** seven times.
 
 That's the only time you touch the phone: the computer installs the phone app and does the rest.
 Updates arrive by themselves, for the computer and the phone.
