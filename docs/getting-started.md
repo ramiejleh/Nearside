@@ -17,6 +17,7 @@ Download `Nearside-<version>.zip` from the
 Nearside to Applications. Or, with [Homebrew](https://brew.sh):
 
 ```sh
+brew tap ramiejleh/tap
 brew install --cask ramiejleh/tap/nearside
 ```
 

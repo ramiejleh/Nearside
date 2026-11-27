@@ -108,6 +108,7 @@ same Wi-Fi.
    the zip for the Mac, or the installer for Windows. On a Mac you can also use Homebrew:
 
    ```sh
+   brew tap ramiejleh/tap
    brew install --cask ramiejleh/tap/nearside
    ```
 
