@@ -20,7 +20,7 @@ Continuity, without being locked into one company's phone and laptop.
 
 <br>
 
-<img src="docs/images/hero.jpg" width="900" alt="Phone apps in their own Mac windows: WhatsApp, the phone window with its home screen and Play Store, next to Nearside's menu-bar panel with clipboard history">
+<img src="docs/images/hero.png" width="900" alt="Phone apps in their own Mac windows: WhatsApp, the phone window with its home screen and Play Store, next to Nearside's menu-bar panel with clipboard history">
 
 <sub>Real windows on a Mac. Personal content is replaced with demo content.</sub>
 
@@ -73,7 +73,7 @@ and your computer feel like they belong together, you can help keep it going:
 
 ## Features
 
-<img src="docs/images/panel.jpg" width="300" align="right" alt="Nearside's menu-bar panel showing clipboard history from the phone and the Mac (sample clips)">
+<img src="docs/images/panel.png" width="330" align="right" alt="Nearside's menu-bar panel showing clipboard history from the phone and the Mac (sample clips)">
 
 - **Phone apps in real windows.** In the Dock, ⌘-Tab, Spotlight and a launcher on the Mac; on the
   taskbar, Alt+Tab and the Start menu on a PC. Phone, foldable or tablet size, with native
@@ -97,7 +97,7 @@ and your computer feel like they belong together, you can help keep it going:
 <br clear="right">
 
 <p align="center">
-  <img src="docs/images/launcher.jpg" width="640" alt="Nearside's launcher on a Mac: a search field and every app on the phone, ready to open in its own window">
+  <img src="docs/images/launcher.png" width="700" alt="Nearside's launcher on a Mac: a search field and every app on the phone, ready to open in its own window">
 </p>
 <p align="center"><sub>Every app on your phone, one shortcut away: ⌥⌘P on a Mac, Ctrl+Alt+N on a PC.</sub></p>
 
