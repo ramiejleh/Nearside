@@ -23,9 +23,7 @@ Continuity, without being locked into one company's phone and laptop.
 <img src="docs/images/hero.jpg" width="900" alt="Phone apps in their own Mac windows: WhatsApp, the phone window with its home screen and Play Store, next to Nearside's menu-bar panel with clipboard history">
 
 <p>
-  <img src="docs/images/whatsapp.jpg" width="290" alt="WhatsApp in its own Mac window (demo chats)">
-  <img src="docs/images/phone.jpg" width="290" alt="The phone window: Nearside's home screen with every app and a dock">
-  <img src="docs/images/notifications.jpg" width="290" alt="The phone window's notification panel, with buttons and reply (demo notifications)">
+  <img src="docs/images/whatsapp.jpg" width="32%" alt="WhatsApp in its own Mac window (demo chats)"><img src="docs/images/phone.jpg" width="32%" alt="The phone window: Nearside's home screen with every app and a dock"><img src="docs/images/notifications.jpg" width="32%" alt="The phone window's notification panel, with buttons and reply (demo notifications)">
 </p>
 
 <sub>Real windows on a Mac. Personal content is replaced with demo content.</sub>
