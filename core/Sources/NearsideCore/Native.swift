@@ -113,8 +113,15 @@ enum Native {
     /// The pinned phone's adb interface, if it's plugged in. Ignoring case: Windows may report a
     /// serial in capitals (`connectUSB` checks the phone's exact one).
     static func pluggedIn(_ serial: String) -> USB.Device? {
-        USB.devices().first { $0.serial.caseInsensitiveCompare(serial) == .orderedSame }
+        let all = USB.devices()
+        let match = all.first { $0.serial.caseInsensitiveCompare(serial) == .orderedSame }
+        // What the computer sees on its cables, logged as it changes (no serial numbers).
+        let seen = all.isEmpty ? "no phone's USB debugging connection on a cable"
+            : "\(all.count) USB debugging connection\(all.count == 1 ? "" : "s") on a cable, \(match != nil ? "the paired phone's" : "none the paired phone's")"
+        if lock.withLock({ () -> Bool in defer { usbSeen = seen }; return usbSeen != seen }) { usbLog.notice(seen) }
+        return match
     }
+    nonisolated(unsafe) private static var usbSeen = ""
 
     /// Plug-ins that didn't work (the phone isn't proven, or another error): not tried again
     /// until plugged in again.

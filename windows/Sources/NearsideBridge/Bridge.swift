@@ -58,6 +58,8 @@ public func nearside_start(_ apkPath: UnsafePointer<CChar>?, _ callback: Nearsid
     MainActor.assumeIsolated {
         guard Bridge.engine == nil else { return }
         Bridge.onEvent = callback
+        // The engine's log lines, into the app's log file (from any thread: sent from this one).
+        Log.sink = { line in DispatchQueue.main.async { MainActor.assumeIsolated { Bridge.emit("log", ["line": line]) } } }
         let platform = WindowsPlatform()
         platform.notifications = {
             let notifications = BridgeNotifications()

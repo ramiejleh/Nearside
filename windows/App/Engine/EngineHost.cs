@@ -108,6 +108,11 @@ public static unsafe class EngineHost
     {
         using var doc = JsonDocument.Parse(text);
         var name = doc.RootElement.GetProperty("e").GetString() ?? "";
+        if (name == "log")
+        {
+            Log.Info($"engine {doc.RootElement.GetProperty("line").GetString()}");
+            return;
+        }
         if (name == "changed")
         {
             Current = ReadSnapshot();

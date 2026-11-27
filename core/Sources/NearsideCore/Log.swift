@@ -11,6 +11,17 @@ public struct Log: Sendable {
     private let logger: Logger
     #endif
 
+    /// Where lines go on a computer without the unified log (Windows: the app's own log file);
+    /// NSLog if nothing's set. Called on any thread.
+    nonisolated(unsafe) public static var sink: (@Sendable (String) -> Void)?
+
+    #if !canImport(os)
+    private func write(_ level: String, _ message: String) {
+        let line = "[\(category)] \(level)\(message)"
+        if let sink = Log.sink { sink(line) } else { NSLog("%@", "Nearside \(line)") } // never a format string from data
+    }
+    #endif
+
     public init(_ category: String) {
         self.category = category
         #if canImport(os)
@@ -23,7 +34,7 @@ public struct Log: Sendable {
         #if canImport(os)
         logger.info("\(message, privacy: .public)")
         #else
-        NSLog("%@", "Nearside [\(category)]: \(message)") // never a format string from data
+        write("", message)
         #endif
     }
 
@@ -31,7 +42,7 @@ public struct Log: Sendable {
         #if canImport(os)
         logger.notice("\(message, privacy: .public)")
         #else
-        NSLog("%@", "Nearside [\(category)]: \(message)") // never a format string from data
+        write("", message)
         #endif
     }
 
@@ -39,7 +50,7 @@ public struct Log: Sendable {
         #if canImport(os)
         logger.error("\(message, privacy: .public)")
         #else
-        NSLog("%@", "Nearside [\(category)]: error: \(message)")
+        write("error: ", message)
         #endif
     }
 }
