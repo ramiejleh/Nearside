@@ -32,6 +32,7 @@ struct PanelView: View {
                         }
                         if engine.state == .connected {
                             if let until = engine.notificationsMutedUntil { MutedBanner(until: until) { engine.unmuteNotifications() } }
+                            if engine.usbInUse { USBInUseBanner() }
                             if !engine.transfers.isEmpty { TransfersView(engine: engine) }
                             if engine.recentPhotos, !engine.photos.items.isEmpty {
                                 PhotoStrip(engine: engine)
@@ -518,6 +519,27 @@ private struct MuteMenu: View {
 }
 
 /// Phone notifications are muted: until when, and a way to turn them back on.
+/// Plugged in, but another program has the phone's USB connection: Nearside stays on Wi-Fi.
+struct USBInUseBanner: View {
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "cable.connector.slash")
+                .font(.system(size: 18))
+                .foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("USB cable not in use").font(.system(size: 12.5, weight: .semibold))
+                Text("Another program, such as adb or Android Studio, is using the phone's USB connection. Nearside stays on Wi-Fi and moves to the cable once it's free.")
+                    .font(.system(size: 11)).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 4)
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
+        .background(.quaternary.opacity(0.4))
+    }
+}
+
 struct MutedBanner: View {
     let until: Date
     let unmute: () -> Void

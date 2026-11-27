@@ -8,6 +8,7 @@ enum Snapshot {
         var s: [String: Any] = [
             "state": state(engine.state),
             "overUSB": engine.overUSB,
+            "usbInUse": engine.usbInUse,
             "phoneName": engine.phoneName,
             "appLinked": engine.appLinked,
             "isPairing": engine.isPairing,

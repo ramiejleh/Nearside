@@ -15,11 +15,13 @@ public enum USB {
         public let id: UInt64
     }
 
+    /// The interface's own properties, compared as they are (IOPropertyMatch). Not the USB
+    /// family's class matching: for a vendor-specific class (0xFF, as adb's is) that only matches
+    /// together with a vendor ID, and phones come from many vendors, so it found no phone.
     static func matching() -> CFMutableDictionary {
-        IOUSBHostInterface.__createMatchingDictionary(
-            withVendorID: nil, productID: nil, bcdDevice: nil, interfaceNumber: nil, configurationValue: nil,
-            interfaceClass: 0xFF, interfaceSubclass: 0x42, interfaceProtocol: 1, speed: nil, productIDArray: nil
-        ).takeRetainedValue()
+        let matching = IOServiceMatching("IOUSBHostInterface")! as NSMutableDictionary
+        matching["IOPropertyMatch"] = ["bInterfaceClass": 0xFF, "bInterfaceSubClass": 0x42, "bInterfaceProtocol": 1]
+        return matching as CFMutableDictionary
     }
 
     /// adb interfaces plugged in now (cheap: the Mac's own device list, the phone isn't asked).
@@ -71,19 +73,25 @@ public enum USB {
 
 /// Bytes over the adb interface's bulk pipes. adbd wants each packet's 24-byte header in a
 /// transfer of its own, then the payload; and a zero-length packet after a write that fills
-/// whole USB packets (or it waits for more). Reads ask for exactly what `Packet.read` wants.
+/// whole USB packets (or it waits for more). Reads take whole transfers into a buffer and hand out
+/// what `Packet.read` asks for: newer adbd sends a header and its payload in one transfer, and a
+/// read smaller than the transfer would lose the rest (IOUSBHost keeps nothing over, unlike WinUSB).
 final class USBChannel: Channel, @unchecked Sendable {
     private let interface: IOUSBHostInterface
     private let inPipe: IOUSBHostPipe
     private let outPipe: IOUSBHostPipe
     private let outPacketSize: Int
     private let writeLock = NSLock() // header + payload + zero-length packet stay together
+    /// What the last transfer brought that hasn't been read yet (under `readLock`).
+    private let readLock = NSLock()
+    private let transferBuffer = NSMutableData(length: 1 << 18)! // more than adb's largest payload
+    private var buffered = 0, bufferedStart = 0
 
     init(service: io_service_t) throws {
         do {
             interface = try IOUSBHostInterface(__ioService: service, options: [], queue: nil, interestHandler: nil)
         } catch {
-            throw AdbError.connect("the phone's USB connection is in use by another program (quit Android Studio, or run `adb kill-server`)")
+            throw AdbError.usbInUse
         }
         var inAddress: Int?, outAddress: Int?
         let configuration = interface.configurationDescriptor, interfaceDescriptor = interface.interfaceDescriptor
@@ -113,15 +121,22 @@ final class USBChannel: Channel, @unchecked Sendable {
 
     func read(into buffer: UnsafeMutableRawBufferPointer) throws -> Int {
         guard let base = buffer.baseAddress, buffer.count > 0 else { return 0 }
-        while true {
-            let data = NSMutableData(bytesNoCopy: base, length: buffer.count, freeWhenDone: false)
-            var n = 0
-            do {
-                try inPipe.__sendIORequest(with: data, bytesTransferred: &n, completionTimeout: 0)
-            } catch {
-                throw AdbError.closed // unplugged, or closed
+        return try readLock.withLock {
+            while buffered == 0 {
+                var n = 0
+                do {
+                    try inPipe.__sendIORequest(with: transferBuffer, bytesTransferred: &n, completionTimeout: 0)
+                } catch {
+                    throw AdbError.closed // unplugged, or closed
+                }
+                bufferedStart = 0
+                buffered = n // 0: a zero-length packet ending the last payload
             }
-            if n > 0 { return n } // 0: a zero-length packet ending the last payload
+            let n = min(buffer.count, buffered)
+            base.copyMemory(from: transferBuffer.bytes + bufferedStart, byteCount: n)
+            bufferedStart += n
+            buffered -= n
+            return n
         }
     }
 

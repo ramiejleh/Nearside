@@ -192,6 +192,7 @@ public sealed partial class PanelWindow : Window
         UnmuteItem.Visibility = UnmuteSeparator.Visibility = s.Muted ? Visibility.Visible : Visibility.Collapsed;
         MutedBar.IsOpen = s.Muted && s.Connected;
         MutedBar.Message = MutedWords(s);
+        UsbBar.IsOpen = s.UsbInUse && s.Connected;
         ProblemBar.IsOpen = s.PhoneAppProblem != null;
         if (s.PhoneAppProblem is { } problem)
         {

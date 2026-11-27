@@ -145,7 +145,7 @@ final class USBChannel: Channel, @unchecked Sendable {
         guard let handle, handle != INVALID_HANDLE_VALUE else {
             let error = GetLastError()
             if error == DWORD(ERROR_ACCESS_DENIED) || error == DWORD(ERROR_SHARING_VIOLATION) || error == DWORD(ERROR_BUSY) {
-                throw AdbError.connect("the phone's USB connection is in use by another program (quit Android Studio, or run `adb kill-server`)")
+                throw AdbError.usbInUse
             }
             throw AdbError.connect("can't open the phone's USB connection (\(error))")
         }

@@ -147,6 +147,8 @@
                         <Button Content="Turn on" Click="OnUnmute" />
                     </InfoBar.ActionButton>
                 </InfoBar>
+                <InfoBar x:Name="UsbBar" Severity="Informational" IsClosable="False" Title="USB cable not in use"
+                         Message="Another program, such as adb or Android Studio, is using the phone's USB connection. Nearside stays on Wi-Fi and moves to the cable once it's free." />
                 <InfoBar x:Name="ProblemBar" Severity="Warning" IsClosable="False">
                     <InfoBar.ActionButton>
                         <Button x:Name="ReinstallButton" Content="Reinstall…" Click="OnReinstall" />

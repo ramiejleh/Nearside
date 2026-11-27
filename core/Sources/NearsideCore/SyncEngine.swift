@@ -57,6 +57,9 @@ public final class SyncEngine {
     }
     /// Connected over a USB cable (steadier and faster than Wi-Fi) rather than Wi-Fi.
     public private(set) var overUSB = false
+    /// The phone is plugged in, but another program (adb's server, Android Studio) is using its
+    /// USB connection, so it stays on Wi-Fi; it moves to the cable once that lets go.
+    public private(set) var usbInUse = false
     public private(set) var phoneName: String
     public private(set) var history: ClipHistory
     /// Phone clips that arrived since the panel was last opened.
@@ -402,6 +405,13 @@ public final class SyncEngine {
         if state == .connected, mirrorNotifications, ticks % 5 == 0 { notifications.reconcile() }
         if snooze.until != nil, !snooze.isOn() { unmuteNotifications() }
         overUSB = state == .connected && Native.isOverUSB
+        let busy = state == .connected && !overUSB && pinnedSerial.map(Native.usbInUse) == true
+        if busy != usbInUse { usbInUse = busy }
+        let connection = state != .connected ? "\(state)" : overUSB ? "connected over USB" : busy ? "connected over Wi-Fi (USB in use by another program)" : "connected over Wi-Fi"
+        if connection != loggedConnection {
+            loggedConnection = connection
+            connectionLog.notice(connection)
+        }
         moveToUSBIfPluggedIn()
         // Only ever talk to the phone pinned during the user-run pairing flow; no discovery
         // of "whatever phone is around" (that would let a look-alike device be adopted).
@@ -429,6 +439,8 @@ public final class SyncEngine {
     }
 
     @ObservationIgnored private var movingToUSB = false
+    @ObservationIgnored private var loggedConnection = ""
+    @ObservationIgnored private let connectionLog = Log("connection")
 
     /// The phone plugged in while connected over Wi-Fi: move to the cable. The helper link and
     /// any open windows drop and resume on it within a second or two. (Unplugging needs nothing:

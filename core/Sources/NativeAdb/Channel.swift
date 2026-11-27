@@ -10,6 +10,16 @@ public enum AdbError: Error, CustomStringConvertible, Sendable {
     case refused(String) // OPEN rejected: unknown service, etc.
     case wrongPhone      // its TLS key isn't the one we pinned
     case needsApproval   // USB: the phone hasn't allowed this Mac's key yet
+    case usbInUse        // USB: another program (adb's server, Android Studio) holds the interface
+
+    /// A USB handshake that may work on a second try: the previous program's leftovers in the
+    /// pipe, or the phone slow to answer.
+    public var isTransientOnUSB: Bool {
+        switch self {
+        case .protocolError, .timeout, .closed: true
+        default: false
+        }
+    }
 
     public var description: String {
         switch self {
@@ -21,6 +31,7 @@ public enum AdbError: Error, CustomStringConvertible, Sendable {
         case .refused(let m): "refused: \(m)"
         case .wrongPhone: "this isn't the paired phone (its key doesn't match)"
         case .needsApproval: "the phone hasn't allowed USB debugging from this Mac yet"
+        case .usbInUse: "the phone's USB connection is in use by another program (quit Android Studio, or run `adb kill-server`)"
         }
     }
 }

@@ -116,9 +116,22 @@ enum Native {
         USB.devices().first { $0.serial.caseInsensitiveCompare(serial) == .orderedSame }
     }
 
-    /// Plug-ins that didn't work (another program holds the interface, the phone isn't proven):
-    /// not tried again until plugged in again.
+    /// Plug-ins that didn't work (the phone isn't proven, or another error): not tried again
+    /// until plugged in again.
     nonisolated(unsafe) private static var usbFailed: Set<UInt64> = []
+    /// A plug-in whose adb interface another program holds (adb's server, Android Studio), and
+    /// when that was last seen: tried again every 10 s, so the cable is used once it's let go.
+    nonisolated(unsafe) private static var usbBusy: (id: UInt64, at: Date)?
+    /// Handshakes that went wrong on a plug-in (leftovers from the program that had the
+    /// connection before, a timeout): tried again a few times before giving up on it.
+    nonisolated(unsafe) private static var usbRetries: (id: UInt64, count: Int, at: Date)?
+    private static let usbLog = Log("usb")
+
+    /// The pinned phone is plugged in, but another program is using its USB connection.
+    static func usbInUse(_ serial: String) -> Bool {
+        guard let device = pluggedIn(serial) else { return false }
+        return lock.withLock { usbBusy?.id == device.id }
+    }
 
     /// A cable has no TLS key to pin, and a serial is easy to fake, so the phone must prove it's
     /// the one we paired with: it holds this Mac's token in a folder only the shell user can read,
@@ -126,25 +139,44 @@ enum Native {
     /// compare here; nothing secret is sent to the device before it passes.
     private static func connectUSB(pinned serial: String, key: AdbKey, waitForApproval: TimeInterval) -> AdbConnection? {
         guard let device = pluggedIn(serial), !lock.withLock({ usbFailed.contains(device.id) }),
+              lock.withLock({ usbBusy.map { $0.id != device.id || Date().timeIntervalSince($0.at) >= 10 } ?? true }),
+              lock.withLock({ usbRetries.map { $0.id != device.id || Date().timeIntervalSince($0.at) >= 3 } ?? true }),
               let publicKey = publicKey(key) else { return nil }
         let adb: AdbConnection
         do {
             adb = try AdbConnection.connectUSB(device, key: key, publicKey: publicKey, waitForApproval: waitForApproval)
         } catch AdbError.needsApproval {
             return nil // tried again with waitForApproval
+        } catch AdbError.usbInUse {
+            let first = lock.withLock { () -> Bool in
+                defer { usbBusy = (device.id, Date()) }
+                return usbBusy?.id != device.id
+            }
+            if first { usbLog.notice("plugged in, but another program is using the USB connection; staying on Wi-Fi") }
+            return nil
+        } catch let error as AdbError where error.isTransientOnUSB {
+            let tries = lock.withLock { () -> Int in
+                let count = usbRetries?.id == device.id ? usbRetries!.count + 1 : 1
+                usbRetries = (device.id, count, Date())
+                if count >= 4 { usbFailed.insert(device.id) }
+                return count
+            }
+            usbLog.error("USB: \(error)\(tries >= 4 ? "; not tried again until plugged in again" : "; trying again")")
+            return nil
         } catch {
-            NSLog("Nearside: USB: \(error)")
+            usbLog.error("USB: \(error)")
             lock.withLock { _ = usbFailed.insert(device.id) }
             return nil
         }
+        lock.withLock { usbBusy = nil; usbRetries = nil }
         let proof = try? adb.shell("cat /data/local/tmp/nearside-macs/\(Token.id) 2>/dev/null; echo; getprop ro.serialno").output
         guard proof == "\(Token.value)\n\(serial)" else {
-            NSLog("Nearside: USB: the plugged-in device didn't prove it's the paired phone; not using it")
+            usbLog.error("the plugged-in device didn't prove it's the paired phone; not using it")
             adb.close()
             lock.withLock { _ = usbFailed.insert(device.id) }
             return nil
         }
-        NSLog("Nearside: connected over USB")
+        usbLog.notice("connected over USB")
         return adb
     }
 

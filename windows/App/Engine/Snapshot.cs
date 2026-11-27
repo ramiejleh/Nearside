@@ -8,6 +8,8 @@ public sealed record Snapshot
 {
     public string State { get; init; } = "needsSetup";
     public bool OverUSB { get; init; }
+    /// Plugged in, but another program has the phone's USB connection (it stays on Wi-Fi).
+    public bool UsbInUse { get; init; }
     public string PhoneName { get; init; } = "";
     public bool AppLinked { get; init; }
     public bool IsPairing { get; init; }

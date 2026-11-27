@@ -119,7 +119,9 @@ Return sends, Shift-Return starts a new line. RCS chats stay in Google Messages.
 ## Wi-Fi, USB and more than one computer
 
 - **Plug in a USB cable** and the computer switches to it, then goes back to Wi-Fi when you
-  unplug. Windows needs no driver.
+  unplug. Windows needs no driver. The panel's status shows a cable icon while it's on USB. If another
+  program (adb's server, Android Studio) is using the phone's USB connection, the panel says so
+  and Nearside stays on Wi-Fi until that program lets go.
 - **After a reboot or a Wi-Fi change**, the phone turns wireless debugging back on and the
   computer restarts the helper. You do nothing.
 - **One computer at a time.** If your Mac has the phone, the PC shows where it is, with
