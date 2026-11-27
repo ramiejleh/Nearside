@@ -234,9 +234,6 @@ p { margin: 0; max-width: 62ch; }
 .w2 { left: 31%; top: 4%; z-index: 2; }
 .w3 { left: 58%; top: 13%; z-index: 1; }
 
-.wide { margin-top: var(--space-block); }
-.wide img { width: 100%; }
-figcaption { margin-top: 12px; font-size: 15px; color: var(--on-dusk-soft); text-align: center; }
 
 /* Everyday */
 .why, .everyday, .how, .download, .tested, .support { padding: var(--space-section) 0; }
