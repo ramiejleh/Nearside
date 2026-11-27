@@ -33,6 +33,10 @@ public enum USB {
 
     /// ANDROID_USB_CLASS_ID, the device interface adb's interface is registered under.
     static let adbInterface = GUID(Data1: 0xF72F_E0D4, Data2: 0xCBCB, Data3: 0x407D, Data4: (0x88, 0x14, 0x9E, 0xD6, 0x73, 0xD0, 0xDD, 0x6B))
+    /// GUID_DEVINTERFACE_USB_DEVICE: every USB device has it. A phone whose adbd asks for WinUSB
+    /// without naming adb's interface GUID (a Pixel 9 Pro on Android 17 does) has only this one.
+    static let usbDeviceInterface = GUID(Data1: 0xA5DC_BF10, Data2: 0x6530, Data3: 0x11D2, Data4: (0x90, 0x1F, 0x00, 0xC0, 0x4F, 0xB9, 0x51, 0xED))
+    static let serviceKey = NSDEVPROPKEY(fmtid: GUID(Data1: 0xA45C_254E, Data2: 0xDF1C, Data3: 0x4EFD, Data4: (0x80, 0x20, 0x67, 0xD1, 0x46, 0xA8, 0x50, 0xE0)), pid: 6)
     // devpkey.h
     static let instanceIDKey = NSDEVPROPKEY(fmtid: GUID(Data1: 0x78C3_4FC8, Data2: 0x104A, Data3: 0x4ACA, Data4: (0x9E, 0xA4, 0x52, 0x4D, 0x52, 0x99, 0x6E, 0x57)), pid: 256)
     static let lastArrivalKey = NSDEVPROPKEY(fmtid: GUID(Data1: 0x83DA_6326, Data2: 0x97A6, Data3: 0x4088, Data4: (0x94, 0x53, 0xA1, 0x92, 0x3F, 0x57, 0x3B, 0x29)), pid: 102)
@@ -42,12 +46,34 @@ public enum USB {
     static let presentOnly: ULONG = 0 // CM_GET_DEVICE_INTERFACE_LIST_PRESENT
 
     /// adb interfaces plugged in now (cheap: Windows' own device list, the phone isn't asked).
+    /// Under adb's interface GUID, or else a whole device that WinUSB drives (checked to be adb's
+    /// interface, class 0xFF/0x42/1, when it's opened). One entry per phone.
     public static func devices() -> [Device] {
-        interfacePaths().compactMap(describe)
+        var found = interfacePaths(adbInterface).compactMap(describe)
+        for device in interfacePaths(usbDeviceInterface).filter(drivenByWinUSB).compactMap(describe)
+            where !found.contains(where: { $0.serial == device.serial }) {
+            found.append(device)
+        }
+        return found
     }
 
-    private static func interfacePaths() -> [String] {
-        var guid = adbInterface
+    /// The device behind `path` has WinUSB as its driver (a phone's adbd asks Windows for it).
+    private static func drivenByWinUSB(_ path: String) -> Bool {
+        guard let instance = interfaceString(path, instanceIDKey) else { return false }
+        var node: NSDEVINST = 0
+        var wide = Array(instance.utf16) + [0]
+        guard CM_Locate_DevNodeW(&node, &wide, 0) == success else { return false }
+        var key = serviceKey, type: ULONG = 0, size: ULONG = 0
+        _ = CM_Get_DevNode_PropertyW(node, &key, &type, nil, &size, 0) // the size
+        guard size >= 2 else { return false }
+        var bytes = [UInt8](repeating: 0, count: Int(size) + 2)
+        guard CM_Get_DevNode_PropertyW(node, &key, &type, &bytes, &size, 0) == success, type == stringType else { return false }
+        let service = bytes.withUnsafeBytes { String(decodingCString: $0.bindMemory(to: UInt16.self).baseAddress!, as: UTF16.self) }
+        return service.caseInsensitiveCompare("WinUSB") == .orderedSame
+    }
+
+    private static func interfacePaths(_ interface: GUID) -> [String] {
+        var guid = interface
         for _ in 0..<3 { // the list can grow between asking its size and reading it
             var size: ULONG = 0
             guard CM_Get_Device_Interface_List_SizeW(&size, &guid, nil, presentOnly) == success,
