@@ -219,13 +219,15 @@ p { margin: 0; max-width: 62ch; }
 figcaption { margin-top: 12px; font-size: 15px; color: var(--on-dusk-soft); text-align: center; }
 
 /* Everyday */
-.everyday, .how, .tested, .support { padding: clamp(64px, 9vw, 128px) 0; }
+.why, .everyday, .how, .tested, .support { padding: clamp(64px, 9vw, 128px) 0; }
 .pair { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 6fr); gap: clamp(28px, 5vw, 80px); align-items: center; margin-top: 56px; }
 .pair img { width: min(100%, 420px); justify-self: center; }
 .pair p { margin-top: 12px; color: var(--soft); font-size: 19px; }
 .pair.flip > img { order: 2; }
 @media (max-width: 800px) { .pair { grid-template-columns: 1fr; } .pair.flip > img { order: 0; } }
 
+.why .intro { max-width: 68ch; }
+.why .more { margin-top: 48px; }
 .more { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 32px 56px; margin: 72px 0 0; padding-top: 40px; border-top: 1.5px solid var(--line); }
 .more dt { font-weight: 700; font-size: 20px; }
 .more dd { margin: 6px 0 0; color: var(--soft); }

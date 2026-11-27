@@ -23,7 +23,7 @@ vary between versions and manufacturers, so every phone tells us something new.
 
 ## Building
 
-See [Build it yourself](README.md#build-it-yourself) and [docs/development.md](docs/development.md),
+See [Build it yourself](docs/getting-started.md#build-it-yourself) and [docs/development.md](docs/development.md),
 with its pages for the [Mac](docs/development-mac.md) and [Windows](docs/development-windows.md).
 A development loop on the Mac:
 

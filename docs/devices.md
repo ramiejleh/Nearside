@@ -14,7 +14,7 @@ whether it worked or not. Each report becomes a row here, with your name if you'
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
 | Google Pixel 9 Pro | 17 beta (API 37) | Mac (macOS 27), Windows 11 | Works | Works | Works | Works | Works | Works | Works | Works | Works | Maintainer |
 
-**Works**: everything in that feature did what the [README](../README.md#features) says.
+**Works**: everything in that feature did what the [feature list](features.md) says.
 **Partly**: some of it worked; the notes below say what didn't. **No**: it didn't work.
 **Not tried**: the reporter didn't get to it.
 
