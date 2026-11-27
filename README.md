@@ -104,12 +104,11 @@ Every feature in detail, with the keyboard shortcuts and the differences on Wind
 You need **macOS 14** or later or **Windows 11**, and an **Android 11** or later phone on the
 same Wi-Fi.
 
-1. **Install Nearside** from the [latest release](https://github.com/ramiejleh/Nearside/releases/latest),
-   or with a package manager:
+1. **Install Nearside** from the [latest release](https://github.com/ramiejleh/Nearside/releases/latest):
+   the zip for the Mac, or the installer for Windows. On a Mac you can also use Homebrew:
 
    ```sh
-   brew install --cask ramiejleh/tap/nearside   # Mac
-   winget install Nearside.Nearside             # Windows
+   brew install --cask ramiejleh/tap/nearside
    ```
 
 2. **Open it.** A setup assistant shows a QR code.
@@ -117,6 +116,13 @@ same Wi-Fi.
 
 That's the only time you touch the phone: the computer installs the phone app and does the rest.
 Updates arrive by themselves, for the computer and the phone.
+
+> [!NOTE]
+> **The Windows installer isn't code-signed yet.** A code-signing certificate costs money every
+> year, so for now Windows shows "Windows protected your PC" when you run it: choose
+> **More info**, then **Run anyway**. Each release lists the installer's SHA-256 checksum, to
+> check your download against. The Mac app is signed and notarised by Apple.
+> [Sponsoring](#support-the-project) helps pay for the Windows certificate.
 
 Building from source, what's been tested on which devices, and the project's status are in
 [Getting started](docs/getting-started.md). Nearside is tested every day on a Pixel 9 Pro with a

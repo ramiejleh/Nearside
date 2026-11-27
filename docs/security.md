@@ -174,7 +174,8 @@ The phone side and the link are the same as with a Mac. What's specific to the P
   installer refuses downgrades and any folder but `Program Files\Nearside`. The feed override and
   the install-now switch exist only in builds made for testing (`release.ps1 -UpdateTest`), which
   are never published.
-- **Installers** are signed with the project's code-signing certificate, and install per
+- **Installers** aren't code-signed yet (a certificate costs money every year; until there is
+  one, check the SHA-256 checksum in the release). They install per
   machine (administrator once, for the camera).
 
 ## Known limitations

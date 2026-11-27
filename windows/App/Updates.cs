@@ -14,7 +14,7 @@ internal static unsafe partial class Updates
     private const string Feed = "https://ramiejleh.github.io/Nearside/appcast-windows.xml";
     /// The public half of the update-signing key (`winsparkle-tool generate-key`; the private
     /// half never leaves the release machine). release.ps1 won't release without it.
-    public const string PublicKey = "";
+    public const string PublicKey = "HSlJbaaRs21VvaJIe2xNFwIPhfT/8yxbuQjc+whRY9g=";
     private const string Dll = "WinSparkle.dll";
 
     /// The commit count, as the Mac's build number; empty in development builds.

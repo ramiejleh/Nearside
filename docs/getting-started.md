@@ -26,11 +26,14 @@ Releases are signed and notarised by Apple. Nearside checks for updates by itsel
 ### Windows
 
 Download `Nearside-<version>-x64.exe` (or `-arm64.exe` for Arm PCs) from the same release and run
-it, or use winget:
+it. A winget package will follow.
 
-```
-winget install Nearside.Nearside
-```
+**The installer isn't code-signed yet.** A code-signing certificate costs money every year, so for
+now Windows shows "Windows protected your PC" when you run it: choose **More info**, then **Run
+anyway**. To check the download, compare its SHA-256 checksum with the `.sha256` file next to it
+in the release (`Get-FileHash Nearside-<version>-x64.exe` in PowerShell). Updates are still
+checked: each one is verified against Nearside's own update key before it installs.
+[Sponsoring](https://github.com/sponsors/ramiejleh) helps pay for the certificate.
 
 It installs for everyone on the PC (it asks for an administrator once, for the webcam). Nearside
 checks for updates by itself; **Check for updates** in its notification-area menu checks now.
