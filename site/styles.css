@@ -112,7 +112,7 @@ p { margin: 0; max-width: 62ch; }
 .mini-mark { width: 1.2cqw; height: 1.2cqw; border-radius: .3cqw; background: #fff; opacity: .9; }
 
 .landed { position: absolute; }
-.window-landed { left: 4cqw; top: 4.5cqw; width: 14cqw; }
+.window-landed { left: 5.1cqw; top: 5.6cqw; width: 11.5cqw; }
 .toast, .banner {
   right: 2cqw; width: 25cqw; border-radius: 1.4cqw; font-size: 1.45cqw; line-height: 1.35;
   box-shadow: 0 1cqw 3cqw rgba(0, 0, 0, .35); display: flex; align-items: center; gap: 1.1cqw;
@@ -209,10 +209,11 @@ p { margin: 0; max-width: 62ch; }
 .facts li { padding-left: 18px; border-left: 2px solid rgba(255, 255, 255, .22); }
 
 .windows { position: relative; aspect-ratio: 1 / 1; }
-.windows .w { position: absolute; width: 46%; }
-.w1 { left: 0; top: 6%; z-index: 1; }
-.w2 { left: 27%; top: 0; z-index: 2; }
-.w3 { left: 54%; top: 9%; z-index: 1; }
+/* The windows themselves (no shadow margin in the pictures): as large as before, no larger. */
+.windows .w { position: absolute; width: 38%; }
+.w1 { left: 4%; top: 10%; z-index: 1; }
+.w2 { left: 31%; top: 4%; z-index: 2; }
+.w3 { left: 58%; top: 13%; z-index: 1; }
 
 .wide { margin-top: clamp(56px, 8vw, 110px); }
 .wide img { width: 100%; }
@@ -221,7 +222,7 @@ figcaption { margin-top: 12px; font-size: 15px; color: var(--on-dusk-soft); text
 /* Everyday */
 .why, .everyday, .how, .tested, .support { padding: clamp(64px, 9vw, 128px) 0; }
 .pair { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 6fr); gap: clamp(28px, 5vw, 80px); align-items: center; margin-top: 56px; }
-.pair img { width: min(100%, 420px); justify-self: center; }
+.pair img { width: min(100%, 345px); max-height: 78vh; object-fit: contain; justify-self: center; }
 .pair p { margin-top: 12px; color: var(--soft); font-size: 19px; }
 .pair.flip > img { order: 2; }
 .pair.launcher { grid-template-columns: minmax(0, 7fr) minmax(0, 4fr); }
