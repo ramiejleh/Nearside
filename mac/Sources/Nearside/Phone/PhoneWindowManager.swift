@@ -58,6 +58,11 @@ final class PhoneWindowManager {
             self?.phoneWindow?.setLocked(true)
         }
         registerLauncherShortcut()
+        // Ready before the first ⌥⌘P (building it then is what made the first open slow).
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3) { [weak self] in
+            self?.launcher.prepare()
+            if self?.engine.state == .connected { self?.library.refresh() }
+        }
         NotificationCenter.default.addObserver(forName: LauncherShortcut.changed, object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated { self?.registerLauncherShortcut() }
         }
@@ -199,8 +204,8 @@ final class PhoneWindowManager {
     /// the list did).
     func indexApps() {
         guard !engine.phoneAway else { return }
-        PhoneSpotlight.index(library.apps, icon: { [library] in library.iconPNG($0) })
-        PhoneAppLaunchers.sync(library.apps, icon: { [library] in library.iconPNG($0) })
+        PhoneSpotlight.index(library.apps, hasIcon: { [library] in library.hasIcon($0) }, icon: { [library] in library.iconPNG($0) })
+        PhoneAppLaunchers.sync(library.apps, hasIcon: { [library] in library.hasIcon($0) }, icon: { [library] in library.iconPNG($0) })
     }
 
     /// From a launcher: only an app the phone has (a link can't open anything else). Just after
@@ -361,7 +366,8 @@ enum PhoneSpotlight {
     static var enabled: Bool { UserDefaults.standard.object(forKey: enabledKey) as? Bool ?? true }
 
     @MainActor
-    static func index(_ apps: [PhoneApp], icon: (PhoneApp) -> Data?) {
+    /// `hasIcon` is cheap (the signature); `icon` draws a PNG, so it's only asked when indexing.
+    static func index(_ apps: [PhoneApp], hasIcon: (PhoneApp) -> Bool, icon: (PhoneApp) -> Data?) {
         let index = CSSearchableIndex.default()
         // With the launchers on, Spotlight lists those as apps: no second entry per app.
         guard enabled, !PhoneAppLaunchers.enabled else {
@@ -370,7 +376,7 @@ enum PhoneSpotlight {
             return
         }
         // Re-index only when the list or its icons changed.
-        let signature = apps.map { "\($0.id)|\($0.label)|\($0.version)|\(icon($0) != nil)" }.joined(separator: "\n")
+        let signature = apps.map { "\($0.id)|\($0.label)|\($0.version)|\(hasIcon($0))" }.joined(separator: "\n")
         let key = "PhoneApps.spotlightSignature"
         let hash = SHA256.hash(data: Data(signature.utf8)).map { String(format: "%02x", $0) }.joined()
         guard UserDefaults.standard.string(forKey: key) != hash else { return }

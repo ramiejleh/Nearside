@@ -16,6 +16,10 @@ final class PhoneAppLibrary {
 
     @ObservationIgnored private let engine: SyncEngine
     @ObservationIgnored private var refreshing: Task<Void, Never>?
+    /// Each icon's PNG as it was drawn from: an icon that comes again unchanged isn't redrawn.
+    @ObservationIgnored private var iconSources: [String: Data] = [:]
+    /// When the phone's list last came: opening the launcher again soon after doesn't ask again.
+    @ObservationIgnored private var refreshedAt = Date.distantPast
     @ObservationIgnored private static let file = Paths.support.appendingPathComponent("phone-apps.json")
     /// Called with the list whenever it changes (Spotlight indexing).
     @ObservationIgnored var onChange: (([PhoneApp]) -> Void)?
@@ -24,13 +28,14 @@ final class PhoneAppLibrary {
         self.engine = engine
         if let data = try? Data(contentsOf: Self.file), let saved = try? JSONDecoder().decode([PhoneApp].self, from: data) {
             apps = saved
-            for app in saved { if let icon = PhoneIconCache.cached(app) { icons[app.id] = Self.image(icon) } }
+            for app in saved { if let icon = PhoneIconCache.cached(app) { setIcon(icon, for: app.id) } }
         }
     }
 
     /// Fetches the list (and any icons not cached yet) from the phone.
     func refresh() {
-        guard refreshing == nil else { return }
+        // Every open of the launcher asks; once a minute is plenty for apps installed or removed.
+        guard refreshing == nil, apps.isEmpty || status == .failed || Date().timeIntervalSince(refreshedAt) > 60 else { return }
         status = .loading
         refreshing = Task { [weak self] in
             guard let self else { return }
@@ -41,18 +46,23 @@ final class PhoneAppLibrary {
             }
             // A Mac window opened just now counts as use even before the phone's stats say so.
             let local = Dictionary(apps.compactMap { a in a.lastUsed.map { (a.id, $0) } }, uniquingKeysWith: max)
-            apps = fresh.map { app in
+            let merged = fresh.map { app in
                 var app = app
                 if let mine = local[app.id], mine > (app.lastUsed ?? .distantPast) { app.lastUsed = mine }
                 return app
             }
+            refreshedAt = Date()
             status = .idle
-            if let data = try? JSONEncoder().encode(apps) { try? data.write(to: Self.file, options: .atomic) }
-            onChange?(apps)
-            await engine.phoneAppIcons(for: apps) { batch in
-                for (id, icon) in batch { self.icons[id] = Self.image(icon) }
+            // Only a real change redraws the launcher and re-indexes Spotlight and Applications.
+            var changed = merged != apps
+            if changed {
+                apps = merged
+                if let data = try? JSONEncoder().encode(apps) { try? data.write(to: Self.file, options: .atomic) }
             }
-            onChange?(apps)
+            await engine.phoneAppIcons(for: apps) { batch in
+                for (id, icon) in batch where self.setIcon(icon, for: id) { changed = true }
+            }
+            if changed { onChange?(apps) }
         }
     }
 
@@ -96,6 +106,17 @@ final class PhoneAppLibrary {
     /// The icon, or a plain placeholder until it's here.
     func icon(_ app: PhoneApp) -> NSImage { icons[app.id] ?? Self.placeholder }
 
+    func hasIcon(_ app: PhoneApp) -> Bool { icons[app.id] != nil }
+
+    /// Draws `icon` for `id` unless it's the one already drawn; true if it changed.
+    @discardableResult
+    private func setIcon(_ icon: PhoneAppIcon, for id: String) -> Bool {
+        guard iconSources[id] != icon.png, let image = Self.image(icon) else { return false }
+        iconSources[id] = icon.png
+        icons[id] = image
+        return true
+    }
+
     func iconPNG(_ app: PhoneApp) -> Data? {
         guard let image = icons[app.id], let tiff = image.tiffRepresentation(using: .none, factor: 1) else { return nil }
         return NSBitmapImageRep(data: tiff)?.representation(using: .png, properties: [:])
@@ -134,7 +155,24 @@ final class PhoneAppLibrary {
             NSGraphicsContext.restoreGraphicsState()
             return true
         }
-        return image
+        return flattened(image)
+    }
+
+    /// Drawn once into a bitmap (at 2x): the launcher's grid then draws pixels, not the shape and
+    /// shadow again for every icon on every redraw.
+    private static func flattened(_ image: NSImage) -> NSImage {
+        guard let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: 256, pixelsHigh: 256, bitsPerSample: 8,
+                                         samplesPerPixel: 4, hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB,
+                                         bytesPerRow: 0, bitsPerPixel: 0) else { return image }
+        rep.size = image.size // before the context: it takes its coordinates (points, at 2x) from it
+        guard let context = NSGraphicsContext(bitmapImageRep: rep) else { return image }
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = context
+        image.draw(in: NSRect(origin: .zero, size: image.size))
+        NSGraphicsContext.restoreGraphicsState()
+        let flat = NSImage(size: image.size)
+        flat.addRepresentation(rep)
+        return flat
     }
 
     /// Opaque in all four corners: a square picture rather than a shape on transparency.

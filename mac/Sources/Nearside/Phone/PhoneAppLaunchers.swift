@@ -24,10 +24,11 @@ enum PhoneAppLaunchers {
     private static let signatureKey = "PhoneApps.launchersSignature"
 
     /// Writes a launcher per app and removes those for apps no longer on the phone.
-    static func sync(_ apps: [PhoneApp], icon: (PhoneApp) -> Data?) {
+    /// `hasIcon` is cheap (the signature); `icon` draws a PNG, so it's only asked when writing.
+    static func sync(_ apps: [PhoneApp], hasIcon: (PhoneApp) -> Bool, icon: (PhoneApp) -> Data?) {
         guard enabled else { return }
         // "badged": icons carry the Nearside badge (launchers from before it are redrawn).
-        let signature = "badged\n" + apps.map { "\($0.package)|\($0.label)|\($0.version)|\(icon($0) != nil)" }.sorted().joined(separator: "\n")
+        let signature = "badged\n" + apps.map { "\($0.package)|\($0.label)|\($0.version)|\(hasIcon($0))" }.sorted().joined(separator: "\n")
         let hash = SHA256.hash(data: Data(signature.utf8)).map { String(format: "%02x", $0) }.joined()
         guard UserDefaults.standard.string(forKey: signatureKey) != hash || !FileManager.default.fileExists(atPath: folder.path) else { return }
         let fm = FileManager.default

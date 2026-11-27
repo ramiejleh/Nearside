@@ -45,6 +45,12 @@ final class PhoneLauncher: NSObject, NSWindowDelegate {
 
     func hide() { panel?.orderOut(nil) }
 
+    /// Builds the panel and lays it out without showing it, so the first ⌥⌘P is as quick as the rest.
+    func prepare() {
+        guard panel == nil else { return }
+        makePanel().contentView?.layoutSubtreeIfNeeded()
+    }
+
     private func makePanel() -> LauncherPanel {
         let panel = LauncherPanel(contentRect: NSRect(x: 0, y: 0, width: 664, height: 540),
                                   styleMask: [.nonactivatingPanel, .titled, .fullSizeContentView], backing: .buffered, defer: false)
@@ -96,8 +102,29 @@ final class PhoneLauncher: NSObject, NSWindowDelegate {
 
     /// Test hook: shows the launcher (typing `query`, moving with `moves`) and saves what it draws.
     func snapshotForTesting(to url: URL, query: String, moves: [LauncherGrid.Move]) async {
+        // How long the interface is stuck after opening: the longest gap between 20 ms ticks.
+        func longestStall(for seconds: Double) async -> Int {
+            var last = CACurrentMediaTime(), worst = 0.0
+            let end = last + seconds
+            while CACurrentMediaTime() < end {
+                try? await Task.sleep(for: .milliseconds(20))
+                let now = CACurrentMediaTime()
+                worst = max(worst, now - last)
+                last = now
+            }
+            return Int(worst * 1000)
+        }
+        let start = CACurrentMediaTime()
         show()
-        try? await Task.sleep(for: .seconds(6)) // the list and icons arrive
+        let opened = Int((CACurrentMediaTime() - start) * 1000)
+        let first = await longestStall(for: 6) // the list and icons arrive
+        hide()
+        try? await Task.sleep(for: .seconds(2))
+        let again = CACurrentMediaTime()
+        show()
+        let reopened = Int((CACurrentMediaTime() - again) * 1000)
+        let second = await longestStall(for: 3)
+        NSLog("Nearside: launcher timing: first open \(opened) ms, then stuck up to \(first) ms; second open \(reopened) ms, then up to \(second) ms")
         model.query = query
         try? await Task.sleep(for: .milliseconds(300))
         let sections = query.isEmpty ? [model.hideRecents ? 0 : library.recents(LauncherView.columns).count, library.favouriteApps().count, library.apps.count]
