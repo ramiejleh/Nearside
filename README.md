@@ -24,7 +24,7 @@ The most seamless way to use an Android phone with a Mac or a Windows PC.
 
 <br>
 
-<img src="docs/images/hero.png" width="900" alt="A MacBook with Nearside in use: WhatsApp, the phone's home screen and Calculator open in their own Mac windows, and Nearside's panel open from the menu bar, showing recent photos and clipboard history">
+<img src="docs/images/desktop.png" width="900" alt="A MacBook with Nearside in use: WhatsApp, the phone's home screen and Calculator open in their own Mac windows, and Nearside's panel open from the menu bar, showing recent photos and clipboard history">
 
 <sub>Real Nearside windows on an illustrated desktop, with sample content.</sub>
 
