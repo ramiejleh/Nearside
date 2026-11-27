@@ -8,6 +8,20 @@
     <language>en</language>
     <!-- releases: newest first -->
     <item>
+      <title>Nearside 0.3.1</title>
+      <pubDate>Fri, 27 Nov 2026 14:55:33 +0000</pubDate>
+      <sparkle:version>242</sparkle:version>
+      <sparkle:shortVersionString>0.3.1</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>10.0.22000</sparkle:minimumSystemVersion>
+      <description><![CDATA[<ul>
+<li>USB works with more phones: plug in the phone and Nearside moves to the cable.</li>
+<li>If another program (adb, Android Studio) is using the phone's USB connection, the panel says so, and Nearside moves to the cable once it's free.</li>
+<li>More detail in the log file, for troubleshooting.</li>
+</ul>]]></description>
+      <enclosure url="https://github.com/ramiejleh/Nearside/releases/download/v0.3.1/Nearside-0.3.1-arm64.exe" sparkle:os="windows-arm64" sparkle:installerArguments="/SILENT /SP- /NOCANCEL /RELAUNCH" type="application/octet-stream" sparkle:edSignature="7+80R3PmUi4AruMe13O3Cvq703Xnf2XXZHnUyF5IBH0086VTcnpwGduZ/ucSOljps1G+EUYqqFkLbFmPNF1kAw==" length="97933978"/>
+      <enclosure url="https://github.com/ramiejleh/Nearside/releases/download/v0.3.1/Nearside-0.3.1-x64.exe" sparkle:os="windows-x64" sparkle:installerArguments="/SILENT /SP- /NOCANCEL /RELAUNCH" type="application/octet-stream" sparkle:edSignature="Vn3gjKjV7X0yOAjk8Hu3tK9vq/Y/rm/a5jshWYJitTbBDVXhTUDl3zbdR7PwU0nYSiuovw3SRQ5ocsONNrN8Dg==" length="117154425"/>
+    </item>
+    <item>
       <title>Nearside 0.3.0</title>
       <pubDate>Fri, 27 Nov 2026 13:32:15 +0000</pubDate>
       <sparkle:version>235</sparkle:version>

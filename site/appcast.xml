@@ -8,6 +8,19 @@
     <language>en</language>
     <!-- releases: newest first -->
     <item>
+      <title>Nearside 0.3.1</title>
+      <pubDate>Fri, 27 Nov 2026 14:55:33 +0000</pubDate>
+      <sparkle:version>242</sparkle:version>
+      <sparkle:shortVersionString>0.3.1</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+      <description><![CDATA[<ul>
+<li>USB works again: plug in the phone and Nearside moves to the cable.</li>
+<li>If another program (adb, Android Studio) is using the phone's USB connection, the panel says so, and Nearside moves to the cable once it's free.</li>
+<li>The launcher (⌥⌘P) opens without a pause.</li>
+</ul>]]></description>
+      <enclosure url="https://github.com/ramiejleh/Nearside/releases/download/v0.3.1/Nearside-0.3.1.zip" type="application/octet-stream" sparkle:edSignature="XZYige30dOBg/QFfVODXsSaiMB4f7iE+ASuacyO86iJKj3Gr5KsIJEgCtWAKDPmSTqw9JY/Y0ceEirFqBm9pCw==" length="4986856"/>
+    </item>
+    <item>
       <title>Nearside 0.3.0</title>
       <pubDate>Fri, 27 Nov 2026 13:32:15 +0000</pubDate>
       <sparkle:version>235</sparkle:version>
