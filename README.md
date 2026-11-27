@@ -15,7 +15,9 @@ The most seamless way to use an Android phone with a Mac or a Windows PC.
 [![Status: alpha](https://img.shields.io/badge/status-alpha-orange)](docs/getting-started.md#status)
 [![Sponsor](https://img.shields.io/badge/sponsor-GitHub-ea4aaa?logo=githubsponsors&logoColor=white)](https://github.com/sponsors/ramiejleh)
 
-**[Download for Mac](https://github.com/ramiejleh/Nearside/releases/latest/download/Nearside-mac.zip)** · **[Download for Windows](https://github.com/ramiejleh/Nearside/releases/latest/download/Nearside-windows-x64.exe)** ([Arm PCs](https://github.com/ramiejleh/Nearside/releases/latest/download/Nearside-windows-arm64.exe))
+[![Download for Mac](https://img.shields.io/badge/Download_for-Mac-1C1C1F?style=for-the-badge&logo=apple&logoColor=white)](https://github.com/ramiejleh/Nearside/releases/latest/download/Nearside-mac.zip)
+[![Download for Windows](https://img.shields.io/badge/Download_for-Windows-0078D4?style=for-the-badge&logo=windows11&logoColor=white)](https://github.com/ramiejleh/Nearside/releases/latest/download/Nearside-windows-x64.exe)
+[![Download for Arm PCs](https://img.shields.io/badge/Windows-Arm_PCs-0078D4?style=for-the-badge&logo=windows11&logoColor=white)](https://github.com/ramiejleh/Nearside/releases/latest/download/Nearside-windows-arm64.exe)
 
 [Website](https://ramiejleh.github.io/Nearside/) · [Features](#features) · [Get started](#get-started) ·
 [Support](#support-the-project)

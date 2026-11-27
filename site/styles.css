@@ -96,7 +96,16 @@ p { margin: 0; max-width: 62ch; }
   display: grid; grid-template-columns: minmax(0, 10fr) minmax(0, 13fr); gap: clamp(28px, 3.5vw, 56px); align-items: center;
 }
 .lede { margin-top: 22px; font-size: 20px; color: var(--soft); max-width: 46ch; }
-@media (max-width: 960px) { .hero { grid-template-columns: 1fr; } }
+@media (max-width: 960px) {
+  .hero { grid-template-columns: 1fr; gap: 0; padding-top: 28px; }
+  /* On a phone: the headline, then the animation, then the words and the download buttons. */
+  .hero-text { display: contents; }
+  .hero h1 { order: 1; }
+  .stage { order: 2; margin-top: 24px; }
+  .lede { order: 3; }
+  .hero .actions { order: 4; }
+  .hero .fine { order: 5; }
+}
 
 /* The stage: a Mac and a phone on the desk, drawn in a 100-unit-wide space (cqw). */
 .stage { position: relative; container-type: inline-size; aspect-ratio: 100 / 47; }
