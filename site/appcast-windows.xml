@@ -8,6 +8,19 @@
     <language>en</language>
     <!-- releases: newest first -->
     <item>
+      <title>Nearside 0.3.3</title>
+      <pubDate>Sat, 28 Nov 2026 10:05:00 +0000</pubDate>
+      <sparkle:version>259</sparkle:version>
+      <sparkle:shortVersionString>0.3.3</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>10.0.22000</sparkle:minimumSystemVersion>
+      <description><![CDATA[<style>:root{color-scheme:light dark}body{font:13px 'Segoe UI',sans-serif;margin:12px 16px;background:Canvas;color:CanvasText}ul{padding-left:18px;margin:0}li{margin:5px 0;line-height:1.4}</style><ul>
+<li>A new update window in Nearside's own style, in light and dark mode, with what's new in each version.</li>
+<li>Updates are checked by Nearside itself, once a day, and Check for updates says when you're up to date.</li>
+</ul>]]></description>
+      <enclosure url="https://github.com/ramiejleh/Nearside/releases/download/v0.3.3/Nearside-0.3.3-arm64.exe" sparkle:os="windows-arm64" sparkle:installerArguments="/SILENT /SP- /NOCANCEL /RELAUNCH" type="application/octet-stream" sparkle:edSignature="Iy1GA31l7CVf482bCFQyjT0dcE9wkTJoorC1wLBIwsI0ufxvopET1/gTBD/+qm9hQexHdDR1MJOZ24n+phR7DA==" length="97944206"/>
+      <enclosure url="https://github.com/ramiejleh/Nearside/releases/download/v0.3.3/Nearside-0.3.3-x64.exe" sparkle:os="windows-x64" sparkle:installerArguments="/SILENT /SP- /NOCANCEL /RELAUNCH" type="application/octet-stream" sparkle:edSignature="RoDqMQozKg3Nexv8NECX/vBnnNk1J85gCJDmKbHSVIZzvrwzlSIrAdQ5hTkUi3LzumnDoiZG+GzsYybDBwbZAQ==" length="117160895"/>
+    </item>
+    <item>
       <title>Nearside 0.3.2</title>
       <pubDate>Sat, 28 Nov 2026 09:45:00 +0000</pubDate>
       <sparkle:version>256</sparkle:version>

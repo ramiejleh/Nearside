@@ -8,6 +8,17 @@
     <language>en</language>
     <!-- releases: newest first -->
     <item>
+      <title>Nearside 0.3.3</title>
+      <pubDate>Sat, 28 Nov 2026 09:59:17 +0000</pubDate>
+      <sparkle:version>259</sparkle:version>
+      <sparkle:shortVersionString>0.3.3</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+      <description><![CDATA[<ul>
+<li>No changes on the Mac: this release keeps the version in step with Windows.</li>
+</ul>]]></description>
+      <enclosure url="https://github.com/ramiejleh/Nearside/releases/download/v0.3.3/Nearside-0.3.3.zip" type="application/octet-stream" sparkle:edSignature="GU0N4a80gBXYxTYBZUaBxPQdy4fY/ZuH7mWFMhzIqr6H+891FwUAoJxnxnXmA3jTTa6uhKbJkrkSpKIPpC9NDg==" length="4994182"/>
+    </item>
+    <item>
       <title>Nearside 0.3.2</title>
       <pubDate>Sat, 28 Nov 2026 09:39:25 +0000</pubDate>
       <sparkle:version>256</sparkle:version>
