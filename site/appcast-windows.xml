@@ -8,6 +8,21 @@
     <language>en</language>
     <!-- releases: newest first -->
     <item>
+      <title>Nearside 0.3.2</title>
+      <pubDate>Sat, 28 Nov 2026 09:45:00 +0000</pubDate>
+      <sparkle:version>256</sparkle:version>
+      <sparkle:shortVersionString>0.3.2</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>10.0.22000</sparkle:minimumSystemVersion>
+      <description><![CDATA[<ul>
+<li>Each phone app gets its own taskbar button with its own icon, and can be pinned there.</li>
+<li>Opening an app on the phone keeps its window, with Bring Back.</li>
+<li>Typing in a phone app's window always reaches the app.</li>
+<li>When an app hides a screen from capture (a WhatsApp profile photo), the window offers Go Back.</li>
+</ul>]]></description>
+      <enclosure url="https://github.com/ramiejleh/Nearside/releases/download/v0.3.2/Nearside-0.3.2-arm64.exe" sparkle:os="windows-arm64" sparkle:installerArguments="/SILENT /SP- /NOCANCEL /RELAUNCH" type="application/octet-stream" sparkle:edSignature="QeqxwEGqu/JpaH5lSfhYBw4DWePb7dNlMCWV31qrTThXNh24f06kgZNhe21YQ9waLSneKCxRYJzldF1+qW67Dg==" length="97940100"/>
+      <enclosure url="https://github.com/ramiejleh/Nearside/releases/download/v0.3.2/Nearside-0.3.2-x64.exe" sparkle:os="windows-x64" sparkle:installerArguments="/SILENT /SP- /NOCANCEL /RELAUNCH" type="application/octet-stream" sparkle:edSignature="IR2Bzpm8hl8HA3lLoyt5KlzsbQ/ePfBWLvmA/CA1bh2rRc7n25Y/l/sdsDABhu3ccRLOoNyZgIgFHyycwEm/Bg==" length="117158362"/>
+    </item>
+    <item>
       <title>Nearside 0.3.1</title>
       <pubDate>Fri, 27 Nov 2026 14:55:33 +0000</pubDate>
       <sparkle:version>242</sparkle:version>

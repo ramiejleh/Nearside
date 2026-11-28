@@ -8,6 +8,17 @@
     <language>en</language>
     <!-- releases: newest first -->
     <item>
+      <title>Nearside 0.3.2</title>
+      <pubDate>Sat, 28 Nov 2026 09:39:25 +0000</pubDate>
+      <sparkle:version>256</sparkle:version>
+      <sparkle:shortVersionString>0.3.2</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+      <description><![CDATA[<ul>
+<li>When an app hides a screen from capture (a WhatsApp profile photo), the window now offers Go Back, so you can keep using the app here.</li>
+</ul>]]></description>
+      <enclosure url="https://github.com/ramiejleh/Nearside/releases/download/v0.3.2/Nearside-0.3.2.zip" type="application/octet-stream" sparkle:edSignature="EmU0JY5Ji6uGpEmohbjv7UyI2IjuHGI39VUR4sCCKHoBwdkSZxQZQNwKpVBcj+Hr8V/BeL8uqublMZfWdnUrCA==" length="4994200"/>
+    </item>
+    <item>
       <title>Nearside 0.3.1</title>
       <pubDate>Fri, 27 Nov 2026 14:55:33 +0000</pubDate>
       <sparkle:version>242</sparkle:version>
