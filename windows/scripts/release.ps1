@@ -217,7 +217,7 @@ if (-not $NoFeed) {
       <sparkle:version>$Build</sparkle:version>
       <sparkle:shortVersionString>$Version</sparkle:shortVersionString>
       <sparkle:minimumSystemVersion>10.0.22000</sparkle:minimumSystemVersion>
-      <description><![CDATA[<ul>
+      <description><![CDATA[<style>:root{color-scheme:light dark}body{font:13px 'Segoe UI',sans-serif;margin:12px 16px;background:Canvas;color:CanvasText}ul{padding-left:18px;margin:0}li{margin:5px 0;line-height:1.4}</style><ul>
 $($notes -join "`n")
 </ul>]]></description>
 $($enclosures -join "`n")

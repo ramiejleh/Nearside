@@ -13,7 +13,7 @@
       <sparkle:version>256</sparkle:version>
       <sparkle:shortVersionString>0.3.2</sparkle:shortVersionString>
       <sparkle:minimumSystemVersion>10.0.22000</sparkle:minimumSystemVersion>
-      <description><![CDATA[<ul>
+      <description><![CDATA[<style>:root{color-scheme:light dark}body{font:13px 'Segoe UI',sans-serif;margin:12px 16px;background:Canvas;color:CanvasText}ul{padding-left:18px;margin:0}li{margin:5px 0;line-height:1.4}</style><ul>
 <li>Each phone app gets its own taskbar button with its own icon, and can be pinned there.</li>
 <li>Opening an app on the phone keeps its window, with Bring Back.</li>
 <li>Typing in a phone app's window always reaches the app.</li>
@@ -28,7 +28,7 @@
       <sparkle:version>242</sparkle:version>
       <sparkle:shortVersionString>0.3.1</sparkle:shortVersionString>
       <sparkle:minimumSystemVersion>10.0.22000</sparkle:minimumSystemVersion>
-      <description><![CDATA[<ul>
+      <description><![CDATA[<style>:root{color-scheme:light dark}body{font:13px 'Segoe UI',sans-serif;margin:12px 16px;background:Canvas;color:CanvasText}ul{padding-left:18px;margin:0}li{margin:5px 0;line-height:1.4}</style><ul>
 <li>USB works with more phones: plug in the phone and Nearside moves to the cable.</li>
 <li>If another program (adb, Android Studio) is using the phone's USB connection, the panel says so, and Nearside moves to the cable once it's free.</li>
 <li>More detail in the log file, for troubleshooting.</li>
@@ -42,7 +42,7 @@
       <sparkle:version>235</sparkle:version>
       <sparkle:shortVersionString>0.3.0</sparkle:shortVersionString>
       <sparkle:minimumSystemVersion>10.0.22000</sparkle:minimumSystemVersion>
-      <description><![CDATA[<ul>
+      <description><![CDATA[<style>:root{color-scheme:light dark}body{font:13px 'Segoe UI',sans-serif;margin:12px 16px;background:Canvas;color:CanvasText}ul{padding-left:18px;margin:0}li{margin:5px 0;line-height:1.4}</style><ul>
 <li>The first release.</li>
 </ul>]]></description>
       <enclosure url="https://github.com/ramiejleh/Nearside/releases/download/v0.3.0/Nearside-0.3.0-arm64.exe" sparkle:os="windows-arm64" sparkle:installerArguments="/SILENT /SP- /NOCANCEL /RELAUNCH" type="application/octet-stream" sparkle:edSignature="NPYVukExWXjYXSOAMiPUxvpVr8gu/oQyPcyrAnx3ZUAqfHogHo+HH0es+BiQ0pkddgfPwJ/AAovVekhjcIZYCw==" length="97917000"/>

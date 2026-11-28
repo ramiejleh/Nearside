@@ -115,6 +115,16 @@ public partial class App : Application
             arrival.Show(EngineHost.Current.History.First(c => c.FromPhone), EngineHost.Current.PhoneName);
             if (shot != null && arrival.Window is { } card) saved = Shots.SaveAsync(card, card.Content, shot);
         }
+        else if (line.Contains("--update"))
+        {
+            // The update window, with sample notes (nothing is fetched or installed).
+            UpdateWindow.Show(new Updates.Release("0.3.3", 999, [
+                "Each phone app gets its own taskbar button with its own icon, and can be pinned there.",
+                "Opening an app on the phone keeps its window, with Bring Back.",
+                "Typing in a phone app's window always reaches the app.",
+            ]));
+            if (shot != null && UpdateWindow.Current is { } update) saved = Shots.SaveAsync(update, update.Content, shot);
+        }
         else if (line.Contains("--messages"))
         {
             OpenMessages();
