@@ -35,12 +35,22 @@ public sealed class PhoneWindow : Window
     private double shownWidthDp = 400, shownHeightDp = 800;
     private readonly Recents recents;
     private readonly SwapChainPanel panel = new();
+    private readonly ContentControl keyTarget = new()
+    {
+        IsTabStop = true, UseSystemFocusVisuals = false,
+        HorizontalContentAlignment = HorizontalAlignment.Stretch, VerticalContentAlignment = VerticalAlignment.Stretch,
+    };
     private readonly VideoView view;
     private readonly Border overlay = new() { Visibility = Visibility.Collapsed };
     private readonly TextBlock overlayText = new() { TextWrapping = TextWrapping.Wrap, TextAlignment = TextAlignment.Center, MaxWidth = 280 };
     private readonly ProgressRing overlayRing = new() { IsActive = true, Width = 28, Height = 28 };
-    /// Reopen | Close Window, under the words when the app was closed on the phone (as on the Mac).
+    /// Reopen (or Bring Back) | Close Window, under the words when the app was closed on the phone
+    /// or moved to it (as on the Mac).
+    private readonly Button reopenButton = new() { Content = "Reopen" };
     private readonly StackPanel overlayButtons = new() { Orientation = Orientation.Horizontal, Spacing = 8, HorizontalAlignment = HorizontalAlignment.Center };
+    /// Go Back | Open on Phone, when the app hides the screen it's on (a profile photo): Back
+    /// usually leaves that screen, and the rest of the app works here (as on the Mac).
+    private readonly StackPanel secureButtons = new() { Orientation = Orientation.Horizontal, Spacing = 8, HorizontalAlignment = HorizontalAlignment.Center, Visibility = Visibility.Collapsed };
     /// A few seconds' message over the picture (dropped files the app couldn't take).
     private readonly Border notice = new()
     {
@@ -120,8 +130,11 @@ public sealed class PhoneWindow : Window
         this.id = id;
         this.package = package;
         Title = title;
-        AppWindow.SetIcon(Path.Combine(AppContext.BaseDirectory, "Assets", "Nearside.ico"));
         hwnd = Microsoft.UI.Win32Interop.GetWindowFromWindowId(AppWindow.Id);
+        // An app's window is that app on the taskbar (its own button and icon), not Nearside.
+        if (package != null) TaskbarIdentity.Set(hwnd, package, title);
+        AppWindow.SetIcon((package != null ? TaskbarIdentity.ExistingIcon(package) : null)
+                          ?? Path.Combine(AppContext.BaseDirectory, "Assets", "Nearside.ico"));
         view = new VideoView(panel);
         size = AppSettings.Get(SizeKey) is { } saved && Sizes.Contains(saved) ? saved : "phone";
 
@@ -154,17 +167,23 @@ public sealed class PhoneWindow : Window
         overlay.Child = new StackPanel
         {
             Spacing = 12, VerticalAlignment = VerticalAlignment.Center, HorizontalAlignment = HorizontalAlignment.Center,
-            Children = { overlayRing, overlayText, overlayButtons },
+            Children = { overlayRing, overlayText, overlayButtons, secureButtons },
         };
-        var reopen = new Button { Content = "Reopen", Style = (Style)Application.Current.Resources["AccentButtonStyle"] };
-        reopen.Click += (_, _) =>
+        var back = new Button { Content = "Go Back", Style = (Style)Application.Current.Resources["AccentButtonStyle"] };
+        back.Click += (_, _) => Command("back");
+        var toPhone = new Button { Content = "Open on Phone" };
+        toPhone.Click += (_, _) => Command("openOnPhone");
+        secureButtons.Children.Add(back);
+        secureButtons.Children.Add(toPhone);
+        reopenButton.Style = (Style)Application.Current.Resources["AccentButtonStyle"];
+        reopenButton.Click += (_, _) =>
         {
             Close();
             _ = OpenAsync(package, null, title);
         };
         var closeWindow = new Button { Content = "Close Window" };
         closeWindow.Click += (_, _) => Close();
-        overlayButtons.Children.Add(reopen);
+        overlayButtons.Children.Add(reopenButton);
         overlayButtons.Children.Add(closeWindow);
         var stage = new Grid { Background = new SolidColorBrush(Microsoft.UI.Colors.Black) };
         recents = new Recents(pick: task => { Command("front", new { task }); }, remove: task => Command("removeTask", new { task }),
@@ -205,7 +224,10 @@ public sealed class PhoneWindow : Window
         var root = new Grid();
         root.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         root.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        root.Children.Add(stage);
+        // The picture can't take keyboard focus, so it sits in a control that can: typing reaches
+        // the phone whatever was focused before (a button that went away left keys going nowhere).
+        keyTarget.Content = stage;
+        root.Children.Add(keyTarget);
         Grid.SetColumn(toolbar, 1);
         root.Children.Add(toolbar);
         Content = root;
@@ -229,6 +251,7 @@ public sealed class PhoneWindow : Window
         {
             if (covered && e.WindowActivationState != WindowActivationState.Deactivated) _ = UncoverAsync();
             if (!covered) Command("visibility", new { v = e.WindowActivationState == WindowActivationState.Deactivated ? 2 : 0 });
+            if (e.WindowActivationState != WindowActivationState.Deactivated) FocusKeys();
         };
         AuthGate.Locked += Cover;
         AppWindow.Changed += (_, _) =>
@@ -258,6 +281,7 @@ public sealed class PhoneWindow : Window
             ByHandle.Remove(hwnd);
             AuthGate.Locked -= Cover;
             statsTimer.Stop();
+            if (package != null) TaskbarIdentity.Clear(hwnd);
             Command("close"); // always (closing twice is harmless): the bridge forgets the window
             Open.Remove(id);
             VideoRouter.Remove(id);
@@ -439,7 +463,11 @@ public sealed class PhoneWindow : Window
         notesLayer.Visibility = Visibility.Visible;
     }
 
-    private void HideNotifications() => notesLayer.Visibility = Visibility.Collapsed;
+    private void HideNotifications()
+    {
+        notesLayer.Visibility = Visibility.Collapsed;
+        FocusKeys(); // back to the phone (the reply box had them)
+    }
 
     /// The list follows the phone; the bell shows how many there are.
     private void NotificationsChanged(Snapshot s)
@@ -481,10 +509,17 @@ public sealed class PhoneWindow : Window
                         break;
                     case "opening": ShowOverlay("Opening…", busy: true); break;
                     case "reconnecting": ShowOverlay("Reconnecting…", busy: true); break;
-                    case "exited": ShowOverlay($"{Title} was closed on your phone.", busy: false, reopen: package != null); break;
+                    case "exited":
+                        reopenButton.Content = "Reopen";
+                        ShowOverlay($"{Title} was closed on your phone.", busy: false, reopen: package != null);
+                        break;
+                    case "movedToPhone":
+                        // Opened on the phone: the window stays, to bring it back (as on the Mac).
+                        reopenButton.Content = "Bring Back";
+                        ShowOverlay($"{Title} moved to your phone.", busy: false, reopen: package != null);
+                        break;
                     case "busy": ShowOverlay("Your phone can't show another window right now. Close one and try again.", busy: false); break;
                     case "failed": ShowOverlay(e.TryGetProperty("message", out var m) ? m.GetString() ?? "" : "Couldn't open.", busy: false); break;
-                    case "movedToPhone":
                     case "closed":
                         Close();
                         break;
@@ -511,11 +546,20 @@ public sealed class PhoneWindow : Window
             case "snapshot":
                 _ = recents.SetSnapshotAsync(e.GetProperty("task").GetInt32(), Convert.FromBase64String(e.GetProperty("png").GetString() ?? ""));
                 break;
+            case "icon":
+                if (package != null) _ = SetAppIconAsync(e.GetProperty("path").GetString() ?? "", e.GetProperty("adaptive").GetBoolean());
+                break;
             case "secure":
                 secure = e.GetProperty("on").GetBoolean();
                 Overlay();
                 break;
         }
+    }
+
+    private async Task SetAppIconAsync(string png, bool adaptive)
+    {
+        if (package == null || png.Length == 0) return;
+        if (await TaskbarIdentity.IconAsync(hwnd, package, png, adaptive) is { } ico && Open.ContainsKey(id)) AppWindow.SetIcon(ico);
     }
 
     private bool covered;
@@ -558,7 +602,7 @@ public sealed class PhoneWindow : Window
     private void Overlay()
     {
         (string Text, bool Busy, bool Reopen)? shown = covered ? ("Locked. Click to show it again.", false, false)
-            : secure ? ("This app doesn't allow its screen to be shown elsewhere.", false, false)
+            : secure ? ($"{Title} hides this screen from recordings and other displays. Go back to keep using it here, or open it on your phone.", false, false)
             : sessionState;
         overlay.Visibility = shown == null ? Visibility.Collapsed : Visibility.Visible;
         if (shown is { } s)
@@ -567,6 +611,7 @@ public sealed class PhoneWindow : Window
             overlayRing.Visibility = s.Busy ? Visibility.Visible : Visibility.Collapsed;
             overlayButtons.Visibility = s.Reopen ? Visibility.Visible : Visibility.Collapsed;
         }
+        secureButtons.Visibility = !covered && secure ? Visibility.Visible : Visibility.Collapsed;
     }
 
     private void Command(string name, object? fields = null)
@@ -592,6 +637,8 @@ public sealed class PhoneWindow : Window
             Content = new FontIcon { Glyph = glyph, FontSize = 14 },
             Style = (Style)Application.Current.Resources["SubtleButtonStyle"],
             Width = 36, Height = 32, Padding = new Thickness(0),
+            // Clicking doesn't take the keys from the phone (and a typed space can't press it).
+            AllowFocusOnInteraction = false,
         };
         ToolTipService.SetToolTip(button, tip);
         button.Click += (_, _) => action();
@@ -610,8 +657,15 @@ public sealed class PhoneWindow : Window
 
     private static bool Inside((float X, float Y) p) => p.X is >= 0 and <= 1 && p.Y is >= 0 and <= 1;
 
+    /// Keys to the phone, unless the notifications list (its reply box) is up.
+    private void FocusKeys()
+    {
+        if (notesLayer.Visibility != Visibility.Visible) keyTarget.Focus(FocusState.Programmatic);
+    }
+
     private void OnPressed(object sender, PointerRoutedEventArgs e)
     {
+        keyTarget.Focus(FocusState.Pointer);
         if (covered)
         {
             _ = UncoverAsync();

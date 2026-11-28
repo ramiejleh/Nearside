@@ -279,7 +279,8 @@ final class PhoneWindowController: NSObject, NSWindowDelegate {
                                             reopen: { [weak self] in self?.reopen() },
                                             close: { [weak self] in self?.window.close() },
                                             unlock: { PhoneWindowManager.shared?.unlock() },
-                                            openOnPhone: { [weak self] in self?.closeOnTop() })
+                                            openOnPhone: { [weak self] in self?.closeOnTop() },
+                                            goBack: { [weak self] in self?.session.back() })
         // The phone window has no single app that can leave: "gone" can't happen; a closed home
         // screen comes back by itself.
         overlay.isHidden = new == .showing && !locked && !secure

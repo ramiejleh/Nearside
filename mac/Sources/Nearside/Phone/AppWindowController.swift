@@ -215,6 +215,7 @@ final class AppWindowController: NSObject, NSWindowDelegate {
                                             close: { [weak self] in self?.window.close() },
                                             unlock: { PhoneWindowManager.shared?.unlock() },
                                             openOnPhone: { [weak self] in self?.openOnPhone() },
+                                            goBack: { [weak self] in self?.goBack(nil) },
                                             oldest: new == .busy ? PhoneWindowManager.shared?.leastRecentlyUsed(except: self)?.app.label : nil,
                                             closeOldest: { [weak self] in self?.closeOldestAndRetry() })
         overlay.isHidden = new == .showing && !locked && !secure
@@ -696,6 +697,8 @@ struct AppWindowOverlay: View {
     var close: () -> Void = {}
     var unlock: () -> Void = {}
     var openOnPhone: () -> Void = {}
+    /// Back in the app: a screen that blocks capture (a profile photo) often isn't the whole app.
+    var goBack: () -> Void = {}
     /// Busy: the least recently used other window's app, and closing it (then this one opens).
     var oldest: String? = nil
     var closeOldest: () -> Void = {}
@@ -715,13 +718,13 @@ struct AppWindowOverlay: View {
                 } else if secure, state == .showing {
                     Image(systemName: "eye.slash")
                         .font(.system(size: 30, weight: .light)).foregroundStyle(.secondary)
-                    Text("\(label) blocks screen sharing").font(.headline)
-                    Text("It hides its screen from recordings and other displays, so it can only be used on your phone.")
+                    Text("\(label) hides this screen").font(.headline)
+                    Text("It keeps this screen from recordings and other displays. Go back to keep using \(label) here, or open it on your phone.")
                         .font(.subheadline).foregroundStyle(.secondary).multilineTextAlignment(.center)
                         .frame(maxWidth: 300)
                     HStack {
-                        Button("Open on Phone", action: openOnPhone).keyboardShortcut(.defaultAction).buttonStyle(AccentButtonStyle())
-                        Button("Close Window", action: close)
+                        Button("Go Back", action: goBack).keyboardShortcut(.defaultAction).buttonStyle(AccentButtonStyle())
+                        Button("Open on Phone", action: openOnPhone)
                     }
                 } else {
                 switch state {

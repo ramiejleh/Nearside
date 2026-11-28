@@ -96,6 +96,7 @@ enum Sessions {
         observe(session, id)
         all[id] = session
         session.start()
+        if let package = packages[id] { sendIcon(id, package, engine) }
         let shown = PhoneDisplaySize.shownDp(dp, statusBarDp: PhoneInfo.statusBarDp, gestureBarDp: PhoneInfo.gestureBarDp)
         return ["width": display.width, "height": display.height, "dpi": display.dpi,
                 "shownWidthDp": Double(shown.width), "shownHeightDp": Double(shown.height)]
@@ -168,6 +169,16 @@ enum Sessions {
     }
 
     /// The window is gone: nothing of it stays registered (its app no longer counts as open here).
+    /// An app window's icon, for its taskbar button ("icon": the cached PNG, fetched if it isn't).
+    private static func sendIcon(_ id: Int64, _ package: String, _ engine: SyncEngine) {
+        Task { @MainActor in
+            guard let app = await engine.phoneApps()?.first(where: { $0.package == package }) else { return }
+            if PhoneIconCache.file(app) == nil { await engine.phoneAppIcons(for: [app]) { _ in } }
+            guard all[id] != nil, let file = PhoneIconCache.file(app) else { return }
+            Bridge.emit("session", ["id": id, "kind": "icon", "path": file.url.path, "adaptive": file.adaptive])
+        }
+    }
+
     private static func forget(_ id: Int64) {
         all[id] = nil
         packages[id] = nil

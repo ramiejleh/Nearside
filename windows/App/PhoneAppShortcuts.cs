@@ -79,7 +79,7 @@ internal static class PhoneAppShortcuts
 
     /// What a package's shortcut runs Nearside with (the package is letters, digits, dots and
     /// underscores: nothing to quote).
-    private static string Arguments(string package) => $"--link nearside://open?package={package}";
+    public static string Arguments(string package) => $"--link nearside://open?package={package}";
 
     /// A shortcut per app; apps sharing a name all get their packages added, so a newly installed
     /// app can never take another's shortcut. One that runs anything else is written again;
@@ -146,7 +146,7 @@ internal static class PhoneAppShortcuts
     }
 
     /// An .ico holding one PNG (Windows reads those since Vista).
-    private static byte[] Ico(byte[] png)
+    public static byte[] Ico(byte[] png)
     {
         using var buffer = new MemoryStream();
         using var w = new BinaryWriter(buffer);
@@ -166,7 +166,7 @@ internal static class PhoneAppShortcuts
 
     /// The phone's icon as the shortcut shows it: full-bleed (adaptive) ones in a rounded square,
     /// as Android shows them, then Nearside's logo small in the bottom-right corner.
-    private static async Task<byte[]> DrawAsync(byte[] png, bool round)
+    public static async Task<byte[]> DrawAsync(byte[] png, bool round)
     {
         var (pixels, width, height) = await DecodeAsync(png, 0);
         if (round)
