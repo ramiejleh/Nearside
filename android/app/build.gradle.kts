@@ -16,7 +16,7 @@ android {
             commandLine("git", "rev-list", "--count", "HEAD")
             isIgnoreExitValue = true
         }.standardOutput.asText.get().trim().toIntOrNull() ?: 1
-        versionName = "0.3.2"
+        versionName = "0.3.3"
     }
 
     // Release key, given only by mac/scripts/release.sh (never stored in the repo). Without it,
