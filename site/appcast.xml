@@ -8,6 +8,17 @@
     <language>en</language>
     <!-- releases: newest first -->
     <item>
+      <title>Nearside 0.3.4</title>
+      <pubDate>Sat, 28 Nov 2026 10:25:44 +0000</pubDate>
+      <sparkle:version>262</sparkle:version>
+      <sparkle:shortVersionString>0.3.4</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+      <description><![CDATA[<ul>
+<li>Settings shows Nearside's version with a Check for Updates button, under General.</li>
+</ul>]]></description>
+      <enclosure url="https://github.com/ramiejleh/Nearside/releases/download/v0.3.4/Nearside-0.3.4.zip" type="application/octet-stream" sparkle:edSignature="yeyrJM86LsI/swrQdDPjxqlltNSKePa0n//rEk0oHRPesCL+4wUqE4khtRnPN14LxkNLiylBvmdnT3C/EC4VCQ==" length="4995889"/>
+    </item>
+    <item>
       <title>Nearside 0.3.3</title>
       <pubDate>Sat, 28 Nov 2026 09:59:17 +0000</pubDate>
       <sparkle:version>259</sparkle:version>
