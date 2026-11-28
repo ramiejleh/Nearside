@@ -140,6 +140,8 @@ Updates arrive by themselves, for the computer and the phone.
 Building from source, what's been tested on which devices, and the project's status are in
 [Getting started](docs/getting-started.md). Nearside is tested every day on a Pixel 9 Pro with a
 Mac and a Windows PC; the [device matrix](docs/devices.md) shows the phones tried so far.
+Questions about security, other phones or how it compares to scrcpy are answered in the
+[FAQ](docs/faq.md).
 
 ## Contributing
 
