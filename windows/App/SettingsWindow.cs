@@ -225,8 +225,11 @@ public sealed class SettingsWindow : Window
         page.Children.Add(Row("Use another phone, or pair again", null, forget));
         page.Children.Add(Header("General"));
         page.Children.Add(startup);
-        var version = typeof(SettingsWindow).Assembly.GetName().Version;
-        page.Children.Add(new TextBlock { Text = $"Nearside {version?.ToString(3) ?? "dev"}", FontSize = 12, Foreground = Blocks.Secondary, Margin = new Thickness(0, 12, 0, 0) });
+        // The version, and checking for a newer one now (as the tray menu's Check for updates).
+        var checkUpdates = new Button { Content = "Check for Updates", IsEnabled = Updates.Available };
+        checkUpdates.Click += (_, _) => Updates.Check();
+        page.Children.Add(Row($"Nearside {(Updates.Build.Length > 0 ? Updates.Version : "(development build)")}",
+            Updates.Available ? "Checked once a day; you choose when to install." : "Development builds don't update themselves.", checkUpdates));
         settingsPage = new ScrollViewer { Content = page };
         Content = settingsPage;
         if (EngineHost.IsDemo && Environment.GetCommandLineArgs().Contains("--apps")) notificationApps.Open(); // its screenshot

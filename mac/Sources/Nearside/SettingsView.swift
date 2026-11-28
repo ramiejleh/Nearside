@@ -253,10 +253,16 @@ struct SettingsView: View {
                                 launchAtLogin = SMAppService.mainApp.status == .enabled
                             }
                         }
+                    LabeledContent {
+                        Button("Check for Updates…") { Updates.checkNow() }
+                            .disabled(!Updates.available)
+                    } label: {
+                        Text("Nearside \(Self.version)")
+                        Text(Updates.available ? "Updates install with your OK." : "Development builds don't update themselves.")
+                    }
                     if Updates.available {
                         Toggle("Check for updates automatically", isOn: $automaticUpdates)
                             .onChange(of: automaticUpdates) { _, on in Updates.automaticChecks = on }
-                        Button("Check for Updates…") { Updates.checkNow() }
                     }
                 }
 
